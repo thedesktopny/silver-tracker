@@ -34,13 +34,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
 /* NAV */
 .nav{display:flex;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:0;z-index:100}
-.nav-tab{flex:1;padding:14px 4px;text-align:center;font-family:'Jost',sans-serif;font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;user-select:none;margin-bottom:-2px}
+.nav-tab{flex:1;padding:14px 4px;text-align:center;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;user-select:none;margin-bottom:-2px}
 .nav-tab.active{color:var(--gold)!important;border-bottom-color:var(--gold)}
 
 /* HEADER */
 .glint-header{background:var(--surface);border-bottom:2px solid var(--border);padding:22px 20px 18px;text-align:center}
 .glint-header img{height:38px;object-fit:contain}
-.glint-header .subtitle{font-size:8px;letter-spacing:.25em;text-transform:uppercase;color:var(--ink3);margin-top:8px;font-weight:700}
+.glint-header .subtitle{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink3);margin-top:8px;font-weight:700}
 
 /* PAGES */
 .page{display:none;padding:0 14px 120px}
@@ -48,7 +48,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
 /* CARD */
 .card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:12px}
-.card-label{font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--ink2);margin-bottom:12px}
+.card-label{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);margin-bottom:12px}
 
 /* INPUTS */
 .gen-input,.scan-input,.search-input,.sheet-input{
@@ -76,12 +76,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
 /* WORKERS */
 .worker-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
-.worker-btn{padding:10px 18px;border-radius:50px;border:2px solid var(--border);background:var(--surface);color:var(--ink2);font-family:'Jost',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;user-select:none}
+.worker-btn{padding:11px 20px;border-radius:50px;border:2px solid var(--border);background:var(--surface);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none}
 .worker-btn.selected{border-color:var(--ink);background:var(--ink);color:#fff;font-weight:600}
 
 /* STATUS GRID */
 .status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.status-btn{padding:15px 6px;border-radius:var(--radius);border:2px solid var(--border);background:var(--surface);cursor:pointer;font-family:'Jost',sans-serif;font-weight:600;font-size:11px;letter-spacing:.04em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink2)}
+.status-btn{padding:15px 6px;border-radius:var(--radius);border:2px solid var(--border);background:var(--surface);cursor:pointer;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.03em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink)}
 .status-btn .s-icon{font-size:20px;line-height:1}
 .status-btn:active{transform:scale(.97)}
 .status-btn.sel{background:var(--ink);border-color:var(--ink);color:#fff}
@@ -104,18 +104,19 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .ticket-card:hover{border-color:var(--ink);box-shadow:0 4px 20px rgba(0,0,0,.1)}
 .ticket-header{padding:16px}
 .ticket-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.ticket-id{font-size:10px;color:var(--gold2);letter-spacing:.12em;font-weight:700;text-transform:uppercase}
+.ticket-id{font-size:11px;color:var(--gold2);letter-spacing:.14em;font-weight:700;text-transform:uppercase}
 .ticket-count{font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em}
-.ticket-title{font-size:20px;color:var(--ink);font-weight:600;font-family:'Cormorant Garamond',serif;letter-spacing:.01em;margin-bottom:4px}
-.ticket-sub{font-size:10px;color:var(--ink3);font-weight:500;letter-spacing:.04em}
-.ticket-badge{display:inline-block;font-size:9px;padding:3px 10px;border-radius:50px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.06em;background:var(--surface2);color:var(--ink2);border:1.5px solid var(--border);white-space:nowrap}
+.ticket-title{font-size:22px;color:var(--ink);font-weight:700;font-family:'Cormorant Garamond',serif;letter-spacing:.01em}
+.ticket-sub{font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.04em}
+.ticket-badge{display:inline-block;font-size:10px;padding:5px 12px;border-radius:6px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.05em;background:var(--surface2);color:var(--ink2);border:2px solid var(--border);white-space:normal;max-width:180px;text-align:right;line-height:1.3}
+.ticket-item-count{display:inline-block;font-size:11px;padding:6px 14px;border-radius:6px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.06em;background:var(--ink);color:#fff;white-space:nowrap}
 .ticket-items{display:none;border-top:2px solid var(--border);padding:14px 16px;background:var(--bg)}
 .ticket-items.open{display:block}
 .item-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
 .item-row:last-child{border-bottom:none}
 .item-cb{width:18px;height:18px;accent-color:var(--ink);cursor:pointer;flex-shrink:0;margin-top:3px}
 .item-info{flex:1}
-.item-name{font-size:16px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:600}
+.item-name{font-size:18px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700}
 .item-meta{font-size:10px;color:var(--ink3);margin-top:4px;letter-spacing:.04em;font-weight:500}
 .s-badge{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:700;letter-spacing:.06em}
 .s-open{background:#dce8f5;color:var(--blue)}
