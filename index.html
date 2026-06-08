@@ -9,20 +9,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root {
-  --bg:#0f0f0f; --surface:#1a1a1a; --surface2:#242424; --border:#2e2e2e;
-  --gold:#c9a84c; --gold-light:#e8c76a; --gold-dim:#6b5420;
-  --text:#f0ece0; --text-dim:#888;
-  --green:#4caf78; --blue:#4c8fcf; --orange:#cf8f4c; --red:#cf4c4c; --purple:#9b6bca;
-  --radius:14px;
+  --bg:#faf9f7; --surface:#ffffff; --surface2:#f3f0eb; --border:#e8e2d9;
+  --gold:#b8960c; --gold-light:#d4aa14; --gold-dim:#8a6f0a;
+  --text:#1a1612; --text-dim:#8a7f72;
+  --green:#2d7a4f; --blue:#2d5a8a; --orange:#b86a0c; --red:#8a2d2d; --purple:#5a3a7a;
+  --radius:12px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-height:100vh}
-.app-shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 80px rgba(0,0,0,.8)}
+body{background:#f0ece5;color:var(--text);font-family:'DM Mono',monospace;min-height:100vh}
+.app-shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 60px rgba(0,0,0,.12)}
 
 /* NAV */
 .nav{display:flex;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
 .nav-tab{flex:1;padding:12px 4px;text-align:center;font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;user-select:none}
-.nav-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.nav-tab.active{color:#d4aa14!important;border-bottom-color:#d4aa14}
 
 /* HEADER */
 .header{padding:20px 20px 10px;display:flex;align-items:center;gap:12px}
@@ -52,34 +52,34 @@ body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-he
 .sheet-input::placeholder{color:var(--text-dim)}
 
 /* BUTTONS */
-.gen-btn{padding:11px 16px;background:var(--gold);border:none;border-radius:10px;color:#0f0f0f;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.gen-btn{padding:11px 16px;background:#1a1612;border:none;border-radius:10px;color:#e8e2d9;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .gen-btn:active{opacity:.8}
 .gen-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
-.log-btn{width:100%;padding:15px;background:linear-gradient(135deg,var(--gold),var(--gold-dim));border:none;border-radius:var(--radius);color:#0f0f0f;font-family:'Syne',sans-serif;font-size:15px;font-weight:800;letter-spacing:.06em;cursor:pointer;transition:all .15s;margin-top:4px}
+.log-btn{width:100%;padding:15px;background:#1a1612;border:none;border-radius:var(--radius);color:#e8e2d9;font-family:'Syne',sans-serif;font-size:15px;font-weight:800;letter-spacing:.06em;cursor:pointer;transition:all .15s;margin-top:4px}
 .log-btn:active{transform:scale(.98);opacity:.9}
 .log-btn:disabled{opacity:.3;cursor:not-allowed}
-.copy-btn{width:100%;padding:12px;background:var(--surface2);border:1.5px solid var(--gold-dim);border-radius:var(--radius);color:var(--gold);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:.04em;margin-bottom:10px}
-.print-btn-main{width:100%;padding:14px;background:linear-gradient(135deg,var(--blue),#2a5a8a);border:none;border-radius:var(--radius);color:#fff;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:10px;letter-spacing:.04em}
+.copy-btn{width:100%;padding:12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius);color:var(--gold);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:.04em;margin-bottom:10px}
+.print-btn-main{width:100%;padding:14px;background:#1a1612;border:none;border-radius:var(--radius);color:#e8e2d9;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:10px;letter-spacing:.04em}
 .print-btn-main:disabled{opacity:.3;cursor:not-allowed}
 
 /* WORKER BTNS */
 .worker-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
 .worker-btn{padding:9px 14px;border-radius:50px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text-dim);font-family:'DM Mono',monospace;font-size:13px;cursor:pointer;transition:all .15s;user-select:none}
-.worker-btn.selected{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,.08)}
+.worker-btn.selected{border-color:var(--gold);color:var(--gold-dim);background:rgba(184,150,12,.08)}
 
 /* STATUS GRID */
 .status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .status-btn{padding:14px 8px;border-radius:var(--radius);border:1.5px solid transparent;cursor:pointer;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;letter-spacing:.03em;text-align:center;transition:all .15s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px}
 .status-btn .s-icon{font-size:20px}
 .status-btn:active{transform:scale(.96);opacity:.85}
-.status-btn.work-start{background:rgba(76,175,120,.12);border-color:rgba(76,175,120,.3);color:var(--green)}
-.status-btn.paused{background:rgba(207,143,76,.12);border-color:rgba(207,143,76,.3);color:var(--orange)}
-.status-btn.resumed{background:rgba(76,175,120,.12);border-color:rgba(76,175,120,.3);color:var(--green)}
-.status-btn.on-truck{background:rgba(76,143,207,.12);border-color:rgba(76,143,207,.3);color:var(--blue)}
-.status-btn.delivered{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.3);color:var(--gold)}
-.status-btn.returned{background:rgba(207,76,76,.12);border-color:rgba(207,76,76,.3);color:var(--red)}
-.status-btn.rework{background:rgba(155,107,202,.12);border-color:rgba(155,107,202,.3);color:var(--purple)}
-.status-btn.complete{background:rgba(76,175,120,.2);border-color:rgba(76,175,120,.5);color:var(--green)}
+.status-btn.work-start{background:rgba(45,122,79,.08);border-color:rgba(45,122,79,.25);color:var(--green)}
+.status-btn.paused{background:rgba(184,106,12,.08);border-color:rgba(184,106,12,.25);color:var(--orange)}
+.status-btn.resumed{background:rgba(45,122,79,.08);border-color:rgba(45,122,79,.25);color:var(--green)}
+.status-btn.on-truck{background:rgba(45,90,138,.08);border-color:rgba(45,90,138,.25);color:var(--blue)}
+.status-btn.delivered{background:rgba(184,150,12,.08);border-color:rgba(184,150,12,.25);color:var(--gold)}
+.status-btn.returned{background:rgba(138,45,45,.08);border-color:rgba(138,45,45,.25);color:var(--red)}
+.status-btn.rework{background:rgba(90,58,122,.08);border-color:rgba(90,58,122,.25);color:var(--purple)}
+.status-btn.complete{background:rgba(45,122,79,.12);border-color:rgba(45,122,79,.4);color:var(--green)}
 .selected-status-label{text-align:center;font-size:12px;color:var(--text-dim);margin-top:8px;min-height:18px}
 
 /* HISTORY LOG */
@@ -126,7 +126,7 @@ body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-he
 .label-preview-card .lbl-sel{display:inline-block;margin-top:6px;font-size:9px;color:var(--green);background:rgba(76,175,120,.1);border:1px solid rgba(76,175,120,.3);border-radius:50px;padding:2px 8px}
 
 /* SCRIPT BOX */
-.script-box{background:#0a0a0a;border:1px solid var(--border);border-radius:var(--radius);padding:14px;font-size:11px;line-height:1.7;color:#a0c4a0;overflow-x:auto;white-space:pre;margin-bottom:12px;max-height:260px;overflow-y:auto}
+.script-box{background:#f3f0eb;border:1px solid var(--border);border-radius:var(--radius);padding:14px;font-size:11px;line-height:1.7;color:#2d5a2d;overflow-x:auto;white-space:pre;margin-bottom:12px;max-height:260px;overflow-y:auto}
 .step-list{list-style:none}
 .step-list li{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12px;line-height:1.5;color:var(--text-dim)}
 .step-list li:last-child{border-bottom:none}
@@ -139,7 +139,7 @@ body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-he
 .s-done{background:rgba(76,175,120,.15);color:var(--green)}
 
 /* TOAST */
-.toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--gold);border-radius:50px;padding:11px 22px;font-size:13px;color:var(--gold);opacity:0;transition:all .3s;z-index:999;pointer-events:none;max-width:440px;width:calc(100% - 40px);text-align:center}
+.toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);background:#1a1612;border:1px solid #2e2820;border-radius:50px;padding:11px 22px;font-size:13px;color:#e8e2d9;opacity:0;transition:all .3s;z-index:999;pointer-events:none;max-width:440px;width:calc(100% - 40px);text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* SPINNER */
@@ -166,16 +166,19 @@ body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-he
 <div class="app-shell">
 
 <!-- NAV -->
-<nav class="nav no-print">
-  <div class="nav-tab active" onclick="showPage('scan',this)">📡 Scan</div>
-  <div class="nav-tab" onclick="showPage('tickets',this)">🎫 Tickets</div>
-  <div class="nav-tab" onclick="showPage('history',this)">📋 History</div>
-  <div class="nav-tab" onclick="showPage('setup',this)">⚙️ Setup</div>
+<nav class="nav no-print" style="background:#1a1612;border-bottom:1px solid #2e2820">
+  <div class="nav-tab active" onclick="showPage('scan',this)" style="color:#8a7f72">📡 Scan</div>
+  <div class="nav-tab" onclick="showPage('tickets',this)" style="color:#8a7f72">🎫 Tickets</div>
+  <div class="nav-tab" onclick="showPage('history',this)" style="color:#8a7f72">📋 History</div>
+  <div class="nav-tab" onclick="showPage('setup',this)" style="color:#8a7f72">⚙️ Setup</div>
 </nav>
 
-<div class="header no-print">
-  <div class="header-icon">🥈</div>
-  <div><h1>Silver Tracker</h1><p>Glint Lacquer · Item Tracking</p></div>
+<div class="header no-print" style="background:#1a1612;padding:16px 20px">
+  <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png" alt="Glint" style="height:32px;object-fit:contain">
+  <div style="margin-left:auto;text-align:right">
+    <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#e8e2d9;letter-spacing:.06em">TRACKER</div>
+    <div style="font-size:10px;color:#8a7f72;margin-top:1px">Item Tracking System</div>
+  </div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -226,10 +229,10 @@ body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-he
 <!-- ===== TICKETS PAGE ===== -->
 <div id="page-tickets" class="page">
 
-  <div class="card no-print" style="padding:12px 16px">
+  <div class="no-print" style="background:#1a1612;padding:12px 16px;margin-bottom:12px;border-radius:var(--radius)">
     <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text)">Glint Lacquer · RepairDesk</div>
-      <div style="font-size:11px;color:var(--green)">✅ Connected</div>
+      <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:#e8e2d9;letter-spacing:.04em">Glint Lacquer · RepairDesk</div>
+      <div style="font-size:11px;color:#4caf78">✅ Connected</div>
     </div>
   </div>
 
