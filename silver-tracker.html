@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Silver Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root {
+  --bg:#0f0f0f; --surface:#1a1a1a; --surface2:#242424; --border:#2e2e2e;
+  --gold:#c9a84c; --gold-light:#e8c76a; --gold-dim:#6b5420;
+  --text:#f0ece0; --text-dim:#888;
+  --green:#4caf78; --blue:#4c8fcf; --orange:#cf8f4c; --red:#cf4c4c; --purple:#9b6bca;
+  --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:#080808;color:var(--text);font-family:'DM Mono',monospace;min-height:100vh}
+.app-shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 80px rgba(0,0,0,.8)}
+
+/* NAV */
+.nav{display:flex;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
+.nav-tab{flex:1;padding:12px 4px;text-align:center;font-family:'Syne',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;user-select:none}
+.nav-tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+
+/* HEADER */
+.header{padding:20px 20px 10px;display:flex;align-items:center;gap:12px}
+.header-icon{width:34px;height:34px;background:linear-gradient(135deg,var(--gold),var(--gold-dim));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.header h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--gold-light);letter-spacing:-.02em}
+.header p{font-size:11px;color:var(--text-dim);margin-top:2px}
+
+/* PAGES */
+.page{display:none;padding:0 14px 100px}
+.page.active{display:block}
+
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card-label{font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);margin-bottom:10px}
+
+/* INPUTS */
+.gen-input{flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Mono',monospace;font-size:14px;color:var(--text);outline:none;transition:border-color .2s;-webkit-appearance:none;width:100%}
+.gen-input:focus{border-color:var(--gold)}
+.gen-input::placeholder{color:var(--text-dim)}
+.scan-input{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:13px 44px 13px 14px;font-family:'DM Mono',monospace;font-size:16px;color:var(--text);outline:none;transition:border-color .2s;-webkit-appearance:none}
+.scan-input:focus{border-color:var(--gold)}
+.scan-input::placeholder{color:var(--text-dim)}
+.scan-input-wrap{position:relative}
+.scan-icon{position:absolute;right:13px;top:50%;transform:translateY(-50%);font-size:18px;opacity:.4}
+.sheet-input{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);outline:none;transition:border-color .2s}
+.sheet-input:focus{border-color:var(--gold)}
+.sheet-input::placeholder{color:var(--text-dim)}
+
+/* BUTTONS */
+.gen-btn{padding:11px 16px;background:var(--gold);border:none;border-radius:10px;color:#0f0f0f;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.gen-btn:active{opacity:.8}
+.gen-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.log-btn{width:100%;padding:15px;background:linear-gradient(135deg,var(--gold),var(--gold-dim));border:none;border-radius:var(--radius);color:#0f0f0f;font-family:'Syne',sans-serif;font-size:15px;font-weight:800;letter-spacing:.06em;cursor:pointer;transition:all .15s;margin-top:4px}
+.log-btn:active{transform:scale(.98);opacity:.9}
+.log-btn:disabled{opacity:.3;cursor:not-allowed}
+.copy-btn{width:100%;padding:12px;background:var(--surface2);border:1.5px solid var(--gold-dim);border-radius:var(--radius);color:var(--gold);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:.04em;margin-bottom:10px}
+.print-btn-main{width:100%;padding:14px;background:linear-gradient(135deg,var(--blue),#2a5a8a);border:none;border-radius:var(--radius);color:#fff;font-family:'Syne',sans-serif;font-weight:800;font-size:14px;cursor:pointer;margin-top:10px;letter-spacing:.04em}
+.print-btn-main:disabled{opacity:.3;cursor:not-allowed}
+
+/* WORKER BTNS */
+.worker-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.worker-btn{padding:9px 14px;border-radius:50px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text-dim);font-family:'DM Mono',monospace;font-size:13px;cursor:pointer;transition:all .15s;user-select:none}
+.worker-btn.selected{border-color:var(--gold);color:var(--gold);background:rgba(201,168,76,.08)}
+
+/* STATUS GRID */
+.status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.status-btn{padding:14px 8px;border-radius:var(--radius);border:1.5px solid transparent;cursor:pointer;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;letter-spacing:.03em;text-align:center;transition:all .15s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px}
+.status-btn .s-icon{font-size:20px}
+.status-btn:active{transform:scale(.96);opacity:.85}
+.status-btn.work-start{background:rgba(76,175,120,.12);border-color:rgba(76,175,120,.3);color:var(--green)}
+.status-btn.paused{background:rgba(207,143,76,.12);border-color:rgba(207,143,76,.3);color:var(--orange)}
+.status-btn.resumed{background:rgba(76,175,120,.12);border-color:rgba(76,175,120,.3);color:var(--green)}
+.status-btn.on-truck{background:rgba(76,143,207,.12);border-color:rgba(76,143,207,.3);color:var(--blue)}
+.status-btn.delivered{background:rgba(201,168,76,.12);border-color:rgba(201,168,76,.3);color:var(--gold)}
+.status-btn.returned{background:rgba(207,76,76,.12);border-color:rgba(207,76,76,.3);color:var(--red)}
+.status-btn.rework{background:rgba(155,107,202,.12);border-color:rgba(155,107,202,.3);color:var(--purple)}
+.status-btn.complete{background:rgba(76,175,120,.2);border-color:rgba(76,175,120,.5);color:var(--green)}
+.selected-status-label{text-align:center;font-size:12px;color:var(--text-dim);margin-top:8px;min-height:18px}
+
+/* HISTORY LOG */
+.log-entry{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.log-entry:last-child{border-bottom:none}
+.log-dot{width:9px;height:9px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.log-meta{flex:1}
+.log-id{font-size:13px;color:var(--gold);font-weight:500}
+.log-desc{font-size:11px;color:var(--text);margin-top:1px}
+.log-status{font-size:12px;color:var(--text);margin-top:2px}
+.log-who{font-size:11px;color:var(--text-dim);margin-top:2px}
+.log-time{font-size:11px;color:var(--text-dim);text-align:right;flex-shrink:0}
+
+/* TICKETS LIST */
+.ticket-card{background:var(--surface2);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;cursor:pointer;transition:border-color .15s}
+.ticket-card:hover{border-color:var(--gold-dim)}
+.ticket-header{padding:14px;display:flex;justify-content:space-between;align-items:flex-start}
+.ticket-title{font-size:14px;color:var(--text);font-weight:500}
+.ticket-sub{font-size:11px;color:var(--text-dim);margin-top:3px}
+.ticket-id{font-size:12px;color:var(--gold)}
+.ticket-badge{font-size:10px;padding:3px 8px;border-radius:50px;font-weight:700;font-family:'Syne',sans-serif;letter-spacing:.04em;flex-shrink:0}
+.ticket-items{display:none;border-top:1px solid var(--border);padding:12px}
+.ticket-items.open{display:block}
+.item-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.item-row:last-child{border-bottom:none}
+.item-cb{width:18px;height:18px;accent-color:var(--gold);cursor:pointer;flex-shrink:0}
+.item-info{flex:1}
+.item-name{font-size:13px;color:var(--text)}
+.item-meta{font-size:11px;color:var(--text-dim);margin-top:2px}
+
+/* SEARCH BAR */
+.search-bar{display:flex;gap:8px;margin-bottom:12px}
+.search-input{flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:11px 13px;font-family:'DM Mono',monospace;font-size:14px;color:var(--text);outline:none}
+.search-input:focus{border-color:var(--gold)}
+.search-input::placeholder{color:var(--text-dim)}
+
+/* LABEL PRINT */
+.label-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.label-preview-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
+.label-preview-card .qr-wrap{display:flex;justify-content:center;margin-bottom:8px}
+.label-preview-card .lbl-id{font-size:12px;font-weight:500;color:var(--gold);letter-spacing:.05em}
+.label-preview-card .lbl-name{font-size:10px;color:var(--text);margin-top:3px;line-height:1.4}
+.label-preview-card .lbl-customer{font-size:10px;color:var(--text-dim);margin-top:2px}
+.label-preview-card .lbl-sel{display:inline-block;margin-top:6px;font-size:9px;color:var(--green);background:rgba(76,175,120,.1);border:1px solid rgba(76,175,120,.3);border-radius:50px;padding:2px 8px}
+
+/* SCRIPT BOX */
+.script-box{background:#0a0a0a;border:1px solid var(--border);border-radius:var(--radius);padding:14px;font-size:11px;line-height:1.7;color:#a0c4a0;overflow-x:auto;white-space:pre;margin-bottom:12px;max-height:260px;overflow-y:auto}
+.step-list{list-style:none}
+.step-list li{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12px;line-height:1.5;color:var(--text-dim)}
+.step-list li:last-child{border-bottom:none}
+.step-num{width:22px;height:22px;background:var(--gold-dim);border-radius:50%;color:var(--gold-light);font-family:'Syne',sans-serif;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* STATUS BADGE */
+.s-badge{font-size:10px;padding:2px 8px;border-radius:50px;font-weight:700}
+.s-open{background:rgba(76,143,207,.15);color:var(--blue)}
+.s-progress{background:rgba(201,168,76,.15);color:var(--gold)}
+.s-done{background:rgba(76,175,120,.15);color:var(--green)}
+
+/* TOAST */
+.toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--gold);border-radius:50px;padding:11px 22px;font-size:13px;color:var(--gold);opacity:0;transition:all .3s;z-index:999;pointer-events:none;max-width:440px;width:calc(100% - 40px);text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* SPINNER */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-row{text-align:center;padding:20px;color:var(--text-dim);font-size:13px}
+
+@media print{
+  body{background:white}
+  .app-shell,.nav,.header,.page{display:block!important;box-shadow:none;max-width:100%}
+  .page:not(#page-labels){display:none!important}
+  .no-print{display:none!important}
+  .label-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .label-preview-card{border:1px solid #ccc;border-radius:6px;padding:10px;break-inside:avoid;background:white}
+  .lbl-id,.lbl-name{color:#000!important}
+  .lbl-customer{color:#666!important}
+  .lbl-sel{display:none!important}
+  .card,.search-bar,.print-btn-main,.gen-btn,.card-label:first-child,.no-print{display:none!important}
+  #label-print-area{display:block!important}
+}
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+<!-- NAV -->
+<nav class="nav no-print">
+  <div class="nav-tab active" onclick="showPage('scan',this)">📡 Scan</div>
+  <div class="nav-tab" onclick="showPage('tickets',this)">🎫 Tickets</div>
+  <div class="nav-tab" onclick="showPage('history',this)">📋 History</div>
+  <div class="nav-tab" onclick="showPage('setup',this)">⚙️ Setup</div>
+</nav>
+
+<div class="header no-print">
+  <div class="header-icon">🥈</div>
+  <div><h1>Silver Tracker</h1><p>Glint Lacquer · Item Tracking</p></div>
+</div>
+
+<!-- ===== SCAN PAGE ===== -->
+<div id="page-scan" class="page active">
+
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-label" style="margin-bottom:0">Who's working?</div>
+      <div id="default-badge" style="display:none;font-size:10px;color:var(--gold);background:rgba(201,168,76,.1);border:1px solid var(--gold-dim);border-radius:50px;padding:3px 10px;cursor:pointer" onclick="clearDefault()">📌 Default ✕</div>
+    </div>
+    <div class="worker-row" id="worker-row"></div>
+    <div id="set-default-wrap" style="margin-top:10px;display:none">
+      <button onclick="setAsDefault()" style="background:none;border:1px dashed var(--gold-dim);border-radius:50px;color:var(--text-dim);font-family:'DM Mono',monospace;font-size:11px;padding:6px 14px;cursor:pointer;width:100%">📌 Set <span id="set-default-name"></span> as default for this device</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Scan or type item ID</div>
+    <div class="scan-input-wrap">
+      <input id="scan-input" class="scan-input" type="text" placeholder="e.g. T1234-2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <span class="scan-icon">▦</span>
+    </div>
+    <div id="scan-item-info" style="display:none;margin-top:10px;padding:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--gold-dim)">
+      <div style="font-size:11px;color:var(--text-dim)">Item from RepairDesk</div>
+      <div id="scan-item-name" style="font-size:13px;color:var(--gold);margin-top:3px"></div>
+      <div id="scan-item-customer" style="font-size:11px;color:var(--text-dim);margin-top:2px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Select status</div>
+    <div class="status-grid">
+      <button class="status-btn work-start" onclick="selectStatus('Work Started',this)"><span class="s-icon">🔧</span>Work Started</button>
+      <button class="status-btn paused" onclick="selectStatus('Paused',this)"><span class="s-icon">⏸️</span>Paused</button>
+      <button class="status-btn resumed" onclick="selectStatus('Resumed',this)"><span class="s-icon">▶️</span>Resumed</button>
+      <button class="status-btn on-truck" onclick="selectStatus('On Truck',this)"><span class="s-icon">🚚</span>On Truck</button>
+      <button class="status-btn delivered" onclick="selectStatus('Delivered',this)"><span class="s-icon">✅</span>Delivered</button>
+      <button class="status-btn returned" onclick="selectStatus('Returned',this)"><span class="s-icon">↩️</span>Returned</button>
+      <button class="status-btn rework" onclick="selectStatus('Rework Started',this)"><span class="s-icon">⚙️</span>Rework</button>
+      <button class="status-btn complete" onclick="selectStatus('Complete',this)"><span class="s-icon">🏁</span>Complete</button>
+    </div>
+    <div class="selected-status-label" id="status-label">No status selected</div>
+  </div>
+
+  <button class="log-btn" id="log-btn" onclick="logEntry()" disabled>LOG ENTRY</button>
+</div>
+
+<!-- ===== TICKETS PAGE ===== -->
+<div id="page-tickets" class="page">
+
+  <div class="card no-print" style="padding:12px 16px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text)">Glint Lacquer · RepairDesk</div>
+      <div style="font-size:11px;color:var(--green)">✅ Connected</div>
+    </div>
+  </div>
+
+  <div class="search-bar no-print">
+    <input id="ticket-search" class="search-input" type="text" placeholder="Search ticket # or customer..." oninput="filterTickets()">
+    <button class="gen-btn" onclick="loadTickets()" title="Refresh">↻</button>
+  </div>
+
+  <div id="tickets-list">
+    <div class="loading-row">Connect your API key to load tickets</div>
+  </div>
+
+  <!-- Print area -->
+  <div id="label-print-area" style="display:none">
+    <div id="labels-to-print" class="label-preview-grid"></div>
+  </div>
+
+  <div class="no-print" style="position:sticky;bottom:16px">
+    <button class="print-btn-main" id="print-selected-btn" onclick="printSelected()" disabled>🖨️ Print Selected Labels (<span id="selected-count">0</span>)</button>
+  </div>
+</div>
+
+<!-- ===== HISTORY PAGE ===== -->
+<div id="page-history" class="page">
+  <div class="card">
+    <div class="card-label">Recent scans (this session)</div>
+    <div id="history-list"><div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries yet</div></div>
+  </div>
+</div>
+
+<!-- ===== SETUP PAGE ===== -->
+<div id="page-setup" class="page">
+
+  <div class="card">
+    <div class="card-label">Workers</div>
+    <div class="gen-row" style="margin-bottom:0">
+      <input id="new-worker" class="gen-input" type="text" placeholder="Worker name" autocomplete="off">
+      <button class="gen-btn" onclick="addWorker()">Add</button>
+    </div>
+    <div id="worker-list" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Google Sheet Web App URL</div>
+    <input id="sheet-url" class="sheet-input" type="url" placeholder="Paste your Apps Script URL here..." oninput="saveUrl()">
+    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Required to log scans to Google Sheets</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Google Apps Script — paste into your Sheet</div>
+    <div class="script-box" id="script-box">function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // --- LOG TAB ---
+    var logSheet = ss.getSheetByName("Log") || ss.insertSheet("Log");
+    if (logSheet.getLastRow() === 0) {
+      logSheet.appendRow(["Timestamp","Item ID","Job #","Item Description","Customer","Status","Worker","Date","Time"]);
+      logSheet.getRange(1,1,1,9).setFontWeight("bold").setBackground("#c9a84c").setFontColor("#000000");
+      logSheet.setFrozenRows(1);
+    }
+    var now = new Date();
+    var tz = Session.getScriptTimeZone();
+    var dateStr = Utilities.formatDate(now, tz, "MM/dd/yyyy");
+    var timeStr = Utilities.formatDate(now, tz, "HH:mm:ss");
+    var itemId = data.itemId || "";
+    var jobNum = itemId.split("-")[0] || "";
+    logSheet.appendRow([now, itemId, jobNum, data.itemDesc||"", data.customer||"", data.status, data.worker, dateStr, timeStr]);
+
+    // --- REPORTS TAB ---
+    updateReports(ss);
+
+    return ContentService.createTextOutput(JSON.stringify({success:true})).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({error:err.message})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function updateReports(ss) {
+  var logSheet = ss.getSheetByName("Log");
+  if (!logSheet || logSheet.getLastRow() < 2) return;
+  var rptSheet = ss.getSheetByName("Reports") || ss.insertSheet("Reports");
+  rptSheet.clearContents();
+  var headers = ["Item ID","Job #","Item Description","Customer","First Scan","Last Scan","Total Days Open","Bench Time","Times Returned","Current Status","Last Worker"];
+  rptSheet.appendRow(headers);
+  rptSheet.getRange(1,1,1,headers.length).setFontWeight("bold").setBackground("#1a1a2e").setFontColor("#c9a84c");
+  rptSheet.setFrozenRows(1);
+  var logData = logSheet.getRange(2,1,logSheet.getLastRow()-1,9).getValues();
+  var items = {};
+  for (var i=0;i<logData.length;i++) {
+    var row=logData[i], ts=row[0], id=row[1], job=row[2], desc=row[3], cust=row[4], status=row[5], worker=row[6];
+    if (!id) continue;
+    if (!items[id]) items[id]={job:job,desc:desc,customer:cust,scans:[],firstScan:null,lastScan:null,returns:0,currentStatus:"",lastWorker:""};
+    items[id].scans.push({ts:ts,status:status,worker:worker});
+    if (!items[id].firstScan||ts<items[id].firstScan) items[id].firstScan=ts;
+    if (!items[id].lastScan||ts>items[id].lastScan){items[id].lastScan=ts;items[id].currentStatus=status;items[id].lastWorker=worker;}
+    if (status==="Returned") items[id].returns++;
+  }
+  var tz=Session.getScriptTimeZone(), reportRows=[];
+  for (var itemId in items) {
+    var item=items[itemId], scans=item.scans.sort(function(a,b){return a.ts-b.ts;});
+    var msOpen=item.lastScan-item.firstScan, daysOpen=msOpen>0?(msOpen/(1000*60*60*24)).toFixed(1):"0";
+    var benchMs=0, workStart=null;
+    var workSt=["Work Started","Resumed","Rework Started"], stopSt=["Paused","On Truck","Delivered","Complete","Returned"];
+    for (var s=0;s<scans.length;s++){
+      if (workSt.indexOf(scans[s].status)>=0) workStart=scans[s].ts;
+      else if (stopSt.indexOf(scans[s].status)>=0&&workStart){benchMs+=scans[s].ts-workStart;workStart=null;}
+    }
+    var bm=Math.floor(benchMs/60000), bd=Math.floor(bm/1440), bh=Math.floor((bm%1440)/60), bmin=bm%60;
+    var benchStr=(bd>0?bd+"d ":"")+(bh>0?bh+"h ":"")+bmin+"m";
+    if (bm===0) benchStr="In progress";
+    reportRows.push([itemId,item.job,item.desc||"",item.customer||"",
+      Utilities.formatDate(item.firstScan,tz,"MM/dd/yyyy HH:mm"),
+      Utilities.formatDate(item.lastScan,tz,"MM/dd/yyyy HH:mm"),
+      daysOpen+" days",benchStr,item.returns,item.currentStatus,item.lastWorker]);
+  }
+  reportRows.sort(function(a,b){return b[4]>a[4]?1:-1;});
+  if (reportRows.length>0) rptSheet.getRange(2,1,reportRows.length,headers.length).setValues(reportRows);
+  for (var r=0;r<reportRows.length;r++){
+    var cell=rptSheet.getRange(r+2,10), s=reportRows[r][9];
+    if (s==="Delivered"||s==="Complete") cell.setBackground("#1a3a2a").setFontColor("#4caf78");
+    else if (s==="Returned") cell.setBackground("#3a1a1a").setFontColor("#cf4c4c");
+    else if (s==="Paused") cell.setBackground("#3a2a1a").setFontColor("#cf8f4c");
+    else if (s==="On Truck") cell.setBackground("#1a2a3a").setFontColor("#4c8fcf");
+    else cell.setBackground("#1a1a1a").setFontColor("#c9a84c");
+  }
+  for (var c=1;c<=headers.length;c++) rptSheet.autoResizeColumn(c);
+}</div>
+    <button class="copy-btn" onclick="copyScript()">📋 Copy Script Code</button>
+    <ul class="step-list">
+      <li><span class="step-num">1</span><span>Open Google Sheets → new blank spreadsheet</span></li>
+      <li><span class="step-num">2</span><span>Extensions → Apps Script → delete all code → paste above → Save</span></li>
+      <li><span class="step-num">3</span><span>Deploy → New Deployment → Web App → Anyone → Deploy</span></li>
+      <li><span class="step-num">4</span><span>Copy the URL → paste above in "Google Sheet Web App URL"</span></li>
+    </ul>
+  </div>
+</div>
+
+</div><!-- app-shell -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== STATE =====
+let selectedWorker = null;
+let selectedStatus = null;
+let selectedStatusBtn = null;
+let sessionLog = [];
+let workers = JSON.parse(localStorage.getItem('st_workers') || '["David","Worker 2","Worker 3"]');
+let sheetUrl = localStorage.getItem('st_url') || '';
+let rdApiKey = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
+let allTickets = [];
+let itemCache = {}; // itemId -> {name, customer, ticketId}
+
+const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
+const STATUS_COLORS = {'Work Started':'#4caf78','Paused':'#cf8f4c','Resumed':'#4caf78','On Truck':'#4c8fcf','Delivered':'#c9a84c','Returned':'#cf4c4c','Rework Started':'#9b6bca','Complete':'#4caf78'};
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+  const def = localStorage.getItem('st_default_worker');
+  if (def && workers.includes(def)) selectedWorker = def;
+  renderWorkers();
+  document.getElementById('sheet-url').value = sheetUrl;
+  renderWorkerList();
+  updateDefaultBadge();
+
+
+  const input = document.getElementById('scan-input');
+  input.addEventListener('keydown', e => { if (e.key==='Enter'){e.preventDefault();if(!document.getElementById('log-btn').disabled)logEntry();} });
+  input.addEventListener('input', () => { checkReady(); lookupItemInfo(); });
+});
+
+// ===== NAV =====
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  if (el) el.classList.add('active');
+  if (name==='scan') setTimeout(() => document.getElementById('scan-input').focus(), 100);
+  if (name==='tickets' && rdApiKey && !allTickets.length) loadTickets();
+}
+
+// ===== WORKERS =====
+function renderWorkers() {
+  const def = localStorage.getItem('st_default_worker');
+  document.getElementById('worker-row').innerHTML = workers.map(w =>
+    `<button class="worker-btn ${selectedWorker===w?'selected':''}" onclick="selectWorker('${w}')">${w===def?'📌 ':''}${w}</button>`
+  ).join('');
+}
+function selectWorker(name) {
+  selectedWorker = name; renderWorkers(); checkReady();
+  const def = localStorage.getItem('st_default_worker');
+  const wrap = document.getElementById('set-default-wrap');
+  document.getElementById('set-default-name').textContent = name;
+  wrap.style.display = name !== def ? 'block' : 'none';
+}
+function setAsDefault() {
+  localStorage.setItem('st_default_worker', selectedWorker);
+  document.getElementById('set-default-wrap').style.display = 'none';
+  updateDefaultBadge(); renderWorkers();
+  showToast('📌 '+selectedWorker+' set as default');
+}
+function clearDefault() {
+  localStorage.removeItem('st_default_worker');
+  updateDefaultBadge(); renderWorkers();
+}
+function updateDefaultBadge() {
+  const def = localStorage.getItem('st_default_worker');
+  const badge = document.getElementById('default-badge');
+  if (def) { badge.style.display='block'; badge.innerHTML=`📌 ${def} ✕`; }
+  else badge.style.display='none';
+}
+function addWorker() {
+  const val = document.getElementById('new-worker').value.trim();
+  if (!val) return;
+  workers.push(val); localStorage.setItem('st_workers', JSON.stringify(workers));
+  document.getElementById('new-worker').value = '';
+  renderWorkers(); renderWorkerList();
+}
+function removeWorker(i) {
+  workers.splice(i,1); localStorage.setItem('st_workers', JSON.stringify(workers));
+  renderWorkers(); renderWorkerList();
+}
+function renderWorkerList() {
+  document.getElementById('worker-list').innerHTML = workers.map((w,i) =>
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span>${w}</span><span onclick="removeWorker(${i})" style="color:var(--red);cursor:pointer;padding:4px 8px">✕</span>
+    </div>`
+  ).join('');
+}
+
+// ===== STATUS =====
+function selectStatus(status, btn) {
+  selectedStatus = status;
+  document.querySelectorAll('.status-btn').forEach(b => { b.style.opacity='0.45'; b.style.transform=''; });
+  btn.style.opacity='1'; btn.style.transform='scale(1.04)';
+  setTimeout(()=>btn.style.transform='',150);
+  document.getElementById('status-label').textContent = '→ '+status;
+  checkReady();
+}
+
+// ===== READY CHECK =====
+function checkReady() {
+  const ok = !!selectedWorker && document.getElementById('scan-input').value.trim().length>0 && !!selectedStatus;
+  document.getElementById('log-btn').disabled = !ok;
+}
+
+// ===== ITEM LOOKUP =====
+function lookupItemInfo() {
+  const val = document.getElementById('scan-input').value.trim().toUpperCase();
+  const info = itemCache[val];
+  const infoEl = document.getElementById('scan-item-info');
+  if (info) {
+    document.getElementById('scan-item-name').textContent = info.name;
+    document.getElementById('scan-item-customer').textContent = info.customer;
+    infoEl.style.display = 'block';
+  } else {
+    infoEl.style.display = 'none';
+  }
+}
+
+// ===== LOG ENTRY =====
+async function logEntry() {
+  const btn = document.getElementById('log-btn');
+  const itemId = document.getElementById('scan-input').value.trim().toUpperCase();
+  const info = itemCache[itemId] || {};
+  btn.disabled = true; btn.textContent = '⏳ SENDING...';
+  btn.style.background = 'linear-gradient(135deg,#555,#333)'; btn.style.color = '#aaa';
+
+  const entry = { itemId, itemDesc: info.name||'', customer: info.customer||'', status: selectedStatus, worker: selectedWorker, timestamp: new Date().toISOString() };
+  sessionLog.unshift(entry); renderHistory();
+
+  const url = localStorage.getItem('st_url');
+  if (url) {
+    try {
+      await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify(entry) });
+      btn.textContent='✅ LOGGED!'; btn.style.background='linear-gradient(135deg,#4caf78,#2d7a50)'; btn.style.color='#fff';
+      showToast('✅ '+itemId+' → '+selectedStatus);
+    } catch(e) {
+      btn.textContent='⚠️ SAVED LOCALLY'; btn.style.background='linear-gradient(135deg,#cf8f4c,#7a5020)'; btn.style.color='#fff';
+    }
+  } else {
+    btn.textContent='✅ LOGGED!'; btn.style.background='linear-gradient(135deg,#4caf78,#2d7a50)'; btn.style.color='#fff';
+    showToast('✅ '+itemId+' → '+selectedStatus);
+  }
+
+  setTimeout(() => {
+    document.getElementById('scan-input').value = '';
+    document.getElementById('scan-item-info').style.display='none';
+    selectedStatus=null;
+    document.querySelectorAll('.status-btn').forEach(b=>{b.style.opacity='1';b.style.transform='';});
+    document.getElementById('status-label').textContent='No status selected';
+    btn.textContent='LOG ENTRY'; btn.style.background=''; btn.style.color=''; btn.disabled=true;
+    setTimeout(()=>document.getElementById('scan-input').focus(),100);
+  }, 1500);
+}
+
+// ===== HISTORY =====
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (!sessionLog.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries yet</div>'; return; }
+  el.innerHTML = sessionLog.slice(0,40).map(e => {
+    const d=new Date(e.timestamp), color=STATUS_COLORS[e.status]||'#888';
+    return `<div class="log-entry">
+      <div class="log-dot" style="background:${color}"></div>
+      <div class="log-meta">
+        <div class="log-id">${e.itemId}</div>
+        ${e.itemDesc?`<div class="log-desc">${e.itemDesc}</div>`:''}
+        <div class="log-status" style="color:${color}">${e.status}</div>
+        <div class="log-who">👤 ${e.worker}${e.customer?' · '+e.customer:''}</div>
+      </div>
+      <div class="log-time">${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}<br><span style="font-size:10px">${d.toLocaleDateString([],{month:'short',day:'numeric'})}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// ===== REPAIRDESK API =====
+function updateRdStatus() {}
+
+async function loadTickets() {
+  if (!rdApiKey) return;
+  const el = document.getElementById('tickets-list');
+  el.innerHTML = '<div class="loading-row"><span class="spinner"></span>Loading tickets...</div>';
+  try {
+    const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=50&order=desc&sort=created_at`);
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const data = await resp.json();
+    // RepairDesk returns data.data.ticketData
+    allTickets = (data.data && data.data.ticketData) || data.data || data.tickets || [];
+    renderTickets(allTickets);
+  } catch(err) {
+    el.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠️ Could not load tickets — CORS restriction.<br><br>
+      <span style="color:var(--text-dim);font-size:11px">This works when hosted on Google Drive or a web server, not from a local file.</span><br><br>
+      <a href="${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=5" target="_blank" style="color:var(--gold)">Test API directly ↗</a></div>`;
+  }
+}
+
+function getCustomerName(t) {
+  const s = t.summary;
+  if (s && s.customer) return (s.customer.fullName || s.customer.firstName || 'Unknown').trim();
+  return 'Unknown Customer';
+}
+
+function getOrderId(t) {
+  return (t.summary && t.summary.order_id) || t.id || '';
+}
+
+function getDevices(t) {
+  return t.devices || [];
+}
+
+function getStatusClass(s) {
+  if (!s) return 's-open';
+  const sl = s.toLowerCase();
+  if (sl.includes('deliver')||sl.includes('complete')) return 's-done';
+  if (sl.includes('progress')||sl.includes('repair')) return 's-progress';
+  return 's-open';
+}
+
+function renderTickets(tickets) {
+  const el = document.getElementById('tickets-list');
+  if (!tickets.length) { el.innerHTML='<div class="loading-row">No tickets found</div>'; return; }
+  el.innerHTML = tickets.map(t => {
+    const orderId = getOrderId(t);
+    const customer = getCustomerName(t);
+    const devices = getDevices(t);
+    const itemCount = devices.length;
+    const date = t.summary && t.summary.created_date
+      ? new Date(t.summary.created_date*1000).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})
+      : '';
+    // Get most recent status from first device
+    const status = devices[0] && devices[0].status ? devices[0].status.name : '';
+    const statusClass = getStatusClass(status);
+    const total = '';
+
+    return `<div class="ticket-card" id="tc-${orderId}">
+      <div class="ticket-header" onclick="toggleTicket('${orderId}')">
+        <div>
+          <div class="ticket-id">${orderId}</div>
+          <div class="ticket-title">${customer}</div>
+          <div class="ticket-sub">${date}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <span class="ticket-badge ${statusClass}" style="font-size:9px;max-width:90px;text-align:right;line-height:1.3">${status}</span>
+          <span style="font-size:11px;color:var(--text-dim)">${itemCount} item${itemCount!==1?'s':''} ▾</span>
+        </div>
+      </div>
+      <div class="ticket-items" id="ti-${orderId}"></div>
+    </div>`;
+  }).join('');
+}
+
+function toggleTicket(orderId) {
+  const itemsEl = document.getElementById('ti-'+orderId);
+  if (itemsEl.classList.contains('open')) { itemsEl.classList.remove('open'); return; }
+  itemsEl.classList.add('open');
+
+  // Find ticket in allTickets
+  const t = allTickets.find(t => getOrderId(t) === orderId);
+  if (!t) return;
+
+  const customer = getCustomerName(t);
+  const devices = getDevices(t);
+  renderTicketItems(orderId, customer, devices, itemsEl);
+}
+
+function renderTicketItems(orderId, customer, devices, itemsEl) {
+  const safeOrderId = orderId.replace(/[^a-zA-Z0-9]/g, '_');
+
+  itemsEl.innerHTML = devices.map((device, idx) => {
+    const itemNum = idx + 1;
+    const itemId = orderId + '-' + itemNum;
+    const deviceName = device.device ? device.device.name : 'Item '+itemNum;
+    const serial = device.serial ? ' #'+device.serial : '';
+    const services = device.repairProdItems ? device.repairProdItems.map(s => s.name.trim()).join(', ') : '';
+    const status = device.status ? device.status.name : '';
+    const statusClass = getStatusClass(status);
+
+    // Cache for scan lookup
+    itemCache[itemId] = { name: deviceName + (serial||''), customer, ticketId: orderId, services };
+
+    const safeDeviceName = deviceName.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+    const safeCustomer = customer.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+    const safeServices = services.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+
+    return `<div class="item-row">
+      <input type="checkbox" class="item-cb" id="cb-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}"
+        onchange="updateSelectedCount()"
+        data-item-id="${itemId}"
+        data-item-name="${safeDeviceName}${serial}"
+        data-services="${safeServices}"
+        data-customer="${safeCustomer}"
+        data-ticket="${orderId}">
+      <div class="item-info">
+        <div class="item-name">${deviceName}${serial}</div>
+        ${services?`<div class="item-meta" style="color:var(--gold-dim)">${services}</div>`:''}
+        <div class="item-meta">${itemId}${status?` · <span class="s-badge ${statusClass}">${status}</span>`:''}</div>
+      </div>
+    </div>`;
+  }).join('') + `<div style="padding:8px 0">
+    <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}')"
+      style="background:none;border:1px dashed var(--gold-dim);border-radius:8px;color:var(--gold);font-family:'DM Mono',monospace;font-size:11px;padding:6px 12px;cursor:pointer;width:100%">
+      ☑ Select all ${devices.length} items in ${orderId}
+    </button>
+  </div>`;
+}
+
+function selectAllInTicket(safeOrderId, count, orderId) {
+  for (let i=1; i<=count; i++) {
+    const itemId = (orderId+'-'+i).replace(/[^a-zA-Z0-9]/g,'_');
+    const cb = document.getElementById('cb-'+itemId);
+    if (cb) cb.checked = true;
+  }
+  updateSelectedCount();
+}
+
+function selectAllItems(ticketId, count) {
+  for (let i=1; i<=count; i++) {
+    const cb = document.getElementById('cb-T'+ticketId+'-'+i);
+    if (cb) cb.checked = true;
+  }
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  const checked = document.querySelectorAll('.item-cb:checked').length;
+  document.getElementById('selected-count').textContent = checked;
+  document.getElementById('print-selected-btn').disabled = checked===0;
+}
+
+function filterTickets() {
+  const q = document.getElementById('ticket-search').value.toLowerCase();
+  if (!q) { renderTickets(allTickets); return; }
+  const filtered = allTickets.filter(t => {
+    const id = String(t.id||t.ticket_id||'');
+    const cust = getCustomerName(t).toLowerCase();
+    const dev = (t.device_name||t.device||'').toLowerCase();
+    return id.includes(q) || cust.includes(q) || dev.includes(q);
+  });
+  renderTickets(filtered);
+}
+
+// ===== PRINT LABELS =====
+function printSelected() {
+  const checked = document.querySelectorAll('.item-cb:checked');
+  if (!checked.length) return;
+
+  const printArea = document.getElementById('labels-to-print');
+  printArea.innerHTML = '';
+
+  const promises = [];
+  checked.forEach(cb => {
+    const itemId = cb.dataset.itemId;
+    const itemName = cb.dataset.itemName;
+    const services = cb.dataset.services || '';
+    const customer = cb.dataset.customer;
+    const ticketId = cb.dataset.ticket;
+
+    const card = document.createElement('div');
+    card.className = 'label-preview-card';
+
+    const qrWrap = document.createElement('div');
+    qrWrap.className = 'qr-wrap';
+    const qrEl = document.createElement('div');
+    qrEl.id = 'qr-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+    qrWrap.appendChild(qrEl);
+    card.appendChild(qrWrap);
+
+    card.innerHTML += `
+      <div class="lbl-id">${itemId}</div>
+      <div class="lbl-name">${itemName}</div>
+      ${services?`<div class="lbl-name" style="font-size:9px;color:#666">${services}</div>`:''}
+      <div class="lbl-customer">${customer}</div>
+      <span class="lbl-sel">✓ Selected</span>
+    `;
+    printArea.appendChild(card);
+
+    const qrSafeId = itemId.replace(/[^a-zA-Z0-9]/g,'_');
+    promises.push(new Promise(resolve => {
+      setTimeout(() => {
+        const qrTarget = document.getElementById('qr-'+qrSafeId);
+        if (qrTarget) new QRCode(qrTarget, { text: itemId, width: 90, height: 90, colorDark:'#000000', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M });
+        resolve();
+      }, 50);
+    }));
+  });
+
+  document.getElementById('label-print-area').style.display = 'block';
+
+  Promise.all(promises).then(() => {
+    setTimeout(() => { window.print(); }, 300);
+  });
+}
+
+// ===== SETUP =====
+function saveUrl() {
+  sheetUrl = document.getElementById('sheet-url').value.trim();
+  localStorage.setItem('st_url', sheetUrl);
+}
+function copyScript() {
+  navigator.clipboard.writeText(document.getElementById('script-box').textContent)
+    .then(()=>showToast('📋 Script copied!'))
+    .catch(()=>showToast('Select and copy the script manually'));
+}
+
+// ===== TOAST =====
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),3000);
+}
+</script>
+</body>
+</html>
