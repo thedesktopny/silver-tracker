@@ -108,7 +108,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .ticket-count{font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em}
 .ticket-title{font-size:20px;color:var(--ink);font-weight:600;font-family:'Cormorant Garamond',serif;letter-spacing:.01em;margin-bottom:4px}
 .ticket-sub{font-size:10px;color:var(--ink3);font-weight:500;letter-spacing:.04em}
-.ticket-badge{display:inline-block;font-size:9px;padding:4px 10px;border-radius:4px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.06em;background:var(--surface2);color:var(--ink2);border:1.5px solid var(--border);margin-top:8px}
+.ticket-badge{display:inline-block;font-size:9px;padding:3px 10px;border-radius:50px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.06em;background:var(--surface2);color:var(--ink2);border:1.5px solid var(--border);white-space:nowrap}
 .ticket-items{display:none;border-top:2px solid var(--border);padding:14px 16px;background:var(--bg)}
 .ticket-items.open{display:block}
 .item-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
@@ -669,12 +669,12 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
       <div class="item-info">
         <div class="item-name">${deviceName}${serial}</div>
         ${services?`<div class="item-meta" style="color:var(--gold-dim)">${services}</div>`:''}
-        <div class="item-meta">${itemId}${status?` · <span class="s-badge ${statusClass}">${status}</span>`:''}</div>
+        <div class="item-meta">${itemId}</div>
       </div>
     </div>`;
   }).join('') + `<div style="padding:8px 0">
     <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}')"
-      style="background:none;border:1px dashed var(--gold-dim);border-radius:8px;color:var(--gold);font-family:'DM Mono',monospace;font-size:11px;padding:6px 12px;cursor:pointer;width:100%">
+      style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;padding:10px 12px;cursor:pointer;width:100%;text-transform:uppercase">
       ☑ Select all ${devices.length} items in ${orderId}
     </button>
   </div>`;
