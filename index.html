@@ -11,10 +11,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500;600&display=swap');
 
 :root {
-  --bg:#f8f5f0;
+  --bg:#f0ebe2;
   --surface:#ffffff;
-  --surface2:#f2ede6;
-  --border:#e0d8cc;
+  --surface2:#ebe5db;
+  --border:#cec5b8;
   --ink:#1c1a17;
   --ink2:#4a4540;
   --ink3:#9a9088;
@@ -43,12 +43,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .glint-header .subtitle{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3);margin-top:8px;font-weight:500}
 
 /* PAGES */
-.page{display:none;padding:0 16px 100px}
+.page{display:none;padding:0 16px 120px}
 .page.active{display:block}
 
 /* CARD */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:12px}
-.card-label{font-size:9px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink3);margin-bottom:12px}
+.card-label{font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink2);margin-bottom:12px}
 
 /* INPUTS */
 .gen-input,.scan-input,.search-input,.sheet-input{
@@ -76,15 +76,15 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
 /* WORKERS */
 .worker-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
-.worker-btn{padding:8px 16px;border-radius:50px;border:1px solid var(--border);background:var(--surface2);color:var(--ink3);font-family:'Jost',sans-serif;font-size:13px;font-weight:400;cursor:pointer;transition:all .15s;user-select:none}
-.worker-btn.selected{border-color:var(--ink);color:var(--ink);background:var(--surface);font-weight:500}
+.worker-btn{padding:9px 18px;border-radius:50px;border:1.5px solid var(--border);background:var(--surface);color:var(--ink2);font-family:'Jost',sans-serif;font-size:13px;font-weight:400;cursor:pointer;transition:all .15s;user-select:none}
+.worker-btn.selected{border-color:var(--ink);color:var(--ink);background:var(--ink);color:white;font-weight:500}
 
 /* STATUS GRID */
 .status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.status-btn{padding:14px 6px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-family:'Jost',sans-serif;font-weight:500;font-size:11px;letter-spacing:.04em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink2)}
+.status-btn{padding:14px 6px;border-radius:var(--radius);border:1.5px solid var(--border);background:var(--surface);cursor:pointer;font-family:'Jost',sans-serif;font-weight:500;font-size:11px;letter-spacing:.04em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink2)}
 .status-btn .s-icon{font-size:18px;line-height:1}
 .status-btn:active{transform:scale(.97)}
-.status-btn.sel,.status-btn:hover{background:var(--surface);border-color:var(--ink);color:var(--ink)}
+.status-btn.sel{background:var(--ink);border-color:var(--ink);color:white} .status-btn:hover{border-color:var(--ink2)}
 .selected-status-label{text-align:center;font-size:10px;color:var(--ink3);margin-top:10px;min-height:16px;letter-spacing:.06em;text-transform:uppercase}
 
 /* HISTORY */
@@ -99,13 +99,13 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .log-time{font-size:10px;color:var(--ink3);text-align:right;flex-shrink:0;letter-spacing:.02em}
 
 /* TICKETS */
-.ticket-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;cursor:pointer;transition:border-color .15s,box-shadow .15s}
-.ticket-card:hover{border-color:var(--gold);box-shadow:0 2px 16px rgba(196,160,80,.12)}
+.ticket-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;cursor:pointer;transition:border-color .2s,box-shadow .2s;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.ticket-card:hover{border-color:var(--gold);box-shadow:0 4px 20px rgba(0,0,0,.1)}
 .ticket-header{padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start}
-.ticket-title{font-size:16px;color:var(--ink);font-weight:400;font-family:'Cormorant Garamond',serif;letter-spacing:.02em}
+.ticket-title{font-size:18px;color:var(--ink);font-weight:600;font-family:'Cormorant Garamond',serif;letter-spacing:.01em}
 .ticket-sub{font-size:10px;color:var(--ink3);margin-top:3px;letter-spacing:.04em}
-.ticket-id{font-size:9px;color:var(--gold2);letter-spacing:.12em;font-weight:600;margin-bottom:3px;text-transform:uppercase}
-.ticket-badge{font-size:9px;padding:3px 8px;border-radius:4px;font-weight:600;font-family:'Jost',sans-serif;letter-spacing:.06em;text-align:right;line-height:1.4;max-width:110px}
+.ticket-id{font-size:10px;color:var(--gold2);letter-spacing:.1em;font-weight:600;margin-bottom:4px;text-transform:uppercase}
+.ticket-badge{font-size:9px;padding:4px 10px;border-radius:6px;font-weight:500;font-family:'Jost',sans-serif;letter-spacing:.04em;text-align:center;line-height:1.5;white-space:nowrap;background:var(--surface2);color:var(--ink2);border:1px solid var(--border)}
 .ticket-items{display:none;border-top:1px solid var(--surface2);padding:12px 16px;background:var(--bg)}
 .ticket-items.open{display:block}
 .item-row{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
@@ -118,7 +118,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .s-open{background:#eaf0f8;color:var(--blue)}
 .s-progress{background:#fdf8ee;color:var(--gold2)}
 .s-done{background:#eef7f2;color:var(--green)}
-.search-bar{display:flex;gap:8px;margin-bottom:12px}
+.search-bar{display:flex;gap:8px;margin-bottom:14px}
 
 /* LABELS */
 .label-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
@@ -614,7 +614,7 @@ function renderTickets(tickets) {
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
           <span class="ticket-badge ${statusClass}" style="font-size:9px;max-width:90px;text-align:right;line-height:1.3">${status}</span>
-          <span style="font-size:11px;color:var(--text-dim)">${itemCount} item${itemCount!==1?'s':''} ▾</span>
+          <span style="font-size:10px;color:var(--ink3);font-weight:500;letter-spacing:.04em;margin-top:4px;display:block">${itemCount} item${itemCount!==1?'s':''} ↓</span>
         </div>
       </div>
       <div class="ticket-items" id="ti-${orderId}"></div>
