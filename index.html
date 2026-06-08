@@ -559,6 +559,12 @@ async function loadTickets() {
     const data = await resp.json();
     // RepairDesk returns data.data.ticketData
     allTickets = (data.data && data.data.ticketData) || data.data || data.tickets || [];
+    // Sort newest first by ticket ID number
+    allTickets.sort(function(a, b) {
+      var idA = parseInt((getOrderId(a) || '').replace(/[^0-9]/g,'')) || 0;
+      var idB = parseInt((getOrderId(b) || '').replace(/[^0-9]/g,'')) || 0;
+      return idB - idA;
+    });
     renderTickets(allTickets);
   } catch(err) {
     el.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠️ Could not load tickets — CORS restriction.<br><br>
