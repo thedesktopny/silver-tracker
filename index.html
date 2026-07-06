@@ -728,18 +728,11 @@ async function loadTickets() {
   const el = document.getElementById('tickets-list');
   el.innerHTML = '<div class="loading-row"><span class="spinner"></span>Loading tickets...</div>';
   try {
-    // Fetch multiple pages to get all recent tickets
-    let allFetched = [];
-    const pages = 3; // fetch up to 3 pages of 100 = 300 tickets
-    for (let page = 1; page <= pages; page++) {
-      const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=100&page=${page}&order=desc&sort=created_at`);
-      if (!resp.ok) throw new Error('HTTP '+resp.status);
-      const data = await resp.json();
-      const batch = (data.data && data.data.ticketData) || data.data || data.tickets || [];
-      if (!batch.length) break; // no more pages
-      allFetched = allFetched.concat(batch);
-    }
-    allTickets = allFetched;
+    // RepairDesk returns up to 250 per page, fetch page 1 (most recent 250)
+    const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=250&page=1`);
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const data = await resp.json();
+    allTickets = (data.data && data.data.ticketData) || data.data || data.tickets || [];
     // Sort newest first by ticket ID number
     allTickets.sort(function(a, b) {
       var idA = parseInt((getOrderId(a) || '').replace(/[^0-9]/g,'')) || 0;
