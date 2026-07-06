@@ -180,46 +180,40 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <!-- ===== SCAN PAGE ===== -->
 <div id="page-scan" class="page active">
 
-  <div class="card">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div class="card-label" style="margin-bottom:0">Who's working?</div>
-      <div id="default-badge" style="display:none;font-size:10px;color:var(--gold);background:rgba(201,168,76,.1);border:1px solid var(--gold-dim);border-radius:50px;padding:3px 10px;cursor:pointer" onclick="clearDefault()">📌 Default ✕</div>
-    </div>
-    <div class="worker-row" id="worker-row"></div>
-    <div id="set-default-wrap" style="margin-top:10px;display:none">
-      <button onclick="setAsDefault()" style="background:none;border:1px dashed var(--gold-dim);border-radius:50px;color:var(--text-dim);font-family:'DM Mono',monospace;font-size:11px;padding:6px 14px;cursor:pointer;width:100%">📌 Set <span id="set-default-name"></span> as default for this device</button>
+  <div class="card" id="no-device-worker-card" style="display:none;text-align:center;padding:30px 18px">
+    <div style="font-size:40px;margin-bottom:10px">📱</div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:6px">This device isn't assigned</div>
+    <div style="font-size:12px;color:var(--ink3)">Ask the admin to assign a worker to this device in Setup</div>
+  </div>
+
+  <div class="card" id="active-worker-card" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">Working as</div>
+        <div style="font-size:24px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:2px" id="active-worker-name"></div>
+      </div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-label">Scan or type item ID</div>
+  <div class="card" id="role-select-card" style="display:none">
+    <div class="card-label">What are you doing now?</div>
+    <div class="worker-row" id="role-row"></div>
+  </div>
+
+  <div class="card" id="scan-card" style="display:none">
+    <div class="card-label" id="scan-card-label">Scan item</div>
     <div class="scan-input-wrap">
-      <input id="scan-input" class="scan-input" type="text" placeholder="e.g. T1234-2" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+      <input id="scan-input" class="scan-input" type="text" placeholder="Scan barcode..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
       <span class="scan-icon">▦</span>
     </div>
-    <div id="scan-item-info" style="display:none;margin-top:10px;padding:10px;background:var(--surface2);border-radius:8px;border:1px solid var(--gold-dim)">
-      <div style="font-size:11px;color:var(--text-dim)">Item from RepairDesk</div>
-      <div id="scan-item-name" style="font-size:13px;color:var(--gold);margin-top:3px"></div>
-      <div id="scan-item-customer" style="font-size:11px;color:var(--text-dim);margin-top:2px"></div>
+    <div id="scan-item-info" style="display:none;margin-top:12px;padding:14px;background:var(--surface2);border-radius:10px;border:2px solid var(--border)">
+      <div id="scan-result-icon" style="font-size:32px;text-align:center;margin-bottom:6px"></div>
+      <div id="scan-item-name" style="font-size:18px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;text-align:center"></div>
+      <div id="scan-item-customer" style="font-size:11px;color:var(--ink3);text-align:center;margin-top:2px;font-weight:600"></div>
+      <div id="scan-result-action" style="font-size:13px;font-weight:700;text-align:center;margin-top:10px;letter-spacing:.06em;text-transform:uppercase"></div>
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-label">Select status</div>
-    <div class="status-grid">
-      <button class="status-btn work-start" onclick="selectStatus('Work Started',this)"><span class="s-icon">🔧</span>Work Started</button>
-      <button class="status-btn paused" onclick="selectStatus('Paused',this)"><span class="s-icon">⏸️</span>Paused</button>
-      <button class="status-btn resumed" onclick="selectStatus('Resumed',this)"><span class="s-icon">▶️</span>Resumed</button>
-      <button class="status-btn on-truck" onclick="selectStatus('On Truck',this)"><span class="s-icon">🚚</span>On Truck</button>
-      <button class="status-btn delivered" onclick="selectStatus('Delivered',this)"><span class="s-icon">✅</span>Delivered</button>
-      <button class="status-btn returned" onclick="selectStatus('Returned',this)"><span class="s-icon">↩️</span>Returned</button>
-      <button class="status-btn rework" onclick="selectStatus('Rework Started',this)"><span class="s-icon">⚙️</span>Rework</button>
-      <button class="status-btn complete" onclick="selectStatus('Complete',this)"><span class="s-icon">🏁</span>Complete</button>
-    </div>
-    <div class="selected-status-label" id="status-label">No status selected</div>
-  </div>
-
-  <button class="log-btn" id="log-btn" onclick="logEntry()" disabled>LOG ENTRY</button>
 </div>
 
 <!-- ===== TICKETS PAGE ===== -->
@@ -262,13 +256,53 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <!-- ===== SETUP PAGE ===== -->
 <div id="page-setup" class="page">
 
+  <div class="card" id="pin-lock-card">
+    <div class="card-label">Admin PIN Required</div>
+    <div class="gen-row">
+      <input id="admin-pin-input" class="gen-input" type="password" placeholder="Enter PIN" autocomplete="off" inputmode="numeric" maxlength="6">
+      <button class="gen-btn" onclick="checkAdminPin()">Unlock</button>
+    </div>
+  </div>
+
+  <div id="setup-content" style="display:none">
+
+  <div class="card">
+    <div class="card-label">This Device</div>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:10px">Assign which worker uses this specific device. They'll see their name automatically — no selection needed.</div>
+    <select id="device-worker-select" class="gen-input" style="cursor:pointer;margin-bottom:10px" onchange="assignDeviceWorker()">
+      <option value="">— Not assigned —</option>
+    </select>
+    <div id="device-assigned-status" style="font-size:11px;color:var(--green);font-weight:700;display:none">✅ This device is assigned</div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Roles</div>
+    <div class="gen-row" style="margin-bottom:0">
+      <input id="new-role-input" class="gen-input" type="text" placeholder="e.g. Cleaning, Polish, Lacquer..." autocomplete="off">
+      <button class="gen-btn" onclick="addRole()">Add Role</button>
+    </div>
+    <div id="role-list" style="margin-top:10px"></div>
+  </div>
+
   <div class="card">
     <div class="card-label">Workers</div>
-    <div class="gen-row" style="margin-bottom:0">
+    <div class="gen-row">
       <input id="new-worker" class="gen-input" type="text" placeholder="Worker name" autocomplete="off">
-      <button class="gen-btn" onclick="addWorker()">Add</button>
     </div>
-    <div id="worker-list" style="margin-top:10px"></div>
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Assign role(s) — tap to select, multiple allowed</div>
+      <div class="worker-row" id="new-worker-roles"></div>
+    </div>
+    <button class="gen-btn" style="width:100%" onclick="addWorker()">Add Worker</button>
+    <div id="worker-list" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Admin PIN</div>
+    <div class="gen-row" style="margin-bottom:0">
+      <input id="change-pin-input" class="gen-input" type="password" placeholder="New PIN (4-6 digits)" autocomplete="off" inputmode="numeric" maxlength="6">
+      <button class="gen-btn" onclick="changeAdminPin()">Save</button>
+    </div>
   </div>
 
   <div class="card">
@@ -333,10 +367,10 @@ function updateReports(ss) {
     var item=items[itemId], scans=item.scans.sort(function(a,b){return a.ts-b.ts;});
     var msOpen=item.lastScan-item.firstScan, daysOpen=msOpen>0?(msOpen/(1000*60*60*24)).toFixed(1):"0";
     var benchMs=0, workStart=null;
-    var workSt=["Work Started","Resumed","Rework Started"], stopSt=["Paused","On Truck","Delivered","Complete","Returned"];
     for (var s=0;s<scans.length;s++){
-      if (workSt.indexOf(scans[s].status)>=0) workStart=scans[s].ts;
-      else if (stopSt.indexOf(scans[s].status)>=0&&workStart){benchMs+=scans[s].ts-workStart;workStart=null;}
+      var st=scans[s].status||"";
+      if (st.indexOf("Started")>=0) workStart=scans[s].ts;
+      else if (st.indexOf("Stopped")>=0&&workStart){benchMs+=scans[s].ts-workStart;workStart=null;}
     }
     var bm=Math.floor(benchMs/60000), bd=Math.floor(bm/1440), bh=Math.floor((bm%1440)/60), bmin=bm%60;
     var benchStr=(bd>0?bd+"d ":"")+(bh>0?bh+"h ":"")+bmin+"m";
@@ -366,6 +400,7 @@ function updateReports(ss) {
       <li><span class="step-num">4</span><span>Copy the URL → paste above in "Google Sheet Web App URL"</span></li>
     </ul>
   </div>
+  </div><!-- end setup-content -->
 </div>
 
 </div><!-- app-shell -->
@@ -373,32 +408,43 @@ function updateReports(ss) {
 
 <script>
 // ===== STATE =====
-let selectedWorker = null;
-let selectedStatus = null;
-let selectedStatusBtn = null;
+let selectedWorker = null; // {name, roles:[...]}
+let selectedRole = null; // current active role for this scan session
 let sessionLog = [];
-let workers = JSON.parse(localStorage.getItem('st_workers') || '["David","Worker 2","Worker 3"]');
+let roles = JSON.parse(localStorage.getItem('st_roles') || '["Cleaning","Polish","Lacquer"]');
+let workers = JSON.parse(localStorage.getItem('st_workers') || '[{"name":"David","roles":["Cleaning"]},{"name":"Worker 2","roles":["Polish","Lacquer"]}]');
 let sheetUrl = localStorage.getItem('st_url') || '';
 let rdApiKey = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 let allTickets = [];
 let itemCache = {}; // itemId -> {name, customer, ticketId}
+let itemTaskState = JSON.parse(localStorage.getItem('st_item_task_state') || '{}'); // itemId::role -> 'in_progress' | null
+let adminPin = localStorage.getItem('st_admin_pin') || '1234';
+let newWorkerSelectedRoles = [];
 
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
-const STATUS_COLORS = {'Work Started':'#4caf78','Paused':'#cf8f4c','Resumed':'#4caf78','On Truck':'#4c8fcf','Delivered':'#c9a84c','Returned':'#cf4c4c','Rework Started':'#9b6bca','Complete':'#4caf78'};
+function getStatusColor(status) {
+  if (status.includes('Stopped')) return '#8a5a20';
+  if (status.includes('Started')) return '#1e5c38';
+  return '#7a7060';
+}
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
-  const def = localStorage.getItem('st_default_worker');
-  if (def && workers.includes(def)) selectedWorker = def;
-  renderWorkers();
+  initDeviceWorker();
+  renderRoleList();
+  renderNewWorkerRoles();
   document.getElementById('sheet-url').value = sheetUrl;
   renderWorkerList();
-  updateDefaultBadge();
-
 
   const input = document.getElementById('scan-input');
-  input.addEventListener('keydown', e => { if (e.key==='Enter'){e.preventDefault();if(!document.getElementById('log-btn').disabled)logEntry();} });
-  input.addEventListener('input', () => { checkReady(); lookupItemInfo(); });
+  input.addEventListener('input', () => {
+    const val = input.value.trim();
+    clearTimeout(window._scanTimer);
+    window._scanTimer = setTimeout(() => { if (val.length >= 3) processScan(val); }, 150);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); const val=input.value.trim(); if(val) processScan(val); }
+  });
 });
 
 // ===== NAV =====
@@ -411,126 +457,256 @@ function showPage(name, el) {
   if (name==='tickets' && rdApiKey && !allTickets.length) loadTickets();
 }
 
-// ===== WORKERS =====
-function renderWorkers() {
-  const def = localStorage.getItem('st_default_worker');
-  document.getElementById('worker-row').innerHTML = workers.map(w =>
-    `<button class="worker-btn ${selectedWorker===w?'selected':''}" onclick="selectWorker('${w}')">${w===def?'📌 ':''}${w}</button>`
+// ===== WORKERS (device-locked) =====
+function initDeviceWorker() {
+  const deviceWorkerName = localStorage.getItem('st_device_worker'); // persists on THIS device permanently
+  if (deviceWorkerName) {
+    const w = workers.find(w => w.name === deviceWorkerName);
+    if (w) { activateWorkerOnDevice(w); return; }
+  }
+  // No worker assigned to this device
+  document.getElementById('no-device-worker-card').style.display = 'block';
+  document.getElementById('active-worker-card').style.display = 'none';
+  document.getElementById('role-select-card').style.display = 'none';
+  document.getElementById('scan-card').style.display = 'none';
+}
+
+function activateWorkerOnDevice(w) {
+  selectedWorker = w;
+  selectedRole = null;
+  document.getElementById('no-device-worker-card').style.display = 'none';
+  document.getElementById('active-worker-card').style.display = 'block';
+  document.getElementById('active-worker-name').textContent = w.name;
+
+  if (w.roles.length > 1) {
+    document.getElementById('role-select-card').style.display = 'block';
+    document.getElementById('scan-card').style.display = 'none';
+    renderRoleButtons(w.roles);
+  } else {
+    selectedRole = w.roles[0] || '';
+    document.getElementById('role-select-card').style.display = 'none';
+    document.getElementById('scan-card').style.display = 'block';
+    document.getElementById('scan-card-label').textContent = 'Scan item — ' + selectedRole;
+    setTimeout(() => document.getElementById('scan-input').focus(), 150);
+  }
+}
+
+function renderRoleButtons(workerRoles) {
+  document.getElementById('role-row').innerHTML = workerRoles.map(r =>
+    `<button class="worker-btn" onclick="selectRole('${r.replace(/'/g,"\\'")}')">${r}</button>`
   ).join('');
 }
-function selectWorker(name) {
-  selectedWorker = name; renderWorkers(); checkReady();
-  const def = localStorage.getItem('st_default_worker');
-  const wrap = document.getElementById('set-default-wrap');
-  document.getElementById('set-default-name').textContent = name;
-  wrap.style.display = name !== def ? 'block' : 'none';
+
+function selectRole(role) {
+  selectedRole = role;
+  document.getElementById('scan-card').style.display = 'block';
+  document.getElementById('scan-card-label').textContent = 'Scan item — ' + role;
+  document.querySelectorAll('#role-row .worker-btn').forEach(b => {
+    b.classList.toggle('selected', b.textContent.trim() === role);
+  });
+  setTimeout(() => document.getElementById('scan-input').focus(), 150);
 }
-function setAsDefault() {
-  localStorage.setItem('st_default_worker', selectedWorker);
-  document.getElementById('set-default-wrap').style.display = 'none';
-  updateDefaultBadge(); renderWorkers();
-  showToast('📌 '+selectedWorker+' set as default');
+
+// ===== DEVICE ASSIGNMENT (admin, in Setup) =====
+function renderDeviceWorkerSelect() {
+  const sel = document.getElementById('device-worker-select');
+  const current = localStorage.getItem('st_device_worker') || '';
+  sel.innerHTML = '<option value="">— Not assigned —</option>' +
+    workers.map(w => `<option value="${w.name.replace(/"/g,'&quot;')}" ${w.name===current?'selected':''}>${w.name} (${w.roles.join(', ')})</option>`).join('');
+  document.getElementById('device-assigned-status').style.display = current ? 'block' : 'none';
 }
-function clearDefault() {
-  localStorage.removeItem('st_default_worker');
-  updateDefaultBadge(); renderWorkers();
+
+function assignDeviceWorker() {
+  const name = document.getElementById('device-worker-select').value;
+  if (name) {
+    localStorage.setItem('st_device_worker', name);
+    showToast('✅ This device assigned to ' + name);
+  } else {
+    localStorage.removeItem('st_device_worker');
+    showToast('Device unassigned');
+  }
+  document.getElementById('device-assigned-status').style.display = name ? 'block' : 'none';
+  initDeviceWorker();
 }
-function updateDefaultBadge() {
-  const def = localStorage.getItem('st_default_worker');
-  const badge = document.getElementById('default-badge');
-  if (def) { badge.style.display='block'; badge.innerHTML=`📌 ${def} ✕`; }
-  else badge.style.display='none';
-}
-function addWorker() {
-  const val = document.getElementById('new-worker').value.trim();
+
+// ===== ROLES (admin-defined) =====
+function addRole() {
+  const val = document.getElementById('new-role-input').value.trim();
   if (!val) return;
-  workers.push(val); localStorage.setItem('st_workers', JSON.stringify(workers));
-  document.getElementById('new-worker').value = '';
-  renderWorkers(); renderWorkerList();
+  if (roles.includes(val)) { showToast('Role already exists'); return; }
+  roles.push(val);
+  localStorage.setItem('st_roles', JSON.stringify(roles));
+  document.getElementById('new-role-input').value = '';
+  renderRoleList();
+  renderNewWorkerRoles();
+  showToast('✅ Role added: ' + val);
 }
-function removeWorker(i) {
-  workers.splice(i,1); localStorage.setItem('st_workers', JSON.stringify(workers));
-  renderWorkers(); renderWorkerList();
+
+function removeRole(i) {
+  const roleName = roles[i];
+  roles.splice(i, 1);
+  localStorage.setItem('st_roles', JSON.stringify(roles));
+  workers.forEach(w => { w.roles = w.roles.filter(r => r !== roleName); });
+  localStorage.setItem('st_workers', JSON.stringify(workers));
+  renderRoleList();
+  renderNewWorkerRoles();
+  renderWorkerList();
+  renderDeviceWorkerSelect();
 }
-function renderWorkerList() {
-  document.getElementById('worker-list').innerHTML = workers.map((w,i) =>
-    `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span>${w}</span><span onclick="removeWorker(${i})" style="color:var(--red);cursor:pointer;padding:4px 8px">✕</span>
+
+function renderRoleList() {
+  document.getElementById('role-list').innerHTML = roles.map((r,i) =>
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span style="font-weight:600;color:var(--ink)">${r}</span>
+      <span onclick="removeRole(${i})" style="color:var(--red);cursor:pointer;padding:4px 8px;font-weight:700">✕</span>
     </div>`
   ).join('');
 }
 
-// ===== STATUS =====
-function selectStatus(status, btn) {
-  selectedStatus = status;
-  document.querySelectorAll('.status-btn').forEach(b => { b.classList.remove('sel'); });
-  btn.classList.add('sel');
-  document.getElementById('status-label').textContent = '→ '+status;
-  checkReady();
+// ===== ADD WORKER with role selection =====
+function renderNewWorkerRoles() {
+  document.getElementById('new-worker-roles').innerHTML = roles.map(r => {
+    const sel = newWorkerSelectedRoles.includes(r);
+    return `<button type="button" class="worker-btn ${sel?'selected':''}" onclick="toggleNewWorkerRole('${r.replace(/'/g,"\\'")}')">${r}</button>`;
+  }).join('');
 }
 
-// ===== READY CHECK =====
-function checkReady() {
-  const ok = !!selectedWorker && document.getElementById('scan-input').value.trim().length>0 && !!selectedStatus;
-  document.getElementById('log-btn').disabled = !ok;
+function toggleNewWorkerRole(role) {
+  const idx = newWorkerSelectedRoles.indexOf(role);
+  if (idx >= 0) newWorkerSelectedRoles.splice(idx,1);
+  else newWorkerSelectedRoles.push(role);
+  renderNewWorkerRoles();
 }
 
-// ===== ITEM LOOKUP =====
-function lookupItemInfo() {
-  const val = document.getElementById('scan-input').value.trim().toUpperCase();
-  const info = itemCache[val];
-  const infoEl = document.getElementById('scan-item-info');
-  if (info) {
-    document.getElementById('scan-item-name').textContent = info.name;
-    document.getElementById('scan-item-customer').textContent = info.customer;
-    infoEl.style.display = 'block';
+function addWorker() {
+  const name = document.getElementById('new-worker').value.trim();
+  if (!name) { showToast('Enter a worker name'); return; }
+  if (!newWorkerSelectedRoles.length) { showToast('Select at least one role'); return; }
+  workers.push({name, roles: [...newWorkerSelectedRoles]});
+  localStorage.setItem('st_workers', JSON.stringify(workers));
+  document.getElementById('new-worker').value = '';
+  newWorkerSelectedRoles = [];
+  renderNewWorkerRoles();
+  renderWorkerList();
+  renderDeviceWorkerSelect();
+  showToast('✅ ' + name + ' added');
+}
+
+function removeWorker(i) {
+  workers.splice(i, 1);
+  localStorage.setItem('st_workers', JSON.stringify(workers));
+  renderWorkerList();
+  renderDeviceWorkerSelect();
+}
+
+function renderWorkerList() {
+  document.getElementById('worker-list').innerHTML = workers.map((w,i) =>
+    `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <div>
+        <span style="font-weight:600;color:var(--ink)">${w.name}</span>
+        <span style="font-size:11px;color:var(--gold2);margin-left:8px;font-weight:600">${w.roles.join(', ')}</span>
+      </div>
+      <span onclick="removeWorker(${i})" style="color:var(--red);cursor:pointer;padding:4px 8px;font-weight:700">✕</span>
+    </div>`
+  ).join('');
+}
+
+// ===== ADMIN PIN =====
+function checkAdminPin() {
+  const entered = document.getElementById('admin-pin-input').value.trim();
+  if (entered === adminPin) {
+    document.getElementById('pin-lock-card').style.display = 'none';
+    document.getElementById('setup-content').style.display = 'block';
+    renderDeviceWorkerSelect();
   } else {
-    infoEl.style.display = 'none';
+    showToast('⚠️ Incorrect PIN');
+    document.getElementById('admin-pin-input').value = '';
   }
 }
 
-// ===== LOG ENTRY =====
-async function logEntry() {
-  const btn = document.getElementById('log-btn');
-  const itemId = document.getElementById('scan-input').value.trim().toUpperCase();
-  const info = itemCache[itemId] || {};
-  btn.disabled = true; btn.textContent = '⏳ SENDING...';
-  btn.style.background = 'linear-gradient(135deg,#555,#333)'; btn.style.color = '#aaa';
+function changeAdminPin() {
+  const newPin = document.getElementById('change-pin-input').value.trim();
+  if (newPin.length < 4) { showToast('PIN must be at least 4 digits'); return; }
+  adminPin = newPin;
+  localStorage.setItem('st_admin_pin', newPin);
+  document.getElementById('change-pin-input').value = '';
+  showToast('✅ PIN updated');
+}
 
-  const entry = { itemId, itemDesc: info.name||'', customer: info.customer||'', status: selectedStatus, worker: selectedWorker, timestamp: new Date().toISOString() };
-  sessionLog.unshift(entry); renderHistory();
+// ===== SCAN PROCESSING (toggle start/stop) =====
+async function processScan(itemId) {
+  if (!selectedWorker) { showToast('Select a worker first'); return; }
+  if (!selectedRole) { showToast('Select your role first'); return; }
+  itemId = itemId.toUpperCase();
+  const task = selectedRole;
+  const stateKey = itemId + '::' + task;
+  const isInProgress = itemTaskState[stateKey] === 'in_progress';
+  const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
+
+  // Toggle state
+  if (isInProgress) { delete itemTaskState[stateKey]; }
+  else { itemTaskState[stateKey] = 'in_progress'; }
+  localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+
+  const info = itemCache[itemId] || {};
+
+  // Show feedback
+  const infoEl = document.getElementById('scan-item-info');
+  const iconEl = document.getElementById('scan-result-icon');
+  const nameEl = document.getElementById('scan-item-name');
+  const custEl = document.getElementById('scan-item-customer');
+  const actionEl = document.getElementById('scan-result-action');
+
+  infoEl.style.display = 'block';
+  nameEl.textContent = info.name || itemId;
+  custEl.textContent = info.customer || '';
+
+  if (isInProgress) {
+    iconEl.textContent = '⏹️';
+    actionEl.textContent = task + ' — Stopped';
+    actionEl.style.color = 'var(--orange)';
+  } else {
+    iconEl.textContent = '▶️';
+    actionEl.textContent = task + ' — Started';
+    actionEl.style.color = 'var(--green)';
+  }
+
+  // Log it
+  const entry = {
+    itemId, itemDesc: info.name||'', customer: info.customer||'',
+    status: newStatus, worker: selectedWorker.name, timestamp: new Date().toISOString()
+  };
+  sessionLog.unshift(entry);
+  renderHistory();
 
   const url = localStorage.getItem('st_url');
   if (url) {
     try {
       await fetch(url, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body:JSON.stringify(entry) });
-      btn.textContent='✅ LOGGED!'; btn.style.background='linear-gradient(135deg,#4caf78,#2d7a50)'; btn.style.color='#fff';
-      showToast('✅ '+itemId+' → '+selectedStatus);
-    } catch(e) {
-      btn.textContent='⚠️ SAVED LOCALLY'; btn.style.background='linear-gradient(135deg,#cf8f4c,#7a5020)'; btn.style.color='#fff';
-    }
-  } else {
-    btn.textContent='✅ LOGGED!'; btn.style.background='linear-gradient(135deg,#4caf78,#2d7a50)'; btn.style.color='#fff';
-    showToast('✅ '+itemId+' → '+selectedStatus);
+    } catch(e) {}
   }
 
+  showToast((isInProgress ? '⏹️ Stopped: ' : '▶️ Started: ') + task + ' on ' + itemId);
+
+  // Clear input, ready for next scan
+  document.getElementById('scan-input').value = '';
   setTimeout(() => {
-    document.getElementById('scan-input').value = '';
-    document.getElementById('scan-item-info').style.display='none';
-    selectedStatus=null;
-    document.querySelectorAll('.status-btn').forEach(b=>b.classList.remove('sel'));
-    document.getElementById('status-label').textContent='No status selected';
-    btn.textContent='LOG ENTRY'; btn.style.background=''; btn.style.color=''; btn.disabled=true;
-    setTimeout(()=>document.getElementById('scan-input').focus(),100);
-  }, 1500);
+    document.getElementById('scan-input').focus();
+  }, 100);
+
+  // Auto-hide info after a few seconds
+  clearTimeout(window._infoHideTimer);
+  window._infoHideTimer = setTimeout(() => { infoEl.style.display = 'none'; }, 4000);
 }
+
+function lookupItemInfo() {} // kept for compatibility, unused now
 
 // ===== HISTORY =====
 function renderHistory() {
   const el = document.getElementById('history-list');
   if (!sessionLog.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries yet</div>'; return; }
   el.innerHTML = sessionLog.slice(0,40).map(e => {
-    const d=new Date(e.timestamp), color=STATUS_COLORS[e.status]||'#888';
+    const d=new Date(e.timestamp), color=getStatusColor(e.status);
     return `<div class="log-entry">
       <div class="log-dot" style="background:${color}"></div>
       <div class="log-meta">
