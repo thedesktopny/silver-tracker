@@ -728,11 +728,18 @@ async function loadTickets() {
   const el = document.getElementById('tickets-list');
   el.innerHTML = '<div class="loading-row"><span class="spinner"></span>Loading tickets...</div>';
   try {
-    const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=50&order=desc&sort=created_at`);
-    if (!resp.ok) throw new Error('HTTP '+resp.status);
-    const data = await resp.json();
-    // RepairDesk returns data.data.ticketData
-    allTickets = (data.data && data.data.ticketData) || data.data || data.tickets || [];
+    // Fetch multiple pages to get all recent tickets
+    let allFetched = [];
+    const pages = 3; // fetch up to 3 pages of 100 = 300 tickets
+    for (let page = 1; page <= pages; page++) {
+      const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=100&page=${page}&order=desc&sort=created_at`);
+      if (!resp.ok) throw new Error('HTTP '+resp.status);
+      const data = await resp.json();
+      const batch = (data.data && data.data.ticketData) || data.data || data.tickets || [];
+      if (!batch.length) break; // no more pages
+      allFetched = allFetched.concat(batch);
+    }
+    allTickets = allFetched;
     // Sort newest first by ticket ID number
     allTickets.sort(function(a, b) {
       var idA = parseInt((getOrderId(a) || '').replace(/[^0-9]/g,'')) || 0;
@@ -741,8 +748,7 @@ async function loadTickets() {
     });
     renderTickets(allTickets);
   } catch(err) {
-    el.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠️ Could not load tickets — CORS restriction.<br><br>
-      <span style="color:var(--text-dim);font-size:11px">This works when hosted on Google Drive or a web server, not from a local file.</span><br><br>
+    el.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠️ Could not load tickets.<br><br>
       <a href="${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=5" target="_blank" style="color:var(--gold)">Test API directly ↗</a></div>`;
   }
 }
