@@ -7,6 +7,7 @@
 <title>Silver Tracker</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap');
 
@@ -202,9 +203,17 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
   <div class="card" id="scan-card" style="display:none">
     <div class="card-label" id="scan-card-label">Scan item</div>
-    <div class="scan-input-wrap">
-      <input id="scan-input" class="scan-input" type="text" placeholder="Scan barcode..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+    <div class="scan-input-wrap" style="margin-bottom:10px">
+      <input id="scan-input" class="scan-input" type="text" placeholder="Type or scan barcode..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
       <span class="scan-icon">▦</span>
+    </div>
+    <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
+      📷 Use Camera to Scan
+    </button>
+    <div id="camera-container" style="display:none;position:relative;border-radius:10px;overflow:hidden;margin-bottom:10px">
+      <video id="camera-video" style="width:100%;border-radius:10px;display:block" autoplay muted playsinline></video>
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60%;height:40%;border:3px solid var(--gold);border-radius:8px;pointer-events:none"></div>
+      <button onclick="toggleCamera()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:none;border-radius:50px;color:white;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer">✕ Close</button>
     </div>
     <div id="scan-item-info" style="display:none;margin-top:12px;padding:14px;background:var(--surface2);border-radius:10px;border:2px solid var(--border)">
       <div id="scan-result-icon" style="font-size:32px;text-align:center;margin-bottom:6px"></div>
@@ -728,11 +737,21 @@ async function loadTickets() {
   const el = document.getElementById('tickets-list');
   el.innerHTML = '<div class="loading-row"><span class="spinner"></span>Loading tickets...</div>';
   try {
-    // RepairDesk returns up to 250 per page, fetch page 1 (most recent 250)
-    const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=250&page=1`);
-    if (!resp.ok) throw new Error('HTTP '+resp.status);
-    const data = await resp.json();
-    allTickets = (data.data && data.data.ticketData) || data.data || data.tickets || [];
+    // Fetch tickets newest first using default_order=1 (RepairDesk recommended param)
+    let allFetched = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=250&page=${page}&default_order=1`);
+      if (!resp.ok) throw new Error('HTTP '+resp.status);
+      const data = await resp.json();
+      const batch = (data.data && data.data.ticketData) || [];
+      allFetched = allFetched.concat(batch);
+      const pagination = data.data && data.data.pagination;
+      totalPages = pagination ? parseInt(pagination.total_pages) : 1;
+      page++;
+    } while (page <= totalPages && page <= 2); // 2 pages = 500 tickets, enough for recent ones
+    allTickets = allFetched;
     // Sort newest first by ticket ID number
     allTickets.sort(function(a, b) {
       var idA = parseInt((getOrderId(a) || '').replace(/[^0-9]/g,'')) || 0;
@@ -952,6 +971,103 @@ function copyScript() {
   navigator.clipboard.writeText(document.getElementById('script-box').textContent)
     .then(()=>showToast('📋 Script copied!'))
     .catch(()=>showToast('Select and copy the script manually'));
+}
+
+// ===== CAMERA SCANNER =====
+let cameraActive = false;
+let codeReader = null;
+
+async function toggleCamera() {
+  if (cameraActive) {
+    stopCamera();
+  } else {
+    startCamera();
+  }
+}
+
+async function startCamera() {
+  const container = document.getElementById('camera-container');
+  const btn = document.getElementById('camera-btn');
+  const video = document.getElementById('camera-video');
+
+  try {
+    // Use ZXing if available
+    if (typeof ZXing !== 'undefined') {
+      codeReader = new ZXing.BrowserMultiFormatReader();
+      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+      // Prefer back camera
+      const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear')) || devices[devices.length - 1];
+      const deviceId = backCamera ? backCamera.deviceId : undefined;
+
+      container.style.display = 'block';
+      btn.textContent = '📷 Camera Active — Point at Barcode';
+      btn.style.background = 'var(--ink)';
+      btn.style.color = '#fff';
+      cameraActive = true;
+
+      await codeReader.decodeFromVideoDevice(deviceId, 'camera-video', (result, err) => {
+        if (result) {
+          const code = result.getText();
+          stopCamera();
+          document.getElementById('scan-input').value = code;
+          processScan(code);
+        }
+      });
+    } else {
+      // Fallback: use getUserMedia + BarcodeDetector API
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      video.srcObject = stream;
+      container.style.display = 'block';
+      btn.textContent = '📷 Camera Active';
+      btn.style.background = 'var(--ink)';
+      btn.style.color = '#fff';
+      cameraActive = true;
+
+      if ('BarcodeDetector' in window) {
+        const detector = new BarcodeDetector();
+        window._cameraInterval = setInterval(async () => {
+          try {
+            const barcodes = await detector.detect(video);
+            if (barcodes.length > 0) {
+              const code = barcodes[0].rawValue;
+              stopCamera();
+              document.getElementById('scan-input').value = code;
+              processScan(code);
+            }
+          } catch(e) {}
+        }, 300);
+      } else {
+        showToast('⚠️ Camera scanning not supported in this browser — try Chrome on Android');
+        stopCamera();
+      }
+    }
+  } catch(err) {
+    showToast('⚠️ Camera access denied — please allow camera permission');
+    container.style.display = 'none';
+    cameraActive = false;
+  }
+}
+
+function stopCamera() {
+  if (codeReader) {
+    try { codeReader.reset(); } catch(e) {}
+    codeReader = null;
+  }
+  const video = document.getElementById('camera-video');
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+  if (window._cameraInterval) {
+    clearInterval(window._cameraInterval);
+    window._cameraInterval = null;
+  }
+  document.getElementById('camera-container').style.display = 'none';
+  const btn = document.getElementById('camera-btn');
+  btn.textContent = '📷 Use Camera to Scan';
+  btn.style.background = '';
+  btn.style.color = '';
+  cameraActive = false;
 }
 
 // ===== TOAST =====
