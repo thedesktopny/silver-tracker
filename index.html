@@ -8,6 +8,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap');
 
@@ -954,11 +955,67 @@ function filterTickets() {
 }
 
 // ===== PRINT LABELS =====
+function generateBarcodeSVG(text) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  try {
+    JsBarcode(svg, text, {
+      format: 'CODE128',
+      width: 2.5,
+      height: 70,
+      displayValue: true,
+      fontSize: 13,
+      margin: 6,
+      background: '#ffffff',
+      lineColor: '#000000'
+    });
+    const svgStr = new XMLSerializer().serializeToString(svg);
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
+  } catch(e) { return ''; }
+}
+
+function buildLabelHtml(items) {
+  return items.map(item => `
+    <div class="label">
+      <div class="info-side">
+        <div class="item-name">${item.itemName||''}</div>
+        ${item.services ? `<div class="item-services">${item.services}</div>` : ''}
+        <div class="item-customer">${item.customer||''}</div>
+      </div>
+      <div class="barcode-side">
+        <img src="${item.barcodeSrc}" style="width:100%;height:auto">
+      </div>
+    </div>
+  `).join('');
+}
+
+function openPrintWindow(labelsHtml) {
+  const printHtml = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Glint Labels</title>
+<style>
+  @page { size: 102mm 59mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: white; font-family: Arial, sans-serif; }
+  .label { width:102mm; height:59mm; display:flex; flex-direction:row; align-items:center; padding:5mm 4mm; gap:3mm; page-break-after:always; break-after:page; overflow:hidden; }
+  .info-side { flex:1; display:flex; flex-direction:column; gap:2mm; overflow:hidden; }
+  .barcode-side { flex-shrink:0; width:50mm; }
+  .item-name { font-size:13pt; font-weight:700; color:#000; line-height:1.2; }
+  .item-services { font-size:8pt; color:#555; }
+  .item-customer { font-size:9pt; color:#333; font-weight:600; }
+</style></head>
+<body>${labelsHtml}
+<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}<\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=700,left=100,top=50');
+  if (!w) { showToast('⚠️ Allow popups for this site to print'); return; }
+  w.document.write(printHtml);
+  w.document.close();
+}
+
 function printSelected() {
   const checked = document.querySelectorAll('.item-cb:checked');
   if (!checked.length) { showToast('Select items first'); return; }
 
-  // Collect item data
   const items = [];
   checked.forEach(cb => {
     items.push({
@@ -969,99 +1026,18 @@ function printSelected() {
     });
   });
 
-  // Generate QR codes as data URLs then open print window
-  const qrPromises = items.map(item => new Promise(resolve => {
-    const div = document.createElement('div');
-    div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
-    document.body.appendChild(div);
-    const qr = new QRCode(div, {
-      text: item.itemId,
-      width: 150, height: 150,
-      colorDark: '#000000', colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    setTimeout(() => {
-      const canvas = div.querySelector('canvas');
-      const img = div.querySelector('img');
-      const src = canvas ? canvas.toDataURL() : (img ? img.src : '');
-      document.body.removeChild(div);
-      resolve({ ...item, qrSrc: src });
-    }, 200);
-  }));
-
   // Log to label history
   items.forEach(item => {
-    const entry = {
-      itemId: item.itemId,
-      itemName: item.itemName,
-      services: item.services,
-      customer: item.customer,
-      printedAt: new Date().toISOString()
-    };
-    // Remove duplicate if exists, then add to front
     labelHistory = labelHistory.filter(h => h.itemId !== item.itemId);
-    labelHistory.unshift(entry);
+    labelHistory.unshift({ ...item, printedAt: new Date().toISOString() });
   });
   localStorage.setItem('st_label_history', JSON.stringify(labelHistory));
   renderLabelHistory();
 
   showToast('⏳ Preparing labels...');
 
-  Promise.all(qrPromises).then(itemsWithQR => {
-    const labelsHtml = itemsWithQR.map(item => `
-      <div class="label">
-        <div class="qr-side">
-          <img src="${item.qrSrc}" width="110" height="110">
-        </div>
-        <div class="info-side">
-          <div class="item-id">${item.itemId}</div>
-          <div class="item-name">${item.itemName}</div>
-          ${item.services ? `<div class="item-services">${item.services}</div>` : ''}
-          <div class="item-customer">${item.customer}</div>
-        </div>
-      </div>
-    `).join('');
-
-    const printHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Glint Labels</title>
-<style>
-  @page { size: 102mm 59mm; margin: 0; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: white; font-family: Arial, sans-serif; }
-  .label {
-    width: 102mm;
-    height: 59mm;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 4mm;
-    gap: 4mm;
-    page-break-after: always;
-    break-after: page;
-    overflow: hidden;
-  }
-  .qr-side { flex-shrink: 0; }
-  .qr-side img { display: block; width: 45mm; height: 45mm; }
-  .info-side { flex: 1; display: flex; flex-direction: column; gap: 2mm; overflow: hidden; }
-  .item-id { font-size: 10pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.1em; }
-  .item-name { font-size: 13pt; font-weight: 700; color: #000; line-height: 1.2; }
-  .item-services { font-size: 8pt; color: #555; }
-  .item-customer { font-size: 9pt; color: #333; font-weight: 600; }
-</style>
-</head>
-<body>
-${labelsHtml}
-<script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }<\/script>
-</body>
-</html>`;
-
-    const printWin = window.open('', '_blank', 'width=400,height=300');
-    printWin.document.write(printHtml);
-    printWin.document.close();
-  });
+  const itemsWithBarcode = items.map(item => ({ ...item, barcodeSrc: generateBarcodeSVG(item.itemId) }));
+  setTimeout(() => openPrintWindow(buildLabelHtml(itemsWithBarcode)), 100);
 }
 
 // ===== SETUP =====
@@ -1225,44 +1201,8 @@ function clearLabelHistory() {
 function reprintLabel(idx) {
   const h = labelHistory[idx];
   if (!h) return;
-  // Generate QR and print
-  const div = document.createElement('div');
-  div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
-  document.body.appendChild(div);
-  new QRCode(div, { text: h.itemId, width: 150, height: 150, colorDark:'#000000', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M });
-  setTimeout(() => {
-    const canvas = div.querySelector('canvas');
-    const qrSrc = canvas ? canvas.toDataURL() : '';
-    document.body.removeChild(div);
-    const printHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Label</title>
-<style>
-@page{size:102mm 59mm;margin:0}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:white;font-family:Arial,sans-serif}
-.label{width:102mm;height:59mm;display:flex;flex-direction:row;align-items:center;padding:4mm;gap:4mm;overflow:hidden}
-.qr-side{flex-shrink:0}
-.qr-side img{display:block;width:45mm;height:45mm}
-.info-side{flex:1;display:flex;flex-direction:column;gap:2mm;overflow:hidden}
-.item-id{font-size:10pt;font-weight:700;color:#8a6a20;letter-spacing:.1em}
-.item-name{font-size:13pt;font-weight:700;color:#000;line-height:1.2}
-.item-services{font-size:8pt;color:#555}
-.item-customer{font-size:9pt;color:#333;font-weight:600}
-</style></head><body>
-<div class="label">
-  <div class="qr-side"><img src="${qrSrc}" width="110" height="110"></div>
-  <div class="info-side">
-    <div class="item-id">${h.itemId}</div>
-    <div class="item-name">${h.itemName||''}</div>
-    ${h.services?`<div class="item-services">${h.services}</div>`:''}
-    <div class="item-customer">${h.customer||''}</div>
-  </div>
-</div>
-<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();}}<\/script>
-</body></html>`;
-    const w = window.open('', '_blank', 'width=400,height=300');
-    w.document.write(printHtml);
-    w.document.close();
-  }, 300);
+  const item = { ...h, barcodeSrc: generateBarcodeSVG(h.itemId) };
+  openPrintWindow(buildLabelHtml([item]));
 }
 
 // ===== TOAST =====
