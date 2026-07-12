@@ -126,7 +126,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .search-bar{display:flex;gap:8px;margin-bottom:14px}
 
 /* LABELS */
-.label-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.label-preview-grid{display:block;margin-top:12px}
 .label-preview-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
 .label-preview-card .qr-wrap{display:flex;justify-content:center;margin-bottom:8px}
 .label-preview-card .lbl-id{font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.08em}
@@ -150,15 +150,33 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 #default-badge{font-size:9px;font-weight:700;color:var(--gold2);background:rgba(184,144,64,.1);border:1.5px solid rgba(184,144,64,.3);border-radius:50px;padding:4px 12px;cursor:pointer;letter-spacing:.08em}
 
 @media print{
-  body{background:white}
-  .app-shell,.nav,.glint-header,.page{display:block!important;box-shadow:none;max-width:100%}
-  .page:not(#page-labels){display:none!important}
-  .no-print{display:none!important}
-  .label-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .label-preview-card{border:1px solid #ccc;padding:10px;break-inside:avoid;background:white}
-  .lbl-sel{display:none!important}
-  .card,.search-bar,.print-btn-main,.gen-btn,.no-print{display:none!important}
-  #label-print-area{display:block!important}
+  @page { size: 102mm 59mm; margin: 3mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body{ background:white; margin:0; padding:0; }
+  .app-shell,.nav,.glint-header{ display:none!important; }
+  .page{ display:none!important; }
+  #page-tickets{ display:block!important; padding:0!important; }
+  .no-print,.search-bar,.print-btn-main,.card,.ticket-card{ display:none!important; }
+  #label-print-area{ display:block!important; }
+  .label-preview-grid{ display:block; }
+  .label-preview-card{
+    display:block!important;
+    width:96mm;
+    height:53mm;
+    page-break-after:always;
+    break-after:page;
+    border:none;
+    padding:4mm;
+    background:white;
+    box-sizing:border-box;
+    overflow:hidden;
+  }
+  .label-preview-card .qr-wrap{ margin-bottom:2mm; }
+  .label-preview-card .qr-wrap img, .label-preview-card .qr-wrap canvas{ width:28mm!important; height:28mm!important; }
+  .lbl-sel{ display:none!important; }
+  .lbl-id{ font-size:14pt!important; font-weight:700!important; color:#000!important; }
+  .lbl-name{ font-size:11pt!important; color:#000!important; }
+  .lbl-customer{ font-size:9pt!important; color:#333!important; }
 }
 </style>
 </head>
@@ -867,19 +885,23 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
         <div class="item-meta">${itemId}</div>
       </div>
     </div>`;
-  }).join('') + `<div style="padding:8px 0">
-    <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}')"
-      style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.06em;padding:10px 12px;cursor:pointer;width:100%;text-transform:uppercase">
-      ☑ Select all ${devices.length} items in ${orderId}
+  }).join('') + `<div style="padding:8px 0;display:flex;gap:8px">
+    <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', true)"
+      style="flex:1;background:var(--ink);border:2px solid var(--ink);border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
+      ☑ Select All
+    </button>
+    <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', false)"
+      style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
+      ☐ Deselect All
     </button>
   </div>`;
 }
 
-function selectAllInTicket(safeOrderId, count, orderId) {
+function selectAllInTicket(safeOrderId, count, orderId, select=true) {
   for (let i=1; i<=count; i++) {
     const itemId = (orderId+'-'+i).replace(/[^a-zA-Z0-9]/g,'_');
     const cb = document.getElementById('cb-'+itemId);
-    if (cb) cb.checked = true;
+    if (cb) cb.checked = select;
   }
   updateSelectedCount();
 }
@@ -928,28 +950,35 @@ function printSelected() {
 
     const card = document.createElement('div');
     card.className = 'label-preview-card';
+    card.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:12px;padding:12px;background:white;border:1px solid var(--border);border-radius:10px;margin-bottom:10px';
 
+    // QR code on left
     const qrWrap = document.createElement('div');
     qrWrap.className = 'qr-wrap';
+    qrWrap.style.cssText = 'flex-shrink:0';
     const qrEl = document.createElement('div');
     qrEl.id = 'qr-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
     qrWrap.appendChild(qrEl);
     card.appendChild(qrWrap);
 
-    card.innerHTML += `
-      <div class="lbl-id">${itemId}</div>
-      <div class="lbl-name">${itemName}</div>
-      ${services?`<div class="lbl-name" style="font-size:9px;color:#666">${services}</div>`:''}
-      <div class="lbl-customer">${customer}</div>
-      <span class="lbl-sel">✓ Selected</span>
+    // Info on right
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0';
+    info.innerHTML = `
+      <div class="lbl-id" style="font-size:13px;font-weight:700;color:var(--ink);letter-spacing:.06em;margin-bottom:4px">${itemId}</div>
+      <div class="lbl-name" style="font-size:14px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:600;line-height:1.3;margin-bottom:3px">${itemName}</div>
+      ${services?`<div style="font-size:10px;color:var(--ink3);margin-bottom:3px">${services}</div>`:''}
+      <div class="lbl-customer" style="font-size:11px;color:var(--ink3);font-weight:500">${customer}</div>
+      <span class="lbl-sel" style="display:inline-block;margin-top:4px;font-size:9px;color:var(--green);background:#eef7f2;border-radius:4px;padding:2px 7px">✓ Selected</span>
     `;
+    card.appendChild(info);
     printArea.appendChild(card);
 
     const qrSafeId = itemId.replace(/[^a-zA-Z0-9]/g,'_');
     promises.push(new Promise(resolve => {
       setTimeout(() => {
         const qrTarget = document.getElementById('qr-'+qrSafeId);
-        if (qrTarget) new QRCode(qrTarget, { text: itemId, width: 90, height: 90, colorDark:'#000000', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M });
+        if (qrTarget) new QRCode(qrTarget, { text: itemId, width: 110, height: 110, colorDark:'#000000', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M });
         resolve();
       }, 50);
     }));
