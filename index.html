@@ -359,6 +359,31 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
   </div>
 
   <div class="card">
+    <div class="card-label">Label Size (mm)</div>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:12px">Set your Dymo label dimensions. Change anytime if you switch label rolls.</div>
+    <div class="gen-row" style="align-items:center">
+      <div style="flex:1">
+        <label style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px">Width</label>
+        <input id="label-width-input" class="gen-input" type="number" min="20" max="300" step="1">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px">Height</label>
+        <input id="label-height-input" class="gen-input" type="number" min="10" max="300" step="1">
+      </div>
+      <button class="gen-btn" style="align-self:flex-end" onclick="saveLabelSize()">Save</button>
+    </div>
+    <div style="margin-top:10px">
+      <div style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Common presets</div>
+      <div class="worker-row">
+        <button class="worker-btn" onclick="setLabelPreset(102,59)">102 × 59 mm</button>
+        <button class="worker-btn" onclick="setLabelPreset(89,36)">89 × 36 mm</button>
+        <button class="worker-btn" onclick="setLabelPreset(57,32)">57 × 32 mm</button>
+        <button class="worker-btn" onclick="setLabelPreset(54,25)">54 × 25 mm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <div class="card-label">Google Apps Script — paste into your Sheet</div>
     <div class="script-box" id="script-box">function doPost(e) {
   try {
@@ -468,6 +493,7 @@ let itemTaskState = JSON.parse(localStorage.getItem('st_item_task_state') || '{}
 let adminPin = localStorage.getItem('st_admin_pin') || '1234';
 let newWorkerSelectedRoles = [];
 let labelHistory = JSON.parse(localStorage.getItem('st_label_history') || '[]');
+let labelSize = JSON.parse(localStorage.getItem('st_label_size') || '{"width":102,"height":59}');
 
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 function getStatusColor(status) {
@@ -667,6 +693,7 @@ function checkAdminPin() {
     document.getElementById('pin-lock-card').style.display = 'none';
     document.getElementById('setup-content').style.display = 'block';
     renderDeviceWorkerSelect();
+    loadLabelSizeInputs();
   } else {
     showToast('⚠️ Incorrect PIN');
     document.getElementById('admin-pin-input').value = '';
@@ -989,15 +1016,16 @@ function buildLabelHtml(items) {
 }
 
 function openPrintWindow(labelsHtml) {
+  const w = labelSize.width, h = labelSize.height;
   const printHtml = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>GlintLabels</title>
 <style>
-  @page { size: 102mm 59mm; margin: 0mm; }
+  @page { size: ${w}mm ${h}mm; margin: 0mm; }
   html, body { margin:0; padding:0; background:white; font-family:Arial,sans-serif; }
   * { box-sizing: border-box; }
   .label {
-    width: 102mm;
-    height: 59mm;
+    width: ${w}mm;
+    height: ${h}mm;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -1019,10 +1047,10 @@ function openPrintWindow(labelsHtml) {
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
 </body></html>`;
 
-  const w = window.open('', '_blank', 'width=900,height=700,left=100,top=50');
-  if (!w) { showToast('⚠️ Allow popups for this site to print'); return; }
-  w.document.write(printHtml);
-  w.document.close();
+  const printWin = window.open('', '_blank', 'width=900,height=700,left=100,top=50');
+  if (!printWin) { showToast('⚠️ Allow popups for this site to print'); return; }
+  printWin.document.write(printHtml);
+  printWin.document.close();
 }
 
 function printSelected() {
@@ -1216,6 +1244,30 @@ function reprintLabel(idx) {
   if (!h) return;
   const item = { ...h, barcodeSrc: generateBarcodeSVG(h.itemId) };
   openPrintWindow(buildLabelHtml([item]));
+}
+
+// ===== LABEL SIZE =====
+function loadLabelSizeInputs() {
+  const wI = document.getElementById('label-width-input');
+  const hI = document.getElementById('label-height-input');
+  if (wI) wI.value = labelSize.width;
+  if (hI) hI.value = labelSize.height;
+}
+
+function saveLabelSize() {
+  const w = parseFloat(document.getElementById('label-width-input').value);
+  const h = parseFloat(document.getElementById('label-height-input').value);
+  if (!w || !h || w < 10 || h < 10) { showToast('Enter valid dimensions'); return; }
+  labelSize = { width: w, height: h };
+  localStorage.setItem('st_label_size', JSON.stringify(labelSize));
+  showToast('✅ Label size saved: ' + w + ' × ' + h + ' mm');
+}
+
+function setLabelPreset(w, h) {
+  labelSize = { width: w, height: h };
+  localStorage.setItem('st_label_size', JSON.stringify(labelSize));
+  loadLabelSizeInputs();
+  showToast('✅ Label size: ' + w + ' × ' + h + ' mm');
 }
 
 // ===== TOAST =====
