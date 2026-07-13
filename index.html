@@ -7,7 +7,7 @@
 <title>Silver Tracker</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap');
@@ -1243,54 +1243,45 @@ async function startCamera() {
   cameraActive = true;
 
   try {
-    // Step 2: use ZXing to decode from the video stream we already have
-    if (typeof ZXing !== 'undefined') {
-      video.srcObject = stream;
-      await video.play();
-      // Set up format hints for the barcode types we use (Code 128 for our labels)
-      const hints = new Map();
+    video.srcObject = stream;
+    await video.play();
+
+    // Method 1: Native BarcodeDetector (best on Android Chrome)
+    if ('BarcodeDetector' in window) {
+      let formats = ['code_128','code_39','ean_13','ean_8','upc_a','upc_e','qr_code'];
       try {
-        const formats = [
-          ZXing.BarcodeFormat.CODE_128,
-          ZXing.BarcodeFormat.CODE_39,
-          ZXing.BarcodeFormat.EAN_13,
-          ZXing.BarcodeFormat.EAN_8,
-          ZXing.BarcodeFormat.UPC_A,
-          ZXing.BarcodeFormat.QR_CODE
-        ];
-        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-        codeReader = new ZXing.BrowserMultiFormatReader(hints);
-      } catch(e) {
-        codeReader = new ZXing.BrowserMultiFormatReader();
-      }
-      codeReader.decodeFromVideoElement('camera-video', (result, err) => {
+        const supported = await BarcodeDetector.getSupportedFormats();
+        formats = formats.filter(f => supported.includes(f));
+      } catch(e) {}
+      const detector = new BarcodeDetector({ formats });
+      window._cameraInterval = setInterval(async () => {
+        if (!cameraActive) return;
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            const code = barcodes[0].rawValue;
+            if (navigator.vibrate) navigator.vibrate(100);
+            stopCamera();
+            document.getElementById('scan-input').value = code;
+            processScan(code);
+          }
+        } catch(e) {}
+      }, 250);
+    }
+    // Method 2: ZXing library fallback
+    else if (typeof ZXingBrowser !== 'undefined') {
+      codeReader = new ZXingBrowser.BrowserMultiFormatReader();
+      codeReader.decodeFromVideoElement(video, (result, err) => {
         if (result) {
           const code = result.getText();
-          // Brief vibration feedback if available
           if (navigator.vibrate) navigator.vibrate(100);
           stopCamera();
           document.getElementById('scan-input').value = code;
           processScan(code);
         }
       });
-    } else if ('BarcodeDetector' in window) {
-      // Fallback: native BarcodeDetector
-      video.srcObject = stream;
-      await video.play();
-      const detector = new BarcodeDetector();
-      window._cameraInterval = setInterval(async () => {
-        try {
-          const barcodes = await detector.detect(video);
-          if (barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            stopCamera();
-            document.getElementById('scan-input').value = code;
-            processScan(code);
-          }
-        } catch(e) {}
-      }, 300);
-    } else {
+    }
+    else {
       showToast('⚠️ Barcode scanning not supported — type the code manually');
       stopCamera();
     }
