@@ -223,9 +223,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
   <div class="card" id="scan-card" style="display:none">
     <div class="card-label" id="scan-card-label">Scan item</div>
-    <div class="scan-input-wrap" style="margin-bottom:10px">
-      <input id="scan-input" class="scan-input" type="text" placeholder="Type or scan barcode..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
-      <span class="scan-icon">▦</span>
+    <div class="scan-input-wrap" style="margin-bottom:10px;display:flex;gap:8px">
+      <div style="position:relative;flex:1">
+        <input id="scan-input" class="scan-input" type="text" placeholder="Type or scan barcode..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="width:100%">
+        <span class="scan-icon">▦</span>
+      </div>
+      <button onclick="submitScan()" class="gen-btn" style="flex-shrink:0">Enter</button>
     </div>
     <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
       📷 Use Camera to Scan
@@ -512,15 +515,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
   renderLabelHistory();
   const input = document.getElementById('scan-input');
-  input.addEventListener('input', () => {
-    const val = input.value.trim();
-    clearTimeout(window._scanTimer);
-    window._scanTimer = setTimeout(() => { if (val.length >= 3) processScan(val); }, 150);
-  });
+  let lastInputTime = 0;
+  let fastCharCount = 0;
+
   input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); const val=input.value.trim(); if(val) processScan(val); }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = input.value.trim();
+      if (val) processScan(val);
+      fastCharCount = 0;
+    }
+  });
+
+  // Detect hardware scanner: characters arrive in a rapid burst
+  input.addEventListener('input', () => {
+    const now = Date.now();
+    const gap = now - lastInputTime;
+    lastInputTime = now;
+
+    if (gap < 40) {
+      fastCharCount++;
+    } else {
+      fastCharCount = 0;
+    }
+
+    clearTimeout(window._scanTimer);
+    window._scanTimer = setTimeout(() => {
+      const val = input.value.trim();
+      // If a burst of fast characters happened (scanner) and no Enter came, auto-submit
+      if (fastCharCount >= 3 && val.length >= 4) {
+        processScan(val);
+        fastCharCount = 0;
+      }
+    }, 120);
   });
 });
+
+function submitScan() {
+  const input = document.getElementById('scan-input');
+  const val = input.value.trim();
+  if (val) processScan(val);
+}
 
 // ===== NAV =====
 function showPage(name, el) {
@@ -1040,13 +1075,12 @@ function updateSelectedCount() {
 }
 
 function filterTickets() {
-  const q = document.getElementById('ticket-search').value.toLowerCase();
+  const q = document.getElementById('ticket-search').value.toLowerCase().trim();
   if (!q) { renderTickets(allTickets); return; }
   const filtered = allTickets.filter(t => {
-    const id = String(t.id||t.ticket_id||'');
+    const id = (getOrderId(t) || '').toLowerCase();
     const cust = getCustomerName(t).toLowerCase();
-    const dev = (t.device_name||t.device||'').toLowerCase();
-    return id.includes(q) || cust.includes(q) || dev.includes(q);
+    return id.includes(q) || cust.includes(q);
   });
   renderTickets(filtered);
 }
@@ -1213,10 +1247,28 @@ async function startCamera() {
     if (typeof ZXing !== 'undefined') {
       video.srcObject = stream;
       await video.play();
-      codeReader = new ZXing.BrowserMultiFormatReader();
+      // Set up format hints for the barcode types we use (Code 128 for our labels)
+      const hints = new Map();
+      try {
+        const formats = [
+          ZXing.BarcodeFormat.CODE_128,
+          ZXing.BarcodeFormat.CODE_39,
+          ZXing.BarcodeFormat.EAN_13,
+          ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A,
+          ZXing.BarcodeFormat.QR_CODE
+        ];
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        codeReader = new ZXing.BrowserMultiFormatReader(hints);
+      } catch(e) {
+        codeReader = new ZXing.BrowserMultiFormatReader();
+      }
       codeReader.decodeFromVideoElement('camera-video', (result, err) => {
         if (result) {
           const code = result.getText();
+          // Brief vibration feedback if available
+          if (navigator.vibrate) navigator.vibrate(100);
           stopCamera();
           document.getElementById('scan-input').value = code;
           processScan(code);
