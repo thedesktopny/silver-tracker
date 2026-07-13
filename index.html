@@ -1179,22 +1179,42 @@ async function startCamera() {
   const btn = document.getElementById('camera-btn');
   const video = document.getElementById('camera-video');
 
+  // Step 1: explicitly request camera permission via getUserMedia (this triggers the prompt)
+  let stream;
   try {
-    // Use ZXing if available
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false
+    });
+  } catch(err) {
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showToast('⚠️ Camera blocked. Tap the lock icon near the URL → Permissions → Camera → Allow, then reload.');
+    } else if (err.name === 'NotFoundError') {
+      showToast('⚠️ No camera found on this device');
+    } else if (!window.isSecureContext) {
+      showToast('⚠️ Camera needs HTTPS — make sure you opened the https:// link');
+    } else {
+      showToast('⚠️ Camera error: ' + err.name);
+    }
+    container.style.display = 'none';
+    cameraActive = false;
+    return;
+  }
+
+  // Permission granted — show video
+  container.style.display = 'block';
+  btn.textContent = '📷 Camera Active — Point at Barcode';
+  btn.style.background = 'var(--ink)';
+  btn.style.color = '#fff';
+  cameraActive = true;
+
+  try {
+    // Step 2: use ZXing to decode from the video stream we already have
     if (typeof ZXing !== 'undefined') {
+      video.srcObject = stream;
+      await video.play();
       codeReader = new ZXing.BrowserMultiFormatReader();
-      const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-      // Prefer back camera
-      const backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear')) || devices[devices.length - 1];
-      const deviceId = backCamera ? backCamera.deviceId : undefined;
-
-      container.style.display = 'block';
-      btn.textContent = '📷 Camera Active — Point at Barcode';
-      btn.style.background = 'var(--ink)';
-      btn.style.color = '#fff';
-      cameraActive = true;
-
-      await codeReader.decodeFromVideoDevice(deviceId, 'camera-video', (result, err) => {
+      codeReader.decodeFromVideoElement('camera-video', (result, err) => {
         if (result) {
           const code = result.getText();
           stopCamera();
@@ -1202,38 +1222,29 @@ async function startCamera() {
           processScan(code);
         }
       });
-    } else {
-      // Fallback: use getUserMedia + BarcodeDetector API
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    } else if ('BarcodeDetector' in window) {
+      // Fallback: native BarcodeDetector
       video.srcObject = stream;
-      container.style.display = 'block';
-      btn.textContent = '📷 Camera Active';
-      btn.style.background = 'var(--ink)';
-      btn.style.color = '#fff';
-      cameraActive = true;
-
-      if ('BarcodeDetector' in window) {
-        const detector = new BarcodeDetector();
-        window._cameraInterval = setInterval(async () => {
-          try {
-            const barcodes = await detector.detect(video);
-            if (barcodes.length > 0) {
-              const code = barcodes[0].rawValue;
-              stopCamera();
-              document.getElementById('scan-input').value = code;
-              processScan(code);
-            }
-          } catch(e) {}
-        }, 300);
-      } else {
-        showToast('⚠️ Camera scanning not supported in this browser — try Chrome on Android');
-        stopCamera();
-      }
+      await video.play();
+      const detector = new BarcodeDetector();
+      window._cameraInterval = setInterval(async () => {
+        try {
+          const barcodes = await detector.detect(video);
+          if (barcodes.length > 0) {
+            const code = barcodes[0].rawValue;
+            stopCamera();
+            document.getElementById('scan-input').value = code;
+            processScan(code);
+          }
+        } catch(e) {}
+      }, 300);
+    } else {
+      showToast('⚠️ Barcode scanning not supported — type the code manually');
+      stopCamera();
     }
   } catch(err) {
-    showToast('⚠️ Camera access denied — please allow camera permission');
-    container.style.display = 'none';
-    cameraActive = false;
+    showToast('⚠️ Scanner error: ' + err.message);
+    stopCamera();
   }
 }
 
