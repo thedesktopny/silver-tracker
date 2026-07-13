@@ -901,6 +901,12 @@ function toggleTicket(orderId) {
   renderTicketItems(orderId, customer, devices, itemsEl);
 }
 
+const CANDELABRA_PARTS = ['Base', 'Arms', 'Cups', 'Plates'];
+
+function isCandelabra(name) {
+  return /candelabra/i.test(name || '');
+}
+
 function renderTicketItems(orderId, customer, devices, itemsEl) {
   const safeOrderId = orderId.replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -919,9 +925,10 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
     const safeDeviceName = deviceName.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
     const safeCustomer = customer.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
     const safeServices = services.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+    const cbId = 'cb-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
 
-    return `<div class="item-row">
-      <input type="checkbox" class="item-cb" id="cb-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}"
+    let html = `<div class="item-row">
+      <input type="checkbox" class="item-cb" id="${cbId}"
         onchange="updateSelectedCount()"
         data-item-id="${itemId}"
         data-item-name="${safeDeviceName}${serial}"
@@ -931,9 +938,21 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
       <div class="item-info">
         <div class="item-name">${deviceName}${serial}</div>
         ${services?`<div class="item-meta" style="color:var(--gold-dim)">${services}</div>`:''}
-        <div class="item-meta">${itemId}</div>
-      </div>
-    </div>`;
+        <div class="item-meta">${itemId}</div>`;
+
+    // Candelabra split option
+    if (isCandelabra(deviceName)) {
+      const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
+      html += `
+        <button onclick="toggleCandelabraParts('${itemId}','${safeOrderId}',${itemNum},'${safeDeviceName}','${safeCustomer}','${safeServices}')"
+          style="margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase;width:100%">
+          ⚙️ Split into parts (Base · Arms · Cups · Plates)
+        </button>
+        <div id="${splitId}" style="display:none;margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border)"></div>`;
+    }
+
+    html += `</div></div>`;
+    return html;
   }).join('') + `<div style="padding:8px 0;display:flex;gap:8px">
     <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', true)"
       style="flex:1;background:var(--ink);border:2px solid var(--ink);border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
@@ -944,6 +963,57 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
       ☐ Deselect All
     </button>
   </div>`;
+}
+
+function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, customer, services) {
+  const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const el = document.getElementById(splitId);
+  if (!el) return;
+
+  if (el.style.display === 'block') {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    updateSelectedCount();
+    return;
+  }
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Candelabra Parts — each gets its own label</div>` +
+    CANDELABRA_PARTS.map(part => {
+      const partId = itemId + '-' + part.toUpperCase();
+      const partCbId = 'cb-' + partId.replace(/[^a-zA-Z0-9]/g,'_');
+      const partName = deviceName + ' — ' + part;
+      // Cache each part for scan lookup
+      itemCache[partId] = { name: partName, customer: customer.replace(/&#39;/g,"'").replace(/&quot;/g,'"'), ticketId: safeOrderId, services };
+      return `<div class="item-row" style="padding:8px 0">
+        <input type="checkbox" class="item-cb" id="${partCbId}"
+          onchange="updateSelectedCount()"
+          data-item-id="${partId}"
+          data-item-name="${deviceName} — ${part}"
+          data-services="${services}"
+          data-customer="${customer}"
+          data-ticket="${safeOrderId}">
+        <div class="item-info">
+          <div class="item-name" style="font-size:15px">${part}</div>
+          <div class="item-meta">${partId}</div>
+        </div>
+      </div>`;
+    }).join('') +
+    `<div style="display:flex;gap:6px;margin-top:8px">
+      <button onclick="selectCandelabraParts('${itemId}',true)" style="flex:1;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">All Parts</button>
+      <button onclick="selectCandelabraParts('${itemId}',false)" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:6px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">None</button>
+    </div>`;
+
+  updateSelectedCount();
+}
+
+function selectCandelabraParts(itemId, select) {
+  CANDELABRA_PARTS.forEach(part => {
+    const partId = itemId + '-' + part.toUpperCase();
+    const cb = document.getElementById('cb-' + partId.replace(/[^a-zA-Z0-9]/g,'_'));
+    if (cb) cb.checked = select;
+  });
+  updateSelectedCount();
 }
 
 function selectAllInTicket(safeOrderId, count, orderId, select=true) {
