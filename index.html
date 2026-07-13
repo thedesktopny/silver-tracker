@@ -242,8 +242,23 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
       <div id="scan-result-icon" style="font-size:32px;text-align:center;margin-bottom:6px"></div>
       <div id="scan-item-name" style="font-size:18px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;text-align:center"></div>
       <div id="scan-item-customer" style="font-size:11px;color:var(--ink3);text-align:center;margin-top:2px;font-weight:600"></div>
-      <div id="scan-result-action" style="font-size:13px;font-weight:700;text-align:center;margin-top:10px;letter-spacing:.06em;text-transform:uppercase"></div>
+      <div id="scan-result-action" style="font-size:16px;font-weight:700;text-align:center;margin-top:10px;letter-spacing:.04em;text-transform:uppercase;line-height:1.4"></div>
     </div>
+  </div>
+
+  <div class="card" id="active-work-panel" style="display:none;background:#eef7f2;border:2px solid var(--green)">
+    <div style="text-align:center">
+      <div style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.12em;text-transform:uppercase">▶ Currently Working On</div>
+      <div id="active-work-name" style="font-size:20px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:6px;line-height:1.2"></div>
+      <div id="active-work-task" style="font-size:12px;color:var(--green);font-weight:700;margin-top:2px;letter-spacing:.04em;text-transform:uppercase"></div>
+      <div id="active-work-timer" style="font-size:32px;color:var(--ink);font-weight:700;margin-top:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em">00:00</div>
+      <div style="font-size:10px;color:var(--ink3);margin-top:2px">scan again to stop</div>
+    </div>
+  </div>
+
+  <div class="card" id="scan-recent-card" style="display:none">
+    <div class="card-label">Your recent scans</div>
+    <div id="scan-recent-list"></div>
   </div>
 
 </div>
@@ -497,6 +512,8 @@ let adminPin = localStorage.getItem('st_admin_pin') || '1234';
 let newWorkerSelectedRoles = [];
 let labelHistory = JSON.parse(localStorage.getItem('st_label_history') || '[]');
 let labelSize = JSON.parse(localStorage.getItem('st_label_size') || '{"width":102,"height":59}');
+let activeWork = JSON.parse(localStorage.getItem('st_active_work') || 'null'); // {itemId, name, task, startedAt}
+let activeWorkTimer = null;
 
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 function getStatusColor(status) {
@@ -591,12 +608,17 @@ function activateWorkerOnDevice(w) {
   if (w.roles.length > 1) {
     document.getElementById('role-select-card').style.display = 'block';
     document.getElementById('scan-card').style.display = 'none';
+    document.getElementById('scan-recent-card').style.display = 'none';
     renderRoleButtons(w.roles);
   } else {
     selectedRole = w.roles[0] || '';
     document.getElementById('role-select-card').style.display = 'none';
     document.getElementById('scan-card').style.display = 'block';
+    document.getElementById('scan-recent-card').style.display = 'block';
     document.getElementById('scan-card-label').textContent = 'Scan item — ' + selectedRole;
+    renderScanRecent();
+    renderActiveWork();
+    if (activeWork) startActiveWorkTimer();
     setTimeout(() => document.getElementById('scan-input').focus(), 150);
   }
 }
@@ -610,10 +632,14 @@ function renderRoleButtons(workerRoles) {
 function selectRole(role) {
   selectedRole = role;
   document.getElementById('scan-card').style.display = 'block';
+  document.getElementById('scan-recent-card').style.display = 'block';
   document.getElementById('scan-card-label').textContent = 'Scan item — ' + role;
   document.querySelectorAll('#role-row .worker-btn').forEach(b => {
     b.classList.toggle('selected', b.textContent.trim() === role);
   });
+  renderScanRecent();
+  renderActiveWork();
+  if (activeWork) startActiveWorkTimer();
   setTimeout(() => document.getElementById('scan-input').focus(), 150);
 }
 
@@ -761,6 +787,22 @@ async function processScan(itemId) {
 
   const info = itemCache[itemId] || {};
 
+  // Update persistent active-work panel
+  if (isInProgress) {
+    // Stopped — clear active work if it was this item
+    if (activeWork && activeWork.itemId === itemId && activeWork.task === task) {
+      activeWork = null;
+      localStorage.setItem('st_active_work', 'null');
+      stopActiveWorkTimer();
+    }
+  } else {
+    // Started — set active work
+    activeWork = { itemId, name: info.name || itemId, task, startedAt: Date.now() };
+    localStorage.setItem('st_active_work', JSON.stringify(activeWork));
+    startActiveWorkTimer();
+  }
+  renderActiveWork();
+
   // Show feedback
   const infoEl = document.getElementById('scan-item-info');
   const iconEl = document.getElementById('scan-result-icon');
@@ -774,12 +816,16 @@ async function processScan(itemId) {
 
   if (isInProgress) {
     iconEl.textContent = '⏹️';
-    actionEl.textContent = task + ' — Stopped';
+    actionEl.innerHTML = 'STOPPED<br><span style="font-size:11px;font-weight:600;color:var(--ink3)">' + task + ' finished on this item</span>';
     actionEl.style.color = 'var(--orange)';
+    infoEl.style.borderColor = 'var(--orange)';
+    infoEl.style.background = '#faf3ea';
   } else {
-    iconEl.textContent = '▶️';
-    actionEl.textContent = task + ' — Started';
+    iconEl.textContent = '✅';
+    actionEl.innerHTML = 'NOW WORKING<br><span style="font-size:12px;font-weight:700;color:var(--ink)">' + task + ' · ' + (info.name || itemId) + '</span>';
     actionEl.style.color = 'var(--green)';
+    infoEl.style.borderColor = 'var(--green)';
+    infoEl.style.background = '#eef7f2';
   }
 
   // Log it
@@ -789,6 +835,7 @@ async function processScan(itemId) {
   };
   sessionLog.unshift(entry);
   renderHistory();
+  renderScanRecent();
 
   const url = localStorage.getItem('st_url');
   if (url) {
@@ -797,7 +844,8 @@ async function processScan(itemId) {
     } catch(e) {}
   }
 
-  showToast((isInProgress ? '⏹️ Stopped: ' : '▶️ Started: ') + task + ' on ' + itemId);
+  if (navigator.vibrate) navigator.vibrate(isInProgress ? [50,50,50] : 120);
+  showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
 
   // Clear input, ready for next scan
   document.getElementById('scan-input').value = '';
@@ -805,9 +853,65 @@ async function processScan(itemId) {
     document.getElementById('scan-input').focus();
   }, 100);
 
-  // Auto-hide info after a few seconds
+  // Keep feedback visible longer (7 seconds)
   clearTimeout(window._infoHideTimer);
-  window._infoHideTimer = setTimeout(() => { infoEl.style.display = 'none'; }, 4000);
+  window._infoHideTimer = setTimeout(() => { infoEl.style.display = 'none'; }, 7000);
+}
+
+function renderScanRecent() {
+  const el = document.getElementById('scan-recent-list');
+  if (!el) return;
+  const mine = selectedWorker ? sessionLog.filter(e => e.worker === selectedWorker.name).slice(0,8) : [];
+  if (!mine.length) { el.innerHTML = '<div style="font-size:11px;color:var(--ink3);text-align:center;padding:8px">No scans yet this session</div>'; return; }
+  el.innerHTML = mine.map(e => {
+    const d = new Date(e.timestamp);
+    const t = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const started = e.status.includes('Started');
+    const color = started ? 'var(--green)' : 'var(--orange)';
+    const icon = started ? '▶️' : '⏹️';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">${icon}</span>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:700;color:var(--ink)">${e.itemDesc||e.itemId}</div>
+        <div style="font-size:10px;color:${color};font-weight:600">${e.status}</div>
+      </div>
+      <div style="font-size:10px;color:var(--ink3)">${t}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderActiveWork() {
+  const panel = document.getElementById('active-work-panel');
+  if (!panel) return;
+  if (activeWork) {
+    panel.style.display = 'block';
+    document.getElementById('active-work-name').textContent = activeWork.name;
+    document.getElementById('active-work-task').textContent = activeWork.task;
+    updateActiveWorkTimer();
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function updateActiveWorkTimer() {
+  if (!activeWork) return;
+  const el = document.getElementById('active-work-timer');
+  if (!el) return;
+  const elapsed = Math.floor((Date.now() - activeWork.startedAt) / 1000);
+  const h = Math.floor(elapsed / 3600);
+  const m = Math.floor((elapsed % 3600) / 60);
+  const s = elapsed % 60;
+  const pad = n => String(n).padStart(2,'0');
+  el.textContent = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+function startActiveWorkTimer() {
+  stopActiveWorkTimer();
+  activeWorkTimer = setInterval(updateActiveWorkTimer, 1000);
+}
+
+function stopActiveWorkTimer() {
+  if (activeWorkTimer) { clearInterval(activeWorkTimer); activeWorkTimer = null; }
 }
 
 function lookupItemInfo() {} // kept for compatibility, unused now
@@ -873,6 +977,40 @@ function getCustomerName(t) {
   return 'Unknown Customer';
 }
 
+function getCustomerCity(t) {
+  const s = t.summary;
+  return (s && s.customer && s.customer.city) ? s.customer.city : '';
+}
+
+function getCustomerPhone(t) {
+  const s = t.summary;
+  if (s && s.customer) return s.customer.mobile || s.customer.phone || '';
+  return '';
+}
+
+function getTicketDates(t) {
+  const s = t.summary;
+  let created = '', due = '';
+  if (s) {
+    if (s.created_date) created = new Date(s.created_date*1000).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    if (s.due_date) due = new Date(s.due_date*1000).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+  }
+  return { created, due };
+}
+
+function getDeviceNote(device, ticket) {
+  // Notes are in a separate ticket-level array, linked by deviceId
+  const notesArr = (ticket && ticket.notes) || [];
+  const devId = String(device.device ? device.device.id : (device.id || ''));
+  const devName = device.device_name || (device.device ? device.device.name : '');
+  // Collect all notes matching this device
+  const matching = notesArr.filter(n =>
+    String(n.deviceId) === devId ||
+    (n.devicename && devName && n.devicename.toLowerCase().includes(devName.toLowerCase()))
+  );
+  return matching.map(n => (n.msg_text || '').trim()).filter(Boolean).join(' · ');
+}
+
 function getOrderId(t) {
   return (t.summary && t.summary.order_id) || t.id || '';
 }
@@ -933,7 +1071,7 @@ function toggleTicket(orderId) {
 
   const customer = getCustomerName(t);
   const devices = getDevices(t);
-  renderTicketItems(orderId, customer, devices, itemsEl);
+  renderTicketItems(orderId, customer, devices, itemsEl, t);
 }
 
 const CANDELABRA_PARTS = ['Base', 'Arms', 'Cups', 'Plates'];
@@ -942,8 +1080,12 @@ function isCandelabra(name) {
   return /candelabra/i.test(name || '');
 }
 
-function renderTicketItems(orderId, customer, devices, itemsEl) {
+function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
   const safeOrderId = orderId.replace(/[^a-zA-Z0-9]/g, '_');
+  // Ticket-level info for labels
+  const city = ticket ? getCustomerCity(ticket) : '';
+  const phone = ticket ? getCustomerPhone(ticket) : '';
+  const dates = ticket ? getTicketDates(ticket) : { created:'', due:'' };
 
   itemsEl.innerHTML = devices.map((device, idx) => {
     const itemNum = idx + 1;
@@ -953,13 +1095,18 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
     const services = device.repairProdItems ? device.repairProdItems.map(s => s.name.trim()).join(', ') : '';
     const status = device.status ? device.status.name : '';
     const statusClass = getStatusClass(status);
+    const note = getDeviceNote(device, ticket);
 
-    // Cache for scan lookup
-    itemCache[itemId] = { name: deviceName + (serial||''), customer, ticketId: orderId, services };
+    // Cache for scan lookup + labels
+    itemCache[itemId] = { name: deviceName + (serial||''), customer, ticketId: orderId, services, city, phone, note, created: dates.created, due: dates.due };
 
-    const safeDeviceName = deviceName.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
-    const safeCustomer = customer.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
-    const safeServices = services.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+    const esc = s => (s||'').replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+    const safeDeviceName = esc(deviceName);
+    const safeCustomer = esc(customer);
+    const safeServices = esc(services);
+    const safeCity = esc(city);
+    const safePhone = esc(phone);
+    const safeNote = esc(note);
     const cbId = 'cb-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
 
     let html = `<div class="item-row">
@@ -969,17 +1116,23 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
         data-item-name="${safeDeviceName}${serial}"
         data-services="${safeServices}"
         data-customer="${safeCustomer}"
+        data-city="${safeCity}"
+        data-phone="${safePhone}"
+        data-note="${safeNote}"
+        data-created="${esc(dates.created)}"
+        data-due="${esc(dates.due)}"
         data-ticket="${orderId}">
       <div class="item-info">
         <div class="item-name">${deviceName}${serial}</div>
         ${services?`<div class="item-meta" style="color:var(--gold-dim)">${services}</div>`:''}
-        <div class="item-meta">${itemId}</div>`;
+        ${note?`<div class="item-meta" style="color:var(--red)">📝 ${note}</div>`:''}
+        <div class="item-meta">${itemId}${city?' · '+city:''}</div>`;
 
     // Candelabra split option
     if (isCandelabra(deviceName)) {
       const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
       html += `
-        <button onclick="toggleCandelabraParts('${itemId}','${safeOrderId}',${itemNum},'${safeDeviceName}','${safeCustomer}','${safeServices}')"
+        <button onclick="toggleCandelabraParts('${itemId}','${safeOrderId}',${itemNum},'${safeDeviceName}','${safeCustomer}','${safeServices}','${safeCity}','${safePhone}','${safeNote}','${esc(dates.created)}','${esc(dates.due)}')"
           style="margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase;width:100%">
           ⚙️ Split into parts (Base · Arms · Cups · Plates)
         </button>
@@ -1000,7 +1153,7 @@ function renderTicketItems(orderId, customer, devices, itemsEl) {
   </div>`;
 }
 
-function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, customer, services) {
+function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, customer, services, city, phone, note, created, due) {
   const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
   const el = document.getElementById(splitId);
   if (!el) return;
@@ -1012,14 +1165,16 @@ function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, custome
     return;
   }
 
+  const unesc = s => (s||'').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
+
   el.style.display = 'block';
   el.innerHTML = `<div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Candelabra Parts — each gets its own label</div>` +
     CANDELABRA_PARTS.map(part => {
       const partId = itemId + '-' + part.toUpperCase();
       const partCbId = 'cb-' + partId.replace(/[^a-zA-Z0-9]/g,'_');
       const partName = deviceName + ' — ' + part;
-      // Cache each part for scan lookup
-      itemCache[partId] = { name: partName, customer: customer.replace(/&#39;/g,"'").replace(/&quot;/g,'"'), ticketId: safeOrderId, services };
+      // Cache each part for scan lookup + labels
+      itemCache[partId] = { name: unesc(partName), customer: unesc(customer), ticketId: safeOrderId, services: unesc(services), city: unesc(city), phone: unesc(phone), note: unesc(note), created, due, part };
       return `<div class="item-row" style="padding:8px 0">
         <input type="checkbox" class="item-cb" id="${partCbId}"
           onchange="updateSelectedCount()"
@@ -1027,6 +1182,12 @@ function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, custome
           data-item-name="${deviceName} — ${part}"
           data-services="${services}"
           data-customer="${customer}"
+          data-city="${city||''}"
+          data-phone="${phone||''}"
+          data-note="${note||''}"
+          data-created="${created||''}"
+          data-due="${due||''}"
+          data-part="${part}"
           data-ticket="${safeOrderId}">
         <div class="item-info">
           <div class="item-name" style="font-size:15px">${part}</div>
@@ -1105,18 +1266,29 @@ function generateBarcodeSVG(text) {
 }
 
 function buildLabelHtml(items) {
-  return items.map(item => `
+  return items.map(item => {
+    const isPart = !!item.part;
+    return `
     <div class="label">
-      <div class="info-side">
-        <div class="item-name">${item.itemName||''}</div>
-        ${item.services ? `<div class="item-services">${item.services}</div>` : ''}
-        <div class="item-customer">${item.customer||''}</div>
+      <div class="label-top">
+        <div class="l-ticket">${item.itemId}</div>
+        <div class="l-name">${item.itemName||''}</div>
+        ${item.services ? `<div class="l-services">${item.services}</div>` : ''}
+        <div class="l-row">
+          ${item.city ? `<span class="l-city">📍 ${item.city}</span>` : ''}
+          ${item.customer ? `<span class="l-customer">${item.customer}</span>` : ''}
+        </div>
+        ${item.note ? `<div class="l-note">⚠️ ${item.note}</div>` : ''}
+        <div class="l-dates">${item.created?'Created: '+item.created:''}${item.due?'  ·  Due: '+item.due:''}</div>
       </div>
-      <div class="barcode-side">
-        <img src="${item.barcodeSrc}" style="width:100%;height:auto">
+      <div class="label-barcode">
+        <img src="${item.barcodeSrc}">
       </div>
-    </div>
-  `).join('');
+      <div class="label-bottom">
+        ${isPart ? `<span class="l-part">◆ PART: ${item.part.toUpperCase()}</span>` : `<span class="l-glint">GLINT LACQUER</span>`}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function openPrintWindow(labelsHtml) {
@@ -1131,21 +1303,31 @@ function openPrintWindow(labelsHtml) {
     width: ${w}mm;
     height: ${h}mm;
     display: flex;
-    flex-direction: row;
-    align-items: center;
-    padding: 4mm;
-    gap: 3mm;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2.5mm 3mm;
     overflow: hidden;
     page-break-after: always;
     page-break-inside: avoid;
   }
   .label:last-child { page-break-after: auto; }
-  .info-side { flex:1; display:flex; flex-direction:column; justify-content:center; gap:2mm; overflow:hidden; }
-  .barcode-side { flex-shrink:0; width:48mm; display:flex; align-items:center; }
-  .barcode-side img { width:100%; height:auto; }
-  .item-name { font-size:15pt; font-weight:700; color:#000; line-height:1.15; }
-  .item-services { font-size:9pt; color:#444; }
-  .item-customer { font-size:11pt; color:#000; font-weight:600; }
+
+  .label-top { text-align: center; }
+  .l-ticket { font-size: 8pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.06em; }
+  .l-name { font-size: 11pt; font-weight: 700; color: #000; line-height: 1.1; margin-top: 0.5mm; }
+  .l-services { font-size: 7.5pt; color: #555; margin-top: 0.3mm; }
+  .l-row { display: flex; justify-content: center; gap: 3mm; margin-top: 0.5mm; flex-wrap: wrap; }
+  .l-city { font-size: 8.5pt; font-weight: 700; color: #000; }
+  .l-customer { font-size: 8pt; color: #333; font-weight: 600; }
+  .l-note { font-size: 8pt; font-weight: 700; color: #000; margin-top: 0.5mm; background: #f0f0f0; padding: 0.5mm 1mm; border-radius: 1mm; }
+  .l-dates { font-size: 6.5pt; color: #777; margin-top: 0.3mm; }
+
+  .label-barcode { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
+  .label-barcode img { max-width: 90%; max-height: 20mm; height: auto; }
+
+  .label-bottom { text-align: center; border-top: 0.5mm dashed #999; padding-top: 1mm; }
+  .l-part { font-size: 10pt; font-weight: 700; color: #000; letter-spacing: 0.1em; }
+  .l-glint { font-size: 7pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.2em; }
 </style></head>
 <body>${labelsHtml}
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
@@ -1167,7 +1349,13 @@ function printSelected() {
       itemId: cb.dataset.itemId,
       itemName: cb.dataset.itemName || '',
       services: cb.dataset.services || '',
-      customer: cb.dataset.customer || ''
+      customer: cb.dataset.customer || '',
+      city: cb.dataset.city || '',
+      phone: cb.dataset.phone || '',
+      note: cb.dataset.note || '',
+      created: cb.dataset.created || '',
+      due: cb.dataset.due || '',
+      part: cb.dataset.part || ''
     });
   });
 
@@ -1268,18 +1456,24 @@ async function startCamera() {
         } catch(e) {}
       }, 250);
     }
-    // Method 2: ZXing library fallback
-    else if (typeof ZXingBrowser !== 'undefined') {
-      codeReader = new ZXingBrowser.BrowserMultiFormatReader();
-      codeReader.decodeFromVideoElement(video, (result, err) => {
-        if (result) {
-          const code = result.getText();
-          if (navigator.vibrate) navigator.vibrate(100);
-          stopCamera();
-          document.getElementById('scan-input').value = code;
-          processScan(code);
-        }
-      });
+    // Method 2: ZXing library fallback (iOS Safari)
+    else if (typeof ZXingBrowser !== 'undefined' || typeof ZXing !== 'undefined') {
+      const ZX = (typeof ZXingBrowser !== 'undefined') ? ZXingBrowser : ZXing;
+      try {
+        codeReader = new ZX.BrowserMultiFormatReader();
+        codeReader.decodeFromVideoElement(video, (result, err) => {
+          if (result) {
+            const code = result.getText ? result.getText() : result.text;
+            if (navigator.vibrate) navigator.vibrate(100);
+            stopCamera();
+            document.getElementById('scan-input').value = code;
+            processScan(code);
+          }
+        });
+      } catch(zerr) {
+        showToast('⚠️ Scanner init failed: ' + zerr.message);
+        stopCamera();
+      }
     }
     else {
       showToast('⚠️ Barcode scanning not supported — type the code manually');
