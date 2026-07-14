@@ -1238,11 +1238,12 @@ function generateBarcodeSVG(text) {
   try {
     JsBarcode(svg, text, {
       format: 'CODE128',
-      width: 2.5,
-      height: 70,
+      width: 3.5,
+      height: 110,
       displayValue: true,
-      fontSize: 13,
-      margin: 6,
+      fontSize: 20,
+      fontOptions: 'bold',
+      margin: 8,
       background: '#ffffff',
       lineColor: '#000000'
     });
@@ -1298,7 +1299,7 @@ function openPrintWindow(labelsHtml) {
   .l-note { font-size: 10pt; font-weight: 700; color: #000; margin-top: 1.5mm; background: #f0f0f0; padding: 1mm 1.5mm; border-radius: 1mm; line-height: 1.2; }
 
   .label-barcode { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
-  .label-barcode img { max-width: 95%; max-height: 24mm; height: auto; }
+  .label-barcode img { max-width: 98%; max-height: 30mm; height: auto; }
 
   .label-bottom { text-align: center; border-top: 0.5mm dashed #999; padding-top: 1.5mm; }
   .l-part { font-size: 13pt; font-weight: 700; color: #000; letter-spacing: 0.1em; }
@@ -1406,8 +1407,23 @@ async function startCamera() {
   cameraActive = true;
 
   try {
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('autoplay', 'true');
+    video.setAttribute('muted', 'true');
+    video.muted = true;
     video.srcObject = stream;
-    await video.play();
+
+    // Wait for video to actually be ready (critical for iOS)
+    await new Promise((resolve) => {
+      if (video.readyState >= 2) { resolve(); return; }
+      video.onloadedmetadata = () => resolve();
+      setTimeout(resolve, 1500); // fallback timeout
+    });
+
+    try { await video.play(); } catch(playErr) {
+      // iOS sometimes needs a user gesture retry
+      setTimeout(() => video.play().catch(()=>{}), 300);
+    }
 
     // Method 1: Native BarcodeDetector (best on Android Chrome)
     if ('BarcodeDetector' in window) {
@@ -1419,6 +1435,7 @@ async function startCamera() {
       const detector = new BarcodeDetector({ formats });
       window._cameraInterval = setInterval(async () => {
         if (!cameraActive) return;
+        if (video.readyState < 2) return; // wait until frames available
         try {
           const barcodes = await detector.detect(video);
           if (barcodes.length > 0) {
@@ -1429,22 +1446,35 @@ async function startCamera() {
             processScan(code);
           }
         } catch(e) {}
-      }, 250);
+      }, 200);
     }
     // Method 2: ZXing library fallback (iOS Safari)
     else if (typeof ZXingBrowser !== 'undefined' || typeof ZXing !== 'undefined') {
       const ZX = (typeof ZXingBrowser !== 'undefined') ? ZXingBrowser : ZXing;
       try {
         codeReader = new ZX.BrowserMultiFormatReader();
-        codeReader.decodeFromVideoElement(video, (result, err) => {
-          if (result) {
-            const code = result.getText ? result.getText() : result.text;
-            if (navigator.vibrate) navigator.vibrate(100);
-            stopCamera();
-            document.getElementById('scan-input').value = code;
-            processScan(code);
-          }
-        });
+        // decodeFromStream is more reliable on iOS than decodeFromVideoElement
+        if (codeReader.decodeFromStream) {
+          codeReader.decodeFromStream(stream, video, (result, err) => {
+            if (result) {
+              const code = result.getText ? result.getText() : result.text;
+              if (navigator.vibrate) navigator.vibrate(100);
+              stopCamera();
+              document.getElementById('scan-input').value = code;
+              processScan(code);
+            }
+          });
+        } else {
+          codeReader.decodeFromVideoElement(video, (result, err) => {
+            if (result) {
+              const code = result.getText ? result.getText() : result.text;
+              if (navigator.vibrate) navigator.vibrate(100);
+              stopCamera();
+              document.getElementById('scan-input').value = code;
+              processScan(code);
+            }
+          });
+        }
       } catch(zerr) {
         showToast('⚠️ Scanner init failed: ' + zerr.message);
         stopCamera();
