@@ -225,9 +225,10 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
     <div class="card-label" id="scan-card-label">Scan item</div>
     <div class="scan-input-wrap" style="margin-bottom:10px;display:flex;gap:8px">
       <div style="position:relative;flex:1">
-        <input id="scan-input" class="scan-input" type="text" placeholder="Type or scan barcode..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" style="width:100%">
+        <input id="scan-input" class="scan-input" type="text" placeholder="Ready to scan..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="none" style="width:100%">
         <span class="scan-icon">▦</span>
       </div>
+      <button onclick="toggleKeyboard()" id="keyboard-btn" class="gen-btn" style="flex-shrink:0;background:var(--surface2);border:2px solid var(--border);color:var(--ink2)" title="Show keyboard">⌨️</button>
       <button onclick="submitScan()" class="gen-btn" style="flex-shrink:0">Enter</button>
     </div>
     <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
@@ -237,12 +238,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
       <video id="camera-video" style="width:100%;border-radius:10px;display:block" autoplay muted playsinline></video>
       <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60%;height:40%;border:3px solid var(--gold);border-radius:8px;pointer-events:none"></div>
       <button onclick="toggleCamera()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:none;border-radius:50px;color:white;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer">✕ Close</button>
-    </div>
-    <div id="scan-item-info" style="display:none;margin-top:12px;padding:14px;background:var(--surface2);border-radius:10px;border:2px solid var(--border)">
-      <div id="scan-result-icon" style="font-size:32px;text-align:center;margin-bottom:6px"></div>
-      <div id="scan-item-name" style="font-size:18px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;text-align:center"></div>
-      <div id="scan-item-customer" style="font-size:11px;color:var(--ink3);text-align:center;margin-top:2px;font-weight:600"></div>
-      <div id="scan-result-action" style="font-size:16px;font-weight:700;text-align:center;margin-top:10px;letter-spacing:.04em;text-transform:uppercase;line-height:1.4"></div>
     </div>
   </div>
 
@@ -574,6 +569,26 @@ function submitScan() {
   if (val) processScan(val);
 }
 
+let keyboardOn = false;
+function toggleKeyboard() {
+  const input = document.getElementById('scan-input');
+  const btn = document.getElementById('keyboard-btn');
+  keyboardOn = !keyboardOn;
+  if (keyboardOn) {
+    input.setAttribute('inputmode', 'text');
+    btn.style.background = 'var(--ink)';
+    btn.style.color = '#fff';
+    input.blur();
+    setTimeout(() => input.focus(), 50); // re-focus to trigger keyboard
+  } else {
+    input.setAttribute('inputmode', 'none');
+    btn.style.background = 'var(--surface2)';
+    btn.style.color = 'var(--ink2)';
+    input.blur();
+    setTimeout(() => input.focus(), 50); // keep focus for scanner, no keyboard
+  }
+}
+
 // ===== NAV =====
 function showPage(name, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -803,31 +818,6 @@ async function processScan(itemId) {
   }
   renderActiveWork();
 
-  // Show feedback
-  const infoEl = document.getElementById('scan-item-info');
-  const iconEl = document.getElementById('scan-result-icon');
-  const nameEl = document.getElementById('scan-item-name');
-  const custEl = document.getElementById('scan-item-customer');
-  const actionEl = document.getElementById('scan-result-action');
-
-  infoEl.style.display = 'block';
-  nameEl.textContent = info.name || itemId;
-  custEl.textContent = info.customer || '';
-
-  if (isInProgress) {
-    iconEl.textContent = '⏹️';
-    actionEl.innerHTML = 'STOPPED<br><span style="font-size:11px;font-weight:600;color:var(--ink3)">' + task + ' finished on this item</span>';
-    actionEl.style.color = 'var(--orange)';
-    infoEl.style.borderColor = 'var(--orange)';
-    infoEl.style.background = '#faf3ea';
-  } else {
-    iconEl.textContent = '✅';
-    actionEl.innerHTML = 'NOW WORKING<br><span style="font-size:12px;font-weight:700;color:var(--ink)">' + task + ' · ' + (info.name || itemId) + '</span>';
-    actionEl.style.color = 'var(--green)';
-    infoEl.style.borderColor = 'var(--green)';
-    infoEl.style.background = '#eef7f2';
-  }
-
   // Log it
   const entry = {
     itemId, itemDesc: info.name||'', customer: info.customer||'',
@@ -852,10 +842,6 @@ async function processScan(itemId) {
   setTimeout(() => {
     document.getElementById('scan-input').focus();
   }, 100);
-
-  // Keep feedback visible longer (7 seconds)
-  clearTimeout(window._infoHideTimer);
-  window._infoHideTimer = setTimeout(() => { infoEl.style.display = 'none'; }, 7000);
 }
 
 function renderScanRecent() {
@@ -1271,21 +1257,15 @@ function buildLabelHtml(items) {
     return `
     <div class="label">
       <div class="label-top">
-        <div class="l-ticket">${item.itemId}</div>
-        <div class="l-name">${item.itemName||''}</div>
-        ${item.services ? `<div class="l-services">${item.services}</div>` : ''}
-        <div class="l-row">
-          ${item.city ? `<span class="l-city">📍 ${item.city}</span>` : ''}
-          ${item.customer ? `<span class="l-customer">${item.customer}</span>` : ''}
-        </div>
+        ${item.due ? `<div class="l-due">DUE: ${item.due}</div>` : ''}
+        ${item.city ? `<div class="l-city">📍 ${item.city}</div>` : ''}
         ${item.note ? `<div class="l-note">⚠️ ${item.note}</div>` : ''}
-        <div class="l-dates">${item.created?'Created: '+item.created:''}${item.due?'  ·  Due: '+item.due:''}</div>
       </div>
       <div class="label-barcode">
         <img src="${item.barcodeSrc}">
       </div>
       <div class="label-bottom">
-        ${isPart ? `<span class="l-part">◆ PART: ${item.part.toUpperCase()}</span>` : `<span class="l-glint">GLINT LACQUER</span>`}
+        ${isPart ? `<span class="l-part">◆ ${item.part.toUpperCase()}</span>` : `<span class="l-glint">GLINT LACQUER</span>`}
       </div>
     </div>`;
   }).join('');
@@ -1305,7 +1285,7 @@ function openPrintWindow(labelsHtml) {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 2.5mm 3mm;
+    padding: 3mm;
     overflow: hidden;
     page-break-after: always;
     page-break-inside: avoid;
@@ -1313,21 +1293,16 @@ function openPrintWindow(labelsHtml) {
   .label:last-child { page-break-after: auto; }
 
   .label-top { text-align: center; }
-  .l-ticket { font-size: 8pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.06em; }
-  .l-name { font-size: 11pt; font-weight: 700; color: #000; line-height: 1.1; margin-top: 0.5mm; }
-  .l-services { font-size: 7.5pt; color: #555; margin-top: 0.3mm; }
-  .l-row { display: flex; justify-content: center; gap: 3mm; margin-top: 0.5mm; flex-wrap: wrap; }
-  .l-city { font-size: 8.5pt; font-weight: 700; color: #000; }
-  .l-customer { font-size: 8pt; color: #333; font-weight: 600; }
-  .l-note { font-size: 8pt; font-weight: 700; color: #000; margin-top: 0.5mm; background: #f0f0f0; padding: 0.5mm 1mm; border-radius: 1mm; }
-  .l-dates { font-size: 6.5pt; color: #777; margin-top: 0.3mm; }
+  .l-due { font-size: 11pt; font-weight: 700; color: #000; }
+  .l-city { font-size: 11pt; font-weight: 700; color: #000; margin-top: 1mm; }
+  .l-note { font-size: 10pt; font-weight: 700; color: #000; margin-top: 1.5mm; background: #f0f0f0; padding: 1mm 1.5mm; border-radius: 1mm; line-height: 1.2; }
 
   .label-barcode { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
-  .label-barcode img { max-width: 90%; max-height: 20mm; height: auto; }
+  .label-barcode img { max-width: 95%; max-height: 24mm; height: auto; }
 
-  .label-bottom { text-align: center; border-top: 0.5mm dashed #999; padding-top: 1mm; }
-  .l-part { font-size: 10pt; font-weight: 700; color: #000; letter-spacing: 0.1em; }
-  .l-glint { font-size: 7pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.2em; }
+  .label-bottom { text-align: center; border-top: 0.5mm dashed #999; padding-top: 1.5mm; }
+  .l-part { font-size: 13pt; font-weight: 700; color: #000; letter-spacing: 0.1em; }
+  .l-glint { font-size: 8pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.2em; }
 </style></head>
 <body>${labelsHtml}
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
