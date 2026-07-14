@@ -261,6 +261,16 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <!-- ===== TICKETS PAGE ===== -->
 <div id="page-tickets" class="page">
 
+  <div class="card no-print" id="tickets-pin-lock">
+    <div class="card-label">Admin PIN Required</div>
+    <div class="gen-row" style="margin-bottom:0">
+      <input id="tickets-pin-input" class="gen-input" type="password" placeholder="Enter PIN" autocomplete="off" inputmode="numeric" maxlength="6">
+      <button class="gen-btn" onclick="checkTicketsPin()">Unlock</button>
+    </div>
+  </div>
+
+  <div id="tickets-content" style="display:none">
+
   <div class="card no-print" style="padding:14px 16px;margin-bottom:14px">
     <div style="display:flex;align-items:center;justify-content:space-between">
       <div style="font-family:'Jost',sans-serif;font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.1em;text-transform:uppercase">Glint Lacquer · RepairDesk</div>
@@ -285,6 +295,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
   <div class="no-print" style="position:sticky;bottom:16px">
     <button class="print-btn-main" id="print-selected-btn" onclick="printSelected()" disabled>🖨️ Print Selected Labels (<span id="selected-count">0</span>)</button>
   </div>
+
+  </div><!-- end tickets-content -->
 </div>
 
 <!-- ===== HISTORY PAGE ===== -->
@@ -596,7 +608,21 @@ function showPage(name, el) {
   document.getElementById('page-'+name).classList.add('active');
   if (el) el.classList.add('active');
   if (name==='scan') setTimeout(() => document.getElementById('scan-input').focus(), 100);
-  if (name==='tickets' && rdApiKey && !allTickets.length) loadTickets();
+  if (name==='tickets' && ticketsUnlocked && rdApiKey && !allTickets.length) loadTickets();
+}
+
+let ticketsUnlocked = false;
+function checkTicketsPin() {
+  const entered = document.getElementById('tickets-pin-input').value.trim();
+  if (entered === adminPin) {
+    ticketsUnlocked = true;
+    document.getElementById('tickets-pin-lock').style.display = 'none';
+    document.getElementById('tickets-content').style.display = 'block';
+    if (rdApiKey && !allTickets.length) loadTickets();
+  } else {
+    showToast('⚠️ Incorrect PIN');
+    document.getElementById('tickets-pin-input').value = '';
+  }
 }
 
 // ===== WORKERS (device-locked) =====
