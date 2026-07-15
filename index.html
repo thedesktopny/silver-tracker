@@ -350,25 +350,11 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
   <div id="setup-content" style="display:none">
 
   <div class="card">
-    <div class="card-label">Roles</div>
-    <div class="gen-row" style="margin-bottom:0">
-      <input id="new-role-input" class="gen-input" type="text" placeholder="e.g. Cleaning, Polish, Lacquer..." autocomplete="off">
-      <button class="gen-btn" onclick="addRole()">Add Role</button>
+    <div class="card-label">Workers & Roles</div>
+    <div style="font-size:13px;color:var(--ink2);line-height:1.5">
+      Workers, PINs, and roles are now managed in the <strong>Control Room dashboard</strong>.<br><br>
+      Workers log in here with the name and PIN you set in the dashboard.
     </div>
-    <div id="role-list" style="margin-top:10px"></div>
-  </div>
-
-  <div class="card">
-    <div class="card-label">Workers</div>
-    <div class="gen-row">
-      <input id="new-worker" class="gen-input" type="text" placeholder="Worker name" autocomplete="off">
-    </div>
-    <div style="margin-bottom:10px">
-      <div style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Assign role(s) — tap to select, multiple allowed</div>
-      <div class="worker-row" id="new-worker-roles"></div>
-    </div>
-    <button class="gen-btn" style="width:100%" onclick="addWorker()">Add Worker</button>
-    <div id="worker-list" style="margin-top:14px"></div>
   </div>
 
   <div class="card">
@@ -377,12 +363,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
       <input id="change-pin-input" class="gen-input" type="password" placeholder="New PIN (4-6 digits)" autocomplete="off" inputmode="numeric" maxlength="6">
       <button class="gen-btn" onclick="changeAdminPin()">Save</button>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="card-label">Google Sheet Web App URL</div>
-    <input id="sheet-url" class="sheet-input" type="url" placeholder="Paste your Apps Script URL here..." oninput="saveUrl()">
-    <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Required to log scans to Google Sheets</div>
   </div>
 
   <div class="card">
@@ -410,95 +390,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-label">Google Apps Script — paste into your Sheet</div>
-    <div class="script-box" id="script-box">function doPost(e) {
-  try {
-    var data = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-
-    // --- LOG TAB ---
-    var logSheet = ss.getSheetByName("Log") || ss.insertSheet("Log");
-    if (logSheet.getLastRow() === 0) {
-      logSheet.appendRow(["Timestamp","Item ID","Job #","Item Description","Customer","Status","Worker","Date","Time"]);
-      logSheet.getRange(1,1,1,9).setFontWeight("bold").setBackground("#c9a84c").setFontColor("#000000");
-      logSheet.setFrozenRows(1);
-    }
-    var now = new Date();
-    var tz = Session.getScriptTimeZone();
-    var dateStr = Utilities.formatDate(now, tz, "MM/dd/yyyy");
-    var timeStr = Utilities.formatDate(now, tz, "HH:mm:ss");
-    var itemId = data.itemId || "";
-    var jobNum = itemId.split("-")[0] || "";
-    logSheet.appendRow([now, itemId, jobNum, data.itemDesc||"", data.customer||"", data.status, data.worker, dateStr, timeStr]);
-
-    // --- REPORTS TAB ---
-    updateReports(ss);
-
-    return ContentService.createTextOutput(JSON.stringify({success:true})).setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({error:err.message})).setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-function updateReports(ss) {
-  var logSheet = ss.getSheetByName("Log");
-  if (!logSheet || logSheet.getLastRow() < 2) return;
-  var rptSheet = ss.getSheetByName("Reports") || ss.insertSheet("Reports");
-  rptSheet.clearContents();
-  var headers = ["Item ID","Job #","Item Description","Customer","First Scan","Last Scan","Total Days Open","Bench Time","Times Returned","Current Status","Last Worker"];
-  rptSheet.appendRow(headers);
-  rptSheet.getRange(1,1,1,headers.length).setFontWeight("bold").setBackground("#1a1a2e").setFontColor("#c9a84c");
-  rptSheet.setFrozenRows(1);
-  var logData = logSheet.getRange(2,1,logSheet.getLastRow()-1,9).getValues();
-  var items = {};
-  for (var i=0;i<logData.length;i++) {
-    var row=logData[i], ts=row[0], id=row[1], job=row[2], desc=row[3], cust=row[4], status=row[5], worker=row[6];
-    if (!id) continue;
-    if (!items[id]) items[id]={job:job,desc:desc,customer:cust,scans:[],firstScan:null,lastScan:null,returns:0,currentStatus:"",lastWorker:""};
-    items[id].scans.push({ts:ts,status:status,worker:worker});
-    if (!items[id].firstScan||ts<items[id].firstScan) items[id].firstScan=ts;
-    if (!items[id].lastScan||ts>items[id].lastScan){items[id].lastScan=ts;items[id].currentStatus=status;items[id].lastWorker=worker;}
-    if (status==="Returned") items[id].returns++;
-  }
-  var tz=Session.getScriptTimeZone(), reportRows=[];
-  for (var itemId in items) {
-    var item=items[itemId], scans=item.scans.sort(function(a,b){return a.ts-b.ts;});
-    var msOpen=item.lastScan-item.firstScan, daysOpen=msOpen>0?(msOpen/(1000*60*60*24)).toFixed(1):"0";
-    var benchMs=0, workStart=null;
-    for (var s=0;s<scans.length;s++){
-      var st=scans[s].status||"";
-      if (st.indexOf("Started")>=0) workStart=scans[s].ts;
-      else if (st.indexOf("Stopped")>=0&&workStart){benchMs+=scans[s].ts-workStart;workStart=null;}
-    }
-    var bm=Math.floor(benchMs/60000), bd=Math.floor(bm/1440), bh=Math.floor((bm%1440)/60), bmin=bm%60;
-    var benchStr=(bd>0?bd+"d ":"")+(bh>0?bh+"h ":"")+bmin+"m";
-    if (bm===0) benchStr="In progress";
-    reportRows.push([itemId,item.job,item.desc||"",item.customer||"",
-      Utilities.formatDate(item.firstScan,tz,"MM/dd/yyyy HH:mm"),
-      Utilities.formatDate(item.lastScan,tz,"MM/dd/yyyy HH:mm"),
-      daysOpen+" days",benchStr,item.returns,item.currentStatus,item.lastWorker]);
-  }
-  reportRows.sort(function(a,b){return b[4]>a[4]?1:-1;});
-  if (reportRows.length>0) rptSheet.getRange(2,1,reportRows.length,headers.length).setValues(reportRows);
-  for (var r=0;r<reportRows.length;r++){
-    var cell=rptSheet.getRange(r+2,10), s=reportRows[r][9];
-    if (s==="Delivered"||s==="Complete") cell.setBackground("#1a3a2a").setFontColor("#4caf78");
-    else if (s==="Returned") cell.setBackground("#3a1a1a").setFontColor("#cf4c4c");
-    else if (s==="Paused") cell.setBackground("#3a2a1a").setFontColor("#cf8f4c");
-    else if (s==="On Truck") cell.setBackground("#1a2a3a").setFontColor("#4c8fcf");
-    else cell.setBackground("#1a1a1a").setFontColor("#c9a84c");
-  }
-  for (var c=1;c<=headers.length;c++) rptSheet.autoResizeColumn(c);
-}</div>
-    <button class="copy-btn" onclick="copyScript()">📋 Copy Script Code</button>
-    <ul class="step-list">
-      <li><span class="step-num">1</span><span>Open Google Sheets → new blank spreadsheet</span></li>
-      <li><span class="step-num">2</span><span>Extensions → Apps Script → delete all code → paste above → Save</span></li>
-      <li><span class="step-num">3</span><span>Deploy → New Deployment → Web App → Anyone → Deploy</span></li>
-      <li><span class="step-num">4</span><span>Copy the URL → paste above in "Google Sheet Web App URL"</span></li>
-    </ul>
-  </div>
   </div><!-- end setup-content -->
 </div>
 
@@ -536,10 +427,6 @@ function getStatusColor(status) {
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   initDeviceWorker();
-  renderRoleList();
-  renderNewWorkerRoles();
-  document.getElementById('sheet-url').value = sheetUrl;
-  renderWorkerList();
 
   renderLabelHistory();
 
@@ -773,6 +660,7 @@ function removeRole(i) {
 }
 
 function renderRoleList() {
+  if(!document.getElementById('role-list')) return;
   document.getElementById('role-list').innerHTML = roles.map((r,i) =>
     `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px">
       <span style="font-weight:600;color:var(--ink)">${r}</span>
@@ -783,6 +671,7 @@ function renderRoleList() {
 
 // ===== ADD WORKER with role selection =====
 function renderNewWorkerRoles() {
+  if(!document.getElementById('new-worker-roles')) return;
   document.getElementById('new-worker-roles').innerHTML = roles.map(r => {
     const sel = newWorkerSelectedRoles.includes(r);
     return `<button type="button" class="worker-btn ${sel?'selected':''}" onclick="toggleNewWorkerRole('${r.replace(/'/g,"\\'")}')">${r}</button>`;
@@ -818,6 +707,7 @@ function removeWorker(i) {
 }
 
 function renderWorkerList() {
+  if(!document.getElementById('worker-list')) return;
   document.getElementById('worker-list').innerHTML = workers.map((w,i) =>
     `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
       <div>
@@ -1454,10 +1344,12 @@ function printSelected() {
 
 // ===== SETUP =====
 function saveUrl() {
+  if(!document.getElementById('sheet-url')) return;
   sheetUrl = document.getElementById('sheet-url').value.trim();
   localStorage.setItem('st_url', sheetUrl);
 }
 function copyScript() {
+  if(!document.getElementById('script-box')) return;
   navigator.clipboard.writeText(document.getElementById('script-box').textContent)
     .then(()=>showToast('📋 Script copied!'))
     .catch(()=>showToast('Select and copy the script manually'));
