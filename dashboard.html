@@ -20,13 +20,11 @@
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
 
-  /* Login gate */
   #login-gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:100}
   .login-box{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:40px;width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)}
   .login-logo{font-family:'Cormorant Garamond',serif;font-size:42px;font-weight:700;letter-spacing:-.02em}
   .login-sub{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink3);margin-top:-4px;margin-bottom:28px}
 
-  /* Layout */
   .shell{display:none;min-height:100vh}
   .topbar{background:var(--surface);border-bottom:2px solid var(--border);padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:20}
   .brand{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;letter-spacing:-.01em}
@@ -36,8 +34,8 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
   .clock{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink2);font-size:13px}
 
-  .nav{display:flex;gap:2px;padding:0 20px;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:64px;z-index:19}
-  .nav-tab{padding:16px 22px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .15s}
+  .nav{display:flex;gap:2px;padding:0 20px;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:64px;z-index:19;overflow-x:auto}
+  .nav-tab{padding:16px 22px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .15s;white-space:nowrap}
   .nav-tab:hover{color:var(--ink2)}
   .nav-tab.active{color:var(--ink);border-bottom-color:var(--gold)}
 
@@ -45,22 +43,22 @@
   .page{display:none}
   .page.active{display:block}
 
-  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap}
   .page-title{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700}
   .page-sub{font-size:13px;color:var(--ink3);margin-top:2px}
+  .head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 
-  /* Cards & grid */
   .grid{display:grid;gap:16px}
   .card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
-  .card-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:14px}
+  .card-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
 
-  /* Stat tiles */
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
   .stat{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
   .stat-num{font-family:'Cormorant Garamond',serif;font-size:40px;font-weight:700;line-height:1}
   .stat-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-top:6px}
+  .stat.alert{border-color:var(--red)}
+  .stat.alert .stat-num{color:var(--red)}
 
-  /* Live worker cards */
   .live-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
   .live-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden}
   .live-card.working{border-color:var(--green)}
@@ -68,24 +66,25 @@
   .live-worker{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700}
   .live-role{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold2);margin-top:2px}
   .live-item{font-size:13px;color:var(--ink2);margin-top:10px;line-height:1.3}
-  .live-timer{font-family:'Jost',sans-serif;font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;margin-top:8px}
+  .live-timer{font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;margin-top:8px}
   .live-idle{font-size:13px;color:var(--ink3);margin-top:10px;font-style:italic}
 
-  /* Tables */
   table{width:100%;border-collapse:collapse}
   th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:10px 12px;border-bottom:2px solid var(--border)}
-  td{padding:12px;border-bottom:1px solid var(--border);font-size:13px}
+  td{padding:12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
   tr:hover td{background:var(--surface2)}
+  tr.clickable{cursor:pointer}
   .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.04em}
   .badge.started{background:#e6f0e9;color:var(--green)}
   .badge.stopped{background:#f5ebe0;color:var(--orange)}
+  .badge.part{background:#efe8d4;color:var(--gold2)}
 
-  /* Forms */
   input,select{font-family:'Jost',sans-serif;font-size:14px;padding:11px 14px;border:2px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);width:100%;outline:none}
   input:focus,select:focus{border-color:var(--gold)}
-  .btn{font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:11px 20px;border:none;border-radius:10px;cursor:pointer;background:var(--ink);color:#fff;transition:opacity .15s}
+  .btn{font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:11px 20px;border:none;border-radius:10px;cursor:pointer;background:var(--ink);color:#fff;transition:opacity .15s;white-space:nowrap}
   .btn:active{opacity:.85}
   .btn-ghost{background:var(--surface2);border:2px solid var(--border);color:var(--ink2)}
+  .btn-sm{padding:6px 12px;font-size:10px}
   .btn-danger{background:none;border:2px solid var(--red);color:var(--red);padding:6px 12px;font-size:10px}
   .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
   .field{flex:1;min-width:120px}
@@ -94,21 +93,31 @@
   .chip{display:inline-block;padding:5px 12px;border:2px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;margin:0 6px 6px 0;user-select:none}
   .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 
+  .seg{display:inline-flex;border:2px solid var(--border);border-radius:10px;overflow:hidden}
+  .seg button{background:var(--surface);border:none;padding:9px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);cursor:pointer}
+  .seg button.on{background:var(--ink);color:#fff}
+
   .empty{text-align:center;padding:40px;color:var(--ink3);font-style:italic}
   .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--ink);color:#fff;padding:14px 24px;border-radius:12px;font-weight:600;font-size:13px;z-index:200;transition:transform .3s;box-shadow:0 10px 30px rgba(0,0,0,.2)}
   .toast.show{transform:translateX(-50%) translateY(0)}
   .search{max-width:340px}
 
+  .modal-bg{position:fixed;inset:0;background:rgba(28,26,23,.5);display:none;align-items:center;justify-content:center;z-index:80;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:26px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto}
+  .modal-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;margin-bottom:4px}
+  .modal-close{float:right;cursor:pointer;color:var(--ink3);font-size:22px;line-height:1;font-weight:700}
+  .timeline-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+  .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:5px}
+
   @media(max-width:900px){
     .stats{grid-template-columns:repeat(2,1fr)}
     .content{padding:16px}
-    .nav{overflow-x:auto}
   }
 </style>
 </head>
 <body>
 
-<!-- LOGIN -->
 <div id="login-gate">
   <div class="login-box">
     <div class="login-logo">glint</div>
@@ -121,14 +130,13 @@
   </div>
 </div>
 
-<!-- APP -->
 <div class="shell" id="shell">
   <div class="topbar">
     <div class="brand">glint<span>Control Room</span></div>
     <div class="topbar-right">
       <div><span class="live-dot"></span><span style="font-size:12px;font-weight:600;color:var(--ink2)">Live</span></div>
       <div class="clock" id="clock"></div>
-      <button class="btn btn-ghost" onclick="adminLogout()" style="padding:8px 16px">Log Out</button>
+      <button class="btn btn-ghost btn-sm" onclick="adminLogout()">Log Out</button>
     </div>
   </div>
 
@@ -142,31 +150,31 @@
 
   <div class="content">
 
-    <!-- LIVE -->
     <div class="page active" id="page-live">
       <div class="page-head">
-        <div>
-          <div class="page-title">Right Now</div>
-          <div class="page-sub">Who's working on what, updating live</div>
-        </div>
+        <div><div class="page-title">Right Now</div><div class="page-sub">Who's working on what, updating live</div></div>
         <button class="btn btn-ghost" onclick="loadLive()">↻ Refresh</button>
       </div>
       <div class="stats" id="live-stats"></div>
       <div class="live-grid" id="live-grid"></div>
     </div>
 
-    <!-- REPORTS -->
     <div class="page" id="page-reports">
       <div class="page-head">
-        <div>
-          <div class="page-title">Reports</div>
-          <div class="page-sub">Time totals by item and by worker</div>
+        <div><div class="page-title">Reports</div><div class="page-sub">Time totals by item and by worker</div></div>
+        <div class="head-actions">
+          <div class="seg" id="range-seg">
+            <button class="on" onclick="setRange('today',this)">Today</button>
+            <button onclick="setRange('week',this)">Week</button>
+            <button onclick="setRange('month',this)">Month</button>
+            <button onclick="setRange('all',this)">All</button>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="exportReports()">⬇ Export CSV</button>
         </div>
-        <button class="btn btn-ghost" onclick="loadReports()">↻ Refresh</button>
       </div>
 
       <div class="card" style="margin-bottom:16px">
-        <div class="card-label">Time per Item</div>
+        <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">click a row for full timeline</span></div>
         <div style="overflow-x:auto">
           <table id="item-report">
             <thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead>
@@ -186,14 +194,13 @@
       </div>
     </div>
 
-    <!-- HISTORY -->
     <div class="page" id="page-history">
       <div class="page-head">
-        <div>
-          <div class="page-title">History</div>
-          <div class="page-sub">Every scan, newest first</div>
+        <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first</div></div>
+        <div class="head-actions">
+          <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistory()">
+          <button class="btn btn-ghost btn-sm" onclick="exportHistory()">⬇ Export CSV</button>
         </div>
-        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistory()">
       </div>
       <div class="card">
         <div style="overflow-x:auto">
@@ -205,33 +212,21 @@
       </div>
     </div>
 
-    <!-- WORKERS -->
     <div class="page" id="page-workers">
       <div class="page-head">
-        <div>
-          <div class="page-title">Workers</div>
-          <div class="page-sub">Add people and set their login PIN and roles</div>
-        </div>
+        <div><div class="page-title">Workers</div><div class="page-sub">Add people and set their login PIN and roles</div></div>
       </div>
-
-      <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
+      <div class="grid" id="workers-grid" style="grid-template-columns:1fr 1fr;gap:16px">
         <div class="card">
           <div class="card-label">Add Worker</div>
-          <div class="field" style="margin-bottom:12px">
-            <label>Name</label>
-            <input id="nw-name" placeholder="e.g. Aron">
-          </div>
-          <div class="field" style="margin-bottom:12px">
-            <label>Login PIN (4 digits)</label>
-            <input id="nw-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 1111">
-          </div>
+          <div class="field" style="margin-bottom:12px"><label>Name</label><input id="nw-name" placeholder="e.g. Aron"></div>
+          <div class="field" style="margin-bottom:12px"><label>Login PIN (4 digits)</label><input id="nw-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 1111"></div>
           <div style="margin-bottom:14px">
             <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
             <div id="nw-roles"></div>
           </div>
           <button class="btn" style="width:100%" onclick="addWorker()">Add Worker</button>
         </div>
-
         <div class="card">
           <div class="card-label">Manage Roles</div>
           <div class="row" style="margin-bottom:14px">
@@ -253,14 +248,13 @@
       </div>
     </div>
 
-    <!-- LABELS -->
     <div class="page" id="page-labels">
       <div class="page-head">
-        <div>
-          <div class="page-title">Labels Printed</div>
-          <div class="page-sub">Every barcode printed, newest first</div>
+        <div><div class="page-title">Labels Printed</div><div class="page-sub">Every barcode printed, newest first</div></div>
+        <div class="head-actions">
+          <input class="search" id="labels-search" placeholder="Search item, customer..." oninput="renderLabels()">
+          <button class="btn btn-ghost btn-sm" onclick="exportLabels()">⬇ Export CSV</button>
         </div>
-        <input class="search" id="labels-search" placeholder="Search item, customer..." oninput="renderLabels()">
       </div>
       <div class="card">
         <div style="overflow-x:auto">
@@ -275,328 +269,331 @@
   </div>
 </div>
 
+<div class="modal-bg" id="edit-modal">
+  <div class="modal">
+    <span class="modal-close" onclick="closeEdit()">✕</span>
+    <div class="modal-title">Edit Worker</div>
+    <div class="page-sub" style="margin-bottom:20px">Update PIN or roles</div>
+    <input type="hidden" id="edit-id">
+    <div class="field" style="margin-bottom:14px"><label>Name</label><input id="edit-name"></div>
+    <div class="field" style="margin-bottom:14px"><label>Login PIN</label><input id="edit-pin" inputmode="numeric" maxlength="6"></div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
+      <div id="edit-roles"></div>
+    </div>
+    <button class="btn" style="width:100%" onclick="saveEdit()">Save Changes</button>
+  </div>
+</div>
+
+<div class="modal-bg" id="item-modal">
+  <div class="modal">
+    <span class="modal-close" onclick="closeItem()">✕</span>
+    <div class="modal-title" id="item-modal-title">Item</div>
+    <div class="page-sub" id="item-modal-sub" style="margin-bottom:20px"></div>
+    <div id="item-timeline"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
-const ADMIN_PASS = 'glint2026'; // change this to your own
+const ADMIN_PASS = 'glint2026'; // change this to your own password
+const IDLE_ALERT_HOURS = 12;
 
-let scans = [], workers = [], roles = [], labels = [];
-let nwSelectedRoles = [];
-let liveTimers = null;
+let scans=[], workers=[], roles=[], labels=[];
+let nwSelectedRoles=[], editSelectedRoles=[];
+let liveTimers=null, reportRange='today';
 
-// ===== AUTH =====
 function adminLogin(){
-  const p = document.getElementById('admin-pass').value;
-  if(p === ADMIN_PASS || sessionStorage.getItem('glint_admin')==='1'){
+  const p=document.getElementById('admin-pass').value;
+  if(p===ADMIN_PASS || sessionStorage.getItem('glint_admin')==='1'){
     sessionStorage.setItem('glint_admin','1');
     document.getElementById('login-gate').style.display='none';
     document.getElementById('shell').style.display='block';
     bootstrap();
-  } else {
-    toast('Wrong password');
-  }
+  } else toast('Wrong password');
 }
 function adminLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
-if(sessionStorage.getItem('glint_admin')==='1'){ adminLogin(); }
+if(sessionStorage.getItem('glint_admin')==='1') adminLogin();
 
-// ===== API =====
 async function sb(path, opts={}){
-  const r = await fetch(SUPABASE_URL+'/rest/v1/'+path, {
-    ...opts,
-    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json', ...(opts.headers||{}) }
-  });
+  const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',...(opts.headers||{})}});
   if(opts.method && opts.method!=='GET') return r;
   return r.json();
 }
 
 async function bootstrap(){
   startClock();
-  await Promise.all([loadLive(), loadWorkers(), loadRoles()]);
-  setInterval(loadLive, 15000); // auto-refresh live every 15s
+  await Promise.all([loadAllScans(), loadWorkers(), loadRoles()]);
+  computeLive();
+  setInterval(async ()=>{ await loadAllScans(); computeLive(); }, 15000);
 }
+async function loadAllScans(){ scans = await sb('scans?select=*&order=created_at.desc&limit=5000'); }
 
-// ===== CLOCK =====
-function startClock(){
-  const el = document.getElementById('clock');
-  setInterval(()=>{ el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}); }, 1000);
-}
+function startClock(){ const el=document.getElementById('clock'); setInterval(()=>{el.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000); }
 
-// ===== NAV =====
 function showPage(name, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   el.classList.add('active');
-  if(name==='reports') loadReports();
-  if(name==='history') loadHistory();
+  if(name==='reports') computeReports();
+  if(name==='history') renderHistory();
   if(name==='labels') loadLabels();
   if(name==='workers'){ loadWorkers(); loadRoles(); }
+  if(name==='live') computeLive();
 }
 
-// ===== LIVE =====
-async function loadLive(){
-  scans = await sb('scans?select=*&order=created_at.desc&limit=2000');
-  computeLive();
+function setRange(r, el){
+  reportRange=r;
+  document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  computeReports();
+}
+function inRange(dateStr){
+  if(reportRange==='all') return true;
+  const d=new Date(dateStr), now=new Date();
+  if(reportRange==='today') return d.toDateString()===now.toDateString();
+  if(reportRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
+  if(reportRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
+  return true;
 }
 
+function loadLive(){ loadAllScans().then(computeLive); }
 function computeLive(){
-  // Determine each worker's current state from latest scan per item+role
-  // Active = last event for that item::role is "Started"
-  const openSessions = {}; // worker -> {itemId, itemDesc, role, startedAt}
-  const seen = {};
-  // Walk scans oldest->newest to track state
-  const chron = [...scans].reverse();
-  const itemRoleState = {};
+  const chron=[...scans].reverse();
+  const itemRoleState={};
   chron.forEach(s=>{
-    const key = s.item_id+'::'+(s.role||'');
-    if((s.status||'').includes('Started')){
-      itemRoleState[key] = { worker:s.worker, itemId:s.item_id, itemDesc:s.item_desc, role:s.role, startedAt:s.created_at };
-    } else {
-      delete itemRoleState[key];
-    }
+    const key=s.item_id+'::'+(s.role||'');
+    if((s.status||'').includes('Started')) itemRoleState[key]={worker:s.worker,itemId:s.item_id,itemDesc:s.item_desc,role:s.role,startedAt:s.created_at};
+    else delete itemRoleState[key];
   });
-  // Group active sessions by worker
-  const active = {};
-  Object.values(itemRoleState).forEach(sess=>{ active[sess.worker] = sess; });
+  const active={}; Object.values(itemRoleState).forEach(s=>active[s.worker]=s);
+  const now=Date.now();
+  const stale=Object.values(itemRoleState).filter(s=>(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000);
 
-  // Stats
-  const workingCount = Object.keys(active).length;
-  const todayScans = scans.filter(s=> new Date(s.created_at).toDateString()===new Date().toDateString()).length;
-  const uniqueItems = new Set(scans.map(s=>s.item_id)).size;
-  document.getElementById('live-stats').innerHTML = `
+  const workingCount=Object.keys(active).length;
+  const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
+  const uniqueItems=new Set(scans.map(s=>s.item_id)).size;
+  document.getElementById('live-stats').innerHTML=`
     <div class="stat"><div class="stat-num">${workingCount}</div><div class="stat-label">Working now</div></div>
     <div class="stat"><div class="stat-num">${workers.length}</div><div class="stat-label">Total workers</div></div>
     <div class="stat"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans today</div></div>
-    <div class="stat"><div class="stat-num">${uniqueItems}</div><div class="stat-label">Items tracked</div></div>`;
+    <div class="stat ${stale.length?'alert':''}"><div class="stat-num">${stale.length}</div><div class="stat-label">Left running ${IDLE_ALERT_HOURS}h+</div></div>`;
 
-  // Live cards — one per worker
-  const grid = document.getElementById('live-grid');
+  const grid=document.getElementById('live-grid');
   if(!workers.length){ grid.innerHTML='<div class="empty">No workers yet — add them in the Workers tab</div>'; return; }
-  grid.innerHTML = workers.map(w=>{
-    const sess = active[w.name];
-    if(sess){
+  grid.innerHTML=workers.map(w=>{
+    const s=active[w.name];
+    if(s){
+      const isStale=(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
       return `<div class="live-card working">
         <div class="live-worker">${w.name}</div>
-        <div class="live-role">${sess.role||'Working'}</div>
-        <div class="live-item">${sess.itemDesc||sess.itemId}<br><span style="color:var(--ink3);font-size:11px">${sess.itemId}</span></div>
-        <div class="live-timer" data-start="${sess.startedAt}">--:--</div>
+        <div class="live-role">${s.role||'Working'}${isStale?' · ⚠️ long':''}</div>
+        <div class="live-item">${s.itemDesc||s.itemId}<br><span style="color:var(--ink3);font-size:11px">${s.itemId}</span></div>
+        <div class="live-timer" data-start="${s.startedAt}">--:--</div>
       </div>`;
     }
-    return `<div class="live-card">
-      <div class="live-worker">${w.name}</div>
-      <div class="live-role" style="color:var(--ink3)">${(w.roles||[]).join(', ')||'—'}</div>
-      <div class="live-idle">Not working right now</div>
-    </div>`;
+    return `<div class="live-card"><div class="live-worker">${w.name}</div><div class="live-role" style="color:var(--ink3)">${(w.roles||[]).join(', ')||'—'}</div><div class="live-idle">Not working right now</div></div>`;
   }).join('');
-
   if(liveTimers) clearInterval(liveTimers);
-  liveTimers = setInterval(updateLiveTimers, 1000);
-  updateLiveTimers();
+  liveTimers=setInterval(updateLiveTimers,1000); updateLiveTimers();
 }
-
 function updateLiveTimers(){
   document.querySelectorAll('.live-timer').forEach(el=>{
-    const start = new Date(el.dataset.start).getTime();
-    const sec = Math.floor((Date.now()-start)/1000);
-    const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
-    const pad=n=>String(n).padStart(2,'0');
-    el.textContent = h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+    const sec=Math.floor((Date.now()-new Date(el.dataset.start).getTime())/1000);
+    const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60,pad=n=>String(n).padStart(2,'0');
+    el.textContent=h>0?`${h}:${pad(m)}:${pad(s)}`:`${pad(m)}:${pad(s)}`;
   });
 }
 
-// ===== REPORTS =====
-async function loadReports(){
-  if(!scans.length) scans = await sb('scans?select=*&order=created_at.desc&limit=5000');
-  computeReports();
-}
-
-function computeReports(){
-  // Pair Started/Stopped per item::role to compute durations
-  const chron = [...scans].reverse();
-  const open = {};
-  const itemAgg = {}; // itemId -> {ms, sessions, customer, desc, last, active}
-  const workerAgg = {}; // worker -> {ms, items:Set, sessions}
-
+function pairSessions(filterFn){
+  const chron=[...scans].reverse();
+  const open={}; const sessions=[];
   chron.forEach(s=>{
-    const key = s.item_id+'::'+(s.role||'')+'::'+s.worker;
-    if((s.status||'').includes('Started')){
-      open[key] = s;
-    } else if((s.status||'').includes('Stopped') && open[key]){
-      const start = new Date(open[key].created_at).getTime();
-      const end = new Date(s.created_at).getTime();
-      const ms = Math.max(0, end-start);
-      // item
-      if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.created_at,active:false};
-      itemAgg[s.item_id].ms += ms; itemAgg[s.item_id].sessions++;
-      // worker
-      if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0};
-      workerAgg[s.worker].ms += ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++;
+    const key=s.item_id+'::'+(s.role||'')+'::'+s.worker;
+    if((s.status||'').includes('Started')) open[key]=s;
+    else if((s.status||'').includes('Stopped') && open[key]){
+      sessions.push({ item_id:s.item_id, item_desc:s.item_desc, customer:s.customer, worker:s.worker, role:s.role, start:open[key].created_at, end:s.created_at, ms:Math.max(0,new Date(s.created_at)-new Date(open[key].created_at)) });
       delete open[key];
     }
   });
+  return { sessions: filterFn?sessions.filter(x=>filterFn(x.end)):sessions, open:Object.values(open) };
+}
+function baseItemId(id){ return id.replace(/-(BASE|ARMS|CUPS|PLATES)$/i,''); }
 
-  // Mark items with open sessions as active + set last activity
-  scans.forEach(s=>{
-    if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.created_at,active:false};
-    if(new Date(s.created_at) > new Date(itemAgg[s.item_id].last)) itemAgg[s.item_id].last = s.created_at;
+function computeReports(){
+  const {sessions, open}=pairSessions(inRange);
+  const itemAgg={};
+  sessions.forEach(s=>{
+    if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.end,active:false};
+    itemAgg[s.item_id].ms+=s.ms; itemAgg[s.item_id].sessions++;
+    if(new Date(s.end)>new Date(itemAgg[s.item_id].last)) itemAgg[s.item_id].last=s.end;
   });
-  Object.keys(open).forEach(k=>{ const it=open[k].item_id; if(itemAgg[it]) itemAgg[it].active=true; });
+  open.forEach(o=>{ if(itemAgg[o.item_id]) itemAgg[o.item_id].active=true; else if(inRange(o.created_at)) itemAgg[o.item_id]={ms:0,sessions:0,customer:o.customer,desc:o.item_desc,last:o.created_at,active:true}; });
 
-  // Render item report
-  const itemRows = Object.entries(itemAgg).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last)).map(([id,d])=>`
-    <tr>
-      <td><strong>${d.desc||id}</strong><br><span style="color:var(--ink3);font-size:11px">${id}</span></td>
+  const partGroups={};
+  Object.keys(itemAgg).forEach(id=>{ const base=baseItemId(id); if(base!==id){ if(!partGroups[base]) partGroups[base]={ms:0,parts:0}; partGroups[base].ms+=itemAgg[id].ms; partGroups[base].parts++; } });
+
+  let rows=Object.entries(itemAgg).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last)).map(([id,d])=>{
+    const pm=id.match(/-(BASE|ARMS|CUPS|PLATES)$/i);
+    return `<tr class="clickable" onclick="openItem('${id.replace(/'/g,"\\'")}')">
+      <td><strong>${d.desc||id}</strong> ${pm?'<span class="badge part">'+pm[1].toUpperCase()+'</span>':''}<br><span style="color:var(--ink3);font-size:11px">${id}</span></td>
       <td>${d.customer||'—'}</td>
       <td><strong>${fmtDur(d.ms)}</strong></td>
       <td>${d.sessions}</td>
       <td>${fmtDate(d.last)}</td>
       <td>${d.active?'<span class="badge started">Working</span>':'<span class="badge stopped">Idle</span>'}</td>
-    </tr>`).join('');
-  document.querySelector('#item-report tbody').innerHTML = itemRows || '<tr><td colspan="6" class="empty">No completed sessions yet</td></tr>';
+    </tr>`;
+  });
+  const groupRows=Object.entries(partGroups).map(([base,g])=>`
+    <tr style="background:var(--surface2)">
+      <td><strong>◆ ${base} — All parts</strong><br><span style="color:var(--gold2);font-size:11px">${g.parts} parts combined</span></td>
+      <td>—</td><td><strong>${fmtDur(g.ms)}</strong></td><td>—</td><td>—</td>
+      <td><span class="badge part">Candelabra</span></td>
+    </tr>`);
+  document.querySelector('#item-report tbody').innerHTML=(groupRows.join('')+rows.join(''))||'<tr><td colspan="6" class="empty">No sessions in this range</td></tr>';
 
-  // Render worker report
-  const workerRows = Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([name,d])=>`
-    <tr>
-      <td><strong>${name}</strong></td>
-      <td><strong>${fmtDur(d.ms)}</strong></td>
-      <td>${d.items.size}</td>
-      <td>${d.sessions}</td>
-    </tr>`).join('');
-  document.querySelector('#worker-report tbody').innerHTML = workerRows || '<tr><td colspan="4" class="empty">No completed sessions yet</td></tr>';
+  const workerAgg={};
+  sessions.forEach(s=>{ if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0}; workerAgg[s.worker].ms+=s.ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++; });
+  const wr=Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([n,d])=>`<tr><td><strong>${n}</strong></td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.items.size}</td><td>${d.sessions}</td></tr>`).join('');
+  document.querySelector('#worker-report tbody').innerHTML=wr||'<tr><td colspan="4" class="empty">No sessions in this range</td></tr>';
 }
 
-// ===== HISTORY =====
-async function loadHistory(){
-  if(!scans.length) scans = await sb('scans?select=*&order=created_at.desc&limit=5000');
-  renderHistory();
+function openItem(itemId){
+  const evts=scans.filter(s=>s.item_id===itemId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  if(!evts.length) return;
+  document.getElementById('item-modal-title').textContent=evts[0].item_desc||itemId;
+  document.getElementById('item-modal-sub').textContent=itemId+(evts[0].customer?' · '+evts[0].customer:'');
+  document.getElementById('item-timeline').innerHTML=evts.map(e=>{
+    const started=(e.status||'').includes('Started');
+    return `<div class="timeline-row">
+      <div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
+      <div style="flex:1">
+        <div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${e.role||'—'}</div>
+        <div style="font-size:12px;color:var(--ink3)">${e.worker} · ${fmtDateFull(e.created_at)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('item-modal').classList.add('show');
 }
+function closeItem(){ document.getElementById('item-modal').classList.remove('show'); }
+
 function renderHistory(){
-  const q = (document.getElementById('history-search').value||'').toLowerCase();
-  const rows = scans.filter(s=>!q || (s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q))
-    .slice(0,500).map(s=>`
-    <tr>
-      <td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
-      <td><strong>${s.item_desc||s.item_id}</strong><br><span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
-      <td>${s.customer||'—'}</td>
-      <td>${s.worker}</td>
-      <td>${s.role||'—'}</td>
-      <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td>
-    </tr>`).join('');
-  document.querySelector('#history-table tbody').innerHTML = rows || '<tr><td colspan="6" class="empty">No scans yet</td></tr>';
+  const q=(document.getElementById('history-search').value||'').toLowerCase();
+  const rows=scans.filter(s=>!q||(s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q)).slice(0,800).map(s=>`
+    <tr><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
+    <td><strong>${s.item_desc||s.item_id}</strong><br><span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
+    <td>${s.customer||'—'}</td><td>${s.worker}</td><td>${s.role||'—'}</td>
+    <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td></tr>`).join('');
+  document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No scans yet</td></tr>';
 }
 
-// ===== WORKERS =====
-async function loadWorkers(){
-  workers = await sb('workers?select=*&order=name.asc');
-  renderWorkers();
-}
+async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); renderWorkers(); }
 function renderWorkers(){
-  document.querySelector('#workers-table tbody').innerHTML = workers.length ? workers.map(w=>`
-    <tr>
-      <td><strong>${w.name}</strong></td>
-      <td><span style="font-variant-numeric:tabular-nums">${w.pin||'—'}</span></td>
-      <td>${(w.roles||[]).join(', ')||'—'}</td>
-      <td style="text-align:right"><button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button></td>
-    </tr>`).join('') : '<tr><td colspan="4" class="empty">No workers yet</td></tr>';
+  document.querySelector('#workers-table tbody').innerHTML=workers.length?workers.map(w=>`
+    <tr><td><strong>${w.name}</strong></td><td><span style="font-variant-numeric:tabular-nums">${w.pin||'—'}</span></td>
+    <td>${(w.roles||[]).join(', ')||'—'}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">Edit</button>
+      <button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button>
+    </td></tr>`).join(''):'<tr><td colspan="4" class="empty">No workers yet</td></tr>';
 }
-
 async function addWorker(){
-  const name = document.getElementById('nw-name').value.trim();
-  const pin = document.getElementById('nw-pin').value.trim();
-  if(!name){ toast('Enter a name'); return; }
-  if(pin.length<4){ toast('PIN must be at least 4 digits'); return; }
-  if(!nwSelectedRoles.length){ toast('Pick at least one role'); return; }
-  const r = await sb('workers', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify({ name, pin, roles:nwSelectedRoles }) });
-  if(r.ok){
-    toast('✅ '+name+' added');
-    document.getElementById('nw-name').value='';
-    document.getElementById('nw-pin').value='';
-    nwSelectedRoles=[];
-    renderNwRoles();
-    loadWorkers();
-  } else { toast('Could not add worker'); }
+  const name=document.getElementById('nw-name').value.trim();
+  const pin=document.getElementById('nw-pin').value.trim();
+  if(!name){toast('Enter a name');return;}
+  if(pin.length<4){toast('PIN must be at least 4 digits');return;}
+  if(!nwSelectedRoles.length){toast('Pick at least one role');return;}
+  const r=await sb('workers',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:nwSelectedRoles})});
+  if(r.ok){ toast('✅ '+name+' added'); document.getElementById('nw-name').value=''; document.getElementById('nw-pin').value=''; nwSelectedRoles=[]; renderNwRoles(); loadWorkers(); }
+  else toast('Could not add worker');
+}
+async function deleteWorker(id,name){ if(!confirm('Remove '+name+'?'))return; const r=await sb('workers?id=eq.'+id,{method:'DELETE',headers:{'Prefer':'return=minimal'}}); if(r.ok){toast(name+' removed');loadWorkers();} }
+
+function openEdit(id){
+  const w=workers.find(x=>x.id===id); if(!w) return;
+  document.getElementById('edit-id').value=w.id;
+  document.getElementById('edit-name').value=w.name;
+  document.getElementById('edit-pin').value=w.pin||'';
+  editSelectedRoles=[...(w.roles||[])];
+  renderEditRoles();
+  document.getElementById('edit-modal').classList.add('show');
+}
+function closeEdit(){ document.getElementById('edit-modal').classList.remove('show'); }
+function renderEditRoles(){
+  document.getElementById('edit-roles').innerHTML=roles.map(r=>{
+    const on=editSelectedRoles.includes(r.name);
+    return `<span class="chip ${on?'on':''}" onclick="toggleEditRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;
+  }).join('')||'<span style="color:var(--ink3);font-size:12px">No roles yet</span>';
+}
+function toggleEditRole(name){ const i=editSelectedRoles.indexOf(name); if(i>=0)editSelectedRoles.splice(i,1);else editSelectedRoles.push(name); renderEditRoles(); }
+async function saveEdit(){
+  const id=document.getElementById('edit-id').value;
+  const name=document.getElementById('edit-name').value.trim();
+  const pin=document.getElementById('edit-pin').value.trim();
+  if(!name||pin.length<4){toast('Name and 4-digit PIN required');return;}
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:editSelectedRoles})});
+  if(r.ok){ toast('✅ Saved'); closeEdit(); loadWorkers(); } else toast('Could not save');
 }
 
-async function deleteWorker(id, name){
-  if(!confirm('Remove '+name+'?')) return;
-  const r = await sb('workers?id=eq.'+id, { method:'DELETE', headers:{'Prefer':'return=minimal'} });
-  if(r.ok){ toast(name+' removed'); loadWorkers(); }
-}
-
-// ===== ROLES =====
-async function loadRoles(){
-  roles = await sb('roles?select=*&order=name.asc');
-  renderRoles();
-  renderNwRoles();
-}
+async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); renderRoles(); renderNwRoles(); }
 function renderRoles(){
-  document.getElementById('roles-list').innerHTML = roles.length ? roles.map(r=>`
+  document.getElementById('roles-list').innerHTML=roles.length?roles.map(r=>`
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
       <span style="font-weight:600">${r.name}</span>
-      <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button>
-    </div>`).join('') : '<div class="empty" style="padding:16px">No roles yet</div>';
+      <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button></div>`).join(''):'<div class="empty" style="padding:16px">No roles yet</div>';
 }
 function renderNwRoles(){
-  document.getElementById('nw-roles').innerHTML = roles.map(r=>{
-    const on = nwSelectedRoles.includes(r.name);
-    return `<span class="chip ${on?'on':''}" onclick="toggleNwRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;
-  }).join('') || '<span style="color:var(--ink3);font-size:12px">Add a role first →</span>';
+  document.getElementById('nw-roles').innerHTML=roles.map(r=>{const on=nwSelectedRoles.includes(r.name);return `<span class="chip ${on?'on':''}" onclick="toggleNwRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;}).join('')||'<span style="color:var(--ink3);font-size:12px">Add a role first →</span>';
 }
-function toggleNwRole(name){
-  const i = nwSelectedRoles.indexOf(name);
-  if(i>=0) nwSelectedRoles.splice(i,1); else nwSelectedRoles.push(name);
-  renderNwRoles();
-}
+function toggleNwRole(name){ const i=nwSelectedRoles.indexOf(name); if(i>=0)nwSelectedRoles.splice(i,1);else nwSelectedRoles.push(name); renderNwRoles(); }
 async function addRole(){
-  const name = document.getElementById('new-role').value.trim();
-  if(!name) return;
-  const r = await sb('roles', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify({ name }) });
-  if(r.ok){ toast('✅ Role added'); document.getElementById('new-role').value=''; loadRoles(); }
-  else toast('Role may already exist');
+  const name=document.getElementById('new-role').value.trim(); if(!name)return;
+  const r=await sb('roles',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name})});
+  if(r.ok){toast('✅ Role added');document.getElementById('new-role').value='';loadRoles();}else toast('Role may already exist');
 }
-async function deleteRole(id){
-  const r = await sb('roles?id=eq.'+id, { method:'DELETE', headers:{'Prefer':'return=minimal'} });
-  if(r.ok){ loadRoles(); }
-}
+async function deleteRole(id){ const r=await sb('roles?id=eq.'+id,{method:'DELETE',headers:{'Prefer':'return=minimal'}}); if(r.ok)loadRoles(); }
 
-// ===== LABELS =====
-async function loadLabels(){
-  labels = await sb('labels?select=*&order=printed_at.desc&limit=2000');
-  renderLabels();
-}
+async function loadLabels(){ labels=await sb('labels?select=*&order=printed_at.desc&limit=3000'); renderLabels(); }
 function renderLabels(){
-  const q = (document.getElementById('labels-search').value||'').toLowerCase();
-  const rows = labels.filter(l=>!q || (l.item_id+(l.item_name||'')+(l.customer||'')+(l.city||'')).toLowerCase().includes(q))
-    .map(l=>`
-    <tr>
-      <td style="white-space:nowrap">${fmtDate(l.printed_at)}</td>
-      <td><span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold2)">${l.item_id}</span></td>
-      <td>${l.item_name||'—'}</td>
-      <td>${l.customer||'—'}</td>
-      <td>${l.city||'—'}</td>
-      <td>${l.part?'<span class="badge started">'+l.part+'</span>':'—'}</td>
-    </tr>`).join('');
-  document.querySelector('#labels-table tbody').innerHTML = rows || '<tr><td colspan="6" class="empty">No labels printed yet</td></tr>';
+  const q=(document.getElementById('labels-search').value||'').toLowerCase();
+  const rows=labels.filter(l=>!q||(l.item_id+(l.item_name||'')+(l.customer||'')+(l.city||'')).toLowerCase().includes(q)).map(l=>`
+    <tr><td style="white-space:nowrap">${fmtDate(l.printed_at)}</td>
+    <td><span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold2)">${l.item_id}</span></td>
+    <td>${l.item_name||'—'}</td><td>${l.customer||'—'}</td><td>${l.city||'—'}</td>
+    <td>${l.part?'<span class="badge part">'+l.part+'</span>':'—'}</td></tr>`).join('');
+  document.querySelector('#labels-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No labels printed yet</td></tr>';
 }
 
-// ===== HELPERS =====
-function fmtDur(ms){
-  const sec=Math.floor(ms/1000), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60);
-  if(h>0) return h+'h '+m+'m';
-  if(m>0) return m+'m';
-  return Math.floor(sec)+'s';
+function downloadCSV(filename, rows){
+  const csv=rows.map(r=>r.map(c=>{const v=(c==null?'':String(c)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
 }
-function fmtDate(d){
-  const dt = new Date(d);
-  return dt.toLocaleDateString([], {month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+function exportReports(){
+  const {sessions}=pairSessions(inRange);
+  const rows=[['Item ID','Item','Customer','Worker','Role','Start','End','Minutes']];
+  sessions.forEach(s=>rows.push([s.item_id,s.item_desc||'',s.customer||'',s.worker,s.role||'',fmtDateFull(s.start),fmtDateFull(s.end),(s.ms/60000).toFixed(1)]));
+  downloadCSV('glint-report-'+reportRange+'.csv',rows);
 }
-function toast(msg){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2600);
+function exportHistory(){
+  const rows=[['Time','Item ID','Item','Customer','Worker','Role','Action']];
+  scans.forEach(s=>rows.push([fmtDateFull(s.created_at),s.item_id,s.item_desc||'',s.customer||'',s.worker,s.role||'',s.status]));
+  downloadCSV('glint-history.csv',rows);
 }
+function exportLabels(){
+  const rows=[['Printed','Item ID','Item','Customer','City','Note','Part']];
+  labels.forEach(l=>rows.push([fmtDateFull(l.printed_at),l.item_id,l.item_name||'',l.customer||'',l.city||'',l.note||'',l.part||'']));
+  downloadCSV('glint-labels.csv',rows);
+}
+
+function fmtDur(ms){ const sec=Math.floor(ms/1000),h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60); if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m'; return Math.floor(sec)+'s'; }
+function fmtDate(d){ const dt=new Date(d); return dt.toLocaleDateString([], {month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+function fmtDateFull(d){ return new Date(d).toLocaleString([], {month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2600); }
 </script>
 </body>
 </html>
