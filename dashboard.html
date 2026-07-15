@@ -310,6 +310,22 @@
         <div class="field" style="margin-bottom:16px"><label>Confirm New Password</label><input id="new-pass2" type="password" placeholder="Repeat new password"></div>
         <button class="btn" style="width:100%" onclick="changeAdminPassword()">Update Password</button>
       </div>
+
+      <div class="card" style="max-width:480px;margin-top:16px">
+        <div class="card-label">Label Size</div>
+        <div class="page-sub" style="margin-bottom:14px">Set your Dymo label dimensions in millimeters</div>
+        <div class="row" style="margin-bottom:14px">
+          <div class="field"><label>Width (mm)</label><input id="ls-width" type="number" min="20" max="300"></div>
+          <div class="field"><label>Height (mm)</label><input id="ls-height" type="number" min="10" max="300"></div>
+          <button class="btn" onclick="saveLabelSize()">Save</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(102,59)">102 × 59</button>
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(89,36)">89 × 36</button>
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(57,32)">57 × 32</button>
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(54,25)">54 × 25</button>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -381,6 +397,25 @@ async function adminLogin(){
 function adminLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
 if(sessionStorage.getItem('glint_admin')==='1') adminLogin();
 
+function loadLabelSizeInputs(){
+  const w=document.getElementById('ls-width'), h=document.getElementById('ls-height');
+  if(w) w.value=labelSize.width;
+  if(h) h.value=labelSize.height;
+}
+function saveLabelSize(){
+  const w=parseFloat(document.getElementById('ls-width').value), h=parseFloat(document.getElementById('ls-height').value);
+  if(!w||!h||w<10||h<10){ toast('Enter valid dimensions'); return; }
+  labelSize={width:w,height:h};
+  localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
+  toast('✅ Label size saved: '+w+' × '+h+' mm');
+}
+function setLabelPreset(w,h){
+  labelSize={width:w,height:h};
+  localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
+  loadLabelSizeInputs();
+  toast('✅ Label size: '+w+' × '+h+' mm');
+}
+
 async function changeAdminPassword(){
   const cur=document.getElementById('cur-pass').value;
   const n1=document.getElementById('new-pass').value;
@@ -431,14 +466,17 @@ function showPage(name, el){
   if(name==='workers'){ loadWorkers(); loadRoles(); }
   if(name==='live') computeLive();
   if(name==='tickets' && !allTickets.length) loadTickets();
+  if(name==='settings') loadLabelSizeInputs();
 }
 
 // ===== TICKETS + PRINTING =====
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
+// RepairDesk blocks browser (CORS) requests, so we route through a proxy.
+function proxied(url){ return 'https://corsproxy.io/?url=' + encodeURIComponent(url); }
 const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
 let allTickets = [];
-let labelSize = { width:102, height:59 };
+let labelSize = JSON.parse(localStorage.getItem('glint_label_size') || '{"width":102,"height":59}');
 
 async function loadTickets(){
   const el=document.getElementById('tickets-list');
@@ -446,7 +484,7 @@ async function loadTickets(){
   try{
     let fetched=[]; let page=1, totalPages=1;
     do{
-      const resp=await fetch(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      const resp=await fetch(proxied(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`));
       if(!resp.ok) throw new Error('HTTP '+resp.status);
       const data=await resp.json();
       const batch=(data.data&&data.data.ticketData)||[];
