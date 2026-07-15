@@ -146,6 +146,7 @@
     <div class="nav-tab" onclick="showPage('history',this)">History</div>
     <div class="nav-tab" onclick="showPage('workers',this)">Workers</div>
     <div class="nav-tab" onclick="showPage('labels',this)">Labels</div>
+    <div class="nav-tab" onclick="showPage('settings',this)">Settings</div>
   </div>
 
   <div class="content">
@@ -266,6 +267,19 @@
       </div>
     </div>
 
+    <div class="page" id="page-settings">
+      <div class="page-head">
+        <div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div>
+      </div>
+      <div class="card" style="max-width:480px">
+        <div class="card-label">Change Admin Password</div>
+        <div class="field" style="margin-bottom:12px"><label>Current Password</label><input id="cur-pass" type="password" placeholder="Enter current password"></div>
+        <div class="field" style="margin-bottom:12px"><label>New Password</label><input id="new-pass" type="password" placeholder="At least 6 characters"></div>
+        <div class="field" style="margin-bottom:16px"><label>Confirm New Password</label><input id="new-pass2" type="password" placeholder="Repeat new password"></div>
+        <button class="btn" style="width:100%" onclick="changeAdminPassword()">Update Password</button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -299,16 +313,33 @@
 <script>
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
-const ADMIN_PASS = 'glint2026'; // change this to your own password
+const FALLBACK_PASS = 'glint2026'; // used only if no password is set in the database yet
 const IDLE_ALERT_HOURS = 12;
 
 let scans=[], workers=[], roles=[], labels=[];
 let nwSelectedRoles=[], editSelectedRoles=[];
 let liveTimers=null, reportRange='today';
+let currentAdminPass = null;
 
-function adminLogin(){
+async function fetchAdminPass(){
+  try{
+    const rows = await sb('settings?key=eq.admin_password&select=value');
+    if(rows && rows.length) return rows[0].value;
+  }catch(e){}
+  return FALLBACK_PASS;
+}
+
+async function adminLogin(){
   const p=document.getElementById('admin-pass').value;
-  if(p===ADMIN_PASS || sessionStorage.getItem('glint_admin')==='1'){
+  // Already logged in this session
+  if(sessionStorage.getItem('glint_admin')==='1'){
+    document.getElementById('login-gate').style.display='none';
+    document.getElementById('shell').style.display='block';
+    bootstrap();
+    return;
+  }
+  currentAdminPass = await fetchAdminPass();
+  if(p===currentAdminPass){
     sessionStorage.setItem('glint_admin','1');
     document.getElementById('login-gate').style.display='none';
     document.getElementById('shell').style.display='block';
@@ -317,6 +348,29 @@ function adminLogin(){
 }
 function adminLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
 if(sessionStorage.getItem('glint_admin')==='1') adminLogin();
+
+async function changeAdminPassword(){
+  const cur=document.getElementById('cur-pass').value;
+  const n1=document.getElementById('new-pass').value;
+  const n2=document.getElementById('new-pass2').value;
+  const existing = currentAdminPass || await fetchAdminPass();
+  if(cur!==existing){ toast('Current password is wrong'); return; }
+  if(n1.length<6){ toast('New password must be at least 6 characters'); return; }
+  if(n1!==n2){ toast('New passwords do not match'); return; }
+  // Upsert into settings
+  const r = await fetch(SUPABASE_URL+'/rest/v1/settings',{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({key:'admin_password', value:n1})
+  });
+  if(r.ok){
+    currentAdminPass=n1;
+    document.getElementById('cur-pass').value='';
+    document.getElementById('new-pass').value='';
+    document.getElementById('new-pass2').value='';
+    toast('✅ Password updated');
+  } else toast('Could not update password');
+}
 
 async function sb(path, opts={}){
   const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',...(opts.headers||{})}});
