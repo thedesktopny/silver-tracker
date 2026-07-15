@@ -187,10 +187,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <!-- NAV -->
 <nav class="nav no-print">
   <div class="nav-tab active" onclick="showPage('scan',this)">📡 Scan</div>
-  <div class="nav-tab" onclick="showPage('tickets',this)">🎫 Tickets</div>
-  <div class="nav-tab" onclick="showPage('history',this)">📋 Log</div>
-  <div class="nav-tab" onclick="showPage('labels',this)">🏷️ Labels</div>
-  <div class="nav-tab" onclick="showPage('setup',this)">⚙️ Setup</div>
+  <div class="nav-tab" onclick="showPage('history',this)">📋 My Log</div>
 </nav>
 
 <div class="glint-header no-print">
@@ -269,47 +266,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
 </div>
 
-<!-- ===== TICKETS PAGE ===== -->
-<div id="page-tickets" class="page">
-
-  <div class="card no-print" id="tickets-pin-lock">
-    <div class="card-label">Admin PIN Required</div>
-    <div class="gen-row" style="margin-bottom:0">
-      <input id="tickets-pin-input" class="gen-input" type="password" placeholder="Enter PIN" autocomplete="off" inputmode="numeric" maxlength="6">
-      <button class="gen-btn" onclick="checkTicketsPin()">Unlock</button>
-    </div>
-  </div>
-
-  <div id="tickets-content" style="display:none">
-
-  <div class="card no-print" style="padding:14px 16px;margin-bottom:14px">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <div style="font-family:'Jost',sans-serif;font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.1em;text-transform:uppercase">Glint Lacquer · RepairDesk</div>
-      <div style="font-size:11px;color:var(--green);font-weight:700;letter-spacing:.04em">✅ Connected</div>
-    </div>
-  </div>
-
-  <div class="search-bar no-print">
-    <input id="ticket-search" class="search-input" type="text" placeholder="Search ticket # or customer..." oninput="filterTickets()">
-    <button class="gen-btn" onclick="loadTickets()" title="Refresh">↻</button>
-  </div>
-
-  <div id="tickets-list">
-    <div class="loading-row">Connect your API key to load tickets</div>
-  </div>
-
-  <!-- Print area -->
-  <div id="label-print-area" style="display:none">
-    <div id="labels-to-print" class="label-preview-grid"></div>
-  </div>
-
-  <div class="no-print" style="position:sticky;bottom:16px">
-    <button class="print-btn-main" id="print-selected-btn" onclick="printSelected()" disabled>🖨️ Print Selected Labels (<span id="selected-count">0</span>)</button>
-  </div>
-
-  </div><!-- end tickets-content -->
-</div>
-
 <!-- ===== HISTORY PAGE ===== -->
 <div id="page-history" class="page">
   <div class="card">
@@ -318,80 +274,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
   </div>
 </div>
 
-<!-- ===== LABEL HISTORY PAGE ===== -->
-<div id="page-labels" class="page">
-
-  <div class="card" style="margin-top:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div class="card-label" style="margin-bottom:0">Label Print History</div>
-      <button onclick="clearLabelHistory()" style="background:none;border:1px solid var(--red);border-radius:6px;color:var(--red);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;letter-spacing:.04em">Clear All</button>
-    </div>
-    <div class="gen-row" style="margin-bottom:12px">
-      <input id="label-history-search" class="gen-input" type="text" placeholder="Search by ticket, item or customer..." oninput="filterLabelHistory()">
-    </div>
-    <div id="label-history-list">
-      <div style="color:var(--ink3);font-size:12px;padding:12px 0;text-align:center">No labels printed yet</div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ===== SETUP PAGE ===== -->
-<div id="page-setup" class="page">
-
-  <div class="card" id="pin-lock-card">
-    <div class="card-label">Admin PIN Required</div>
-    <div class="gen-row">
-      <input id="admin-pin-input" class="gen-input" type="password" placeholder="Enter PIN" autocomplete="off" inputmode="numeric" maxlength="6">
-      <button class="gen-btn" onclick="checkAdminPin()">Unlock</button>
-    </div>
-  </div>
-
-  <div id="setup-content" style="display:none">
-
-  <div class="card">
-    <div class="card-label">Workers & Roles</div>
-    <div style="font-size:13px;color:var(--ink2);line-height:1.5">
-      Workers, PINs, and roles are now managed in the <strong>Control Room dashboard</strong>.<br><br>
-      Workers log in here with the name and PIN you set in the dashboard.
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-label">Admin PIN</div>
-    <div class="gen-row" style="margin-bottom:0">
-      <input id="change-pin-input" class="gen-input" type="password" placeholder="New PIN (4-6 digits)" autocomplete="off" inputmode="numeric" maxlength="6">
-      <button class="gen-btn" onclick="changeAdminPin()">Save</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-label">Label Size (mm)</div>
-    <div style="font-size:12px;color:var(--ink3);margin-bottom:12px">Set your Dymo label dimensions. Change anytime if you switch label rolls.</div>
-    <div class="gen-row" style="align-items:center">
-      <div style="flex:1">
-        <label style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px">Width</label>
-        <input id="label-width-input" class="gen-input" type="number" min="20" max="300" step="1">
-      </div>
-      <div style="flex:1">
-        <label style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px">Height</label>
-        <input id="label-height-input" class="gen-input" type="number" min="10" max="300" step="1">
-      </div>
-      <button class="gen-btn" style="align-self:flex-end" onclick="saveLabelSize()">Save</button>
-    </div>
-    <div style="margin-top:10px">
-      <div style="font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Common presets</div>
-      <div class="worker-row">
-        <button class="worker-btn" onclick="setLabelPreset(102,59)">102 × 59 mm</button>
-        <button class="worker-btn" onclick="setLabelPreset(89,36)">89 × 36 mm</button>
-        <button class="worker-btn" onclick="setLabelPreset(57,32)">57 × 32 mm</button>
-        <button class="worker-btn" onclick="setLabelPreset(54,25)">54 × 25 mm</button>
-      </div>
-    </div>
-  </div>
-
-  </div><!-- end setup-content -->
-</div>
 
 </div><!-- app-shell -->
 <div class="toast" id="toast"></div>
