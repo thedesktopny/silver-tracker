@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glint Lacquer — Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f0ebe2; --surface:#faf7f1; --surface2:#f4efe6;
+    --ink:#1c1a17; --ink2:#4a4640; --ink3:#8a8378;
+    --gold:#b8960c; --gold2:#8a6a20;
+    --border:#ddd5c7; --green:#3f7d54; --orange:#b5701f; --red:#a4433a;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
+
+  /* Login gate */
+  #login-gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:100}
+  .login-box{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:40px;width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)}
+  .login-logo{font-family:'Cormorant Garamond',serif;font-size:42px;font-weight:700;letter-spacing:-.02em}
+  .login-sub{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink3);margin-top:-4px;margin-bottom:28px}
+
+  /* Layout */
+  .shell{display:none;min-height:100vh}
+  .topbar{background:var(--surface);border-bottom:2px solid var(--border);padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:20}
+  .brand{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;letter-spacing:-.01em}
+  .brand span{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink3);display:block;margin-top:-6px;font-family:'Jost',sans-serif;font-weight:600}
+  .topbar-right{display:flex;align-items:center;gap:20px}
+  .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .clock{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink2);font-size:13px}
+
+  .nav{display:flex;gap:2px;padding:0 20px;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:64px;z-index:19}
+  .nav-tab{padding:16px 22px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .15s}
+  .nav-tab:hover{color:var(--ink2)}
+  .nav-tab.active{color:var(--ink);border-bottom-color:var(--gold)}
+
+  .content{max-width:1200px;margin:0 auto;padding:28px}
+  .page{display:none}
+  .page.active{display:block}
+
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+  .page-title{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700}
+  .page-sub{font-size:13px;color:var(--ink3);margin-top:2px}
+
+  /* Cards & grid */
+  .grid{display:grid;gap:16px}
+  .card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
+  .card-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:14px}
+
+  /* Stat tiles */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
+  .stat{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
+  .stat-num{font-family:'Cormorant Garamond',serif;font-size:40px;font-weight:700;line-height:1}
+  .stat-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-top:6px}
+
+  /* Live worker cards */
+  .live-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .live-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden}
+  .live-card.working{border-color:var(--green)}
+  .live-card.working::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--green)}
+  .live-worker{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700}
+  .live-role{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold2);margin-top:2px}
+  .live-item{font-size:13px;color:var(--ink2);margin-top:10px;line-height:1.3}
+  .live-timer{font-family:'Jost',sans-serif;font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;margin-top:8px}
+  .live-idle{font-size:13px;color:var(--ink3);margin-top:10px;font-style:italic}
+
+  /* Tables */
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:10px 12px;border-bottom:2px solid var(--border)}
+  td{padding:12px;border-bottom:1px solid var(--border);font-size:13px}
+  tr:hover td{background:var(--surface2)}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.04em}
+  .badge.started{background:#e6f0e9;color:var(--green)}
+  .badge.stopped{background:#f5ebe0;color:var(--orange)}
+
+  /* Forms */
+  input,select{font-family:'Jost',sans-serif;font-size:14px;padding:11px 14px;border:2px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);width:100%;outline:none}
+  input:focus,select:focus{border-color:var(--gold)}
+  .btn{font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:11px 20px;border:none;border-radius:10px;cursor:pointer;background:var(--ink);color:#fff;transition:opacity .15s}
+  .btn:active{opacity:.85}
+  .btn-ghost{background:var(--surface2);border:2px solid var(--border);color:var(--ink2)}
+  .btn-danger{background:none;border:2px solid var(--red);color:var(--red);padding:6px 12px;font-size:10px}
+  .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .field{flex:1;min-width:120px}
+  .field label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:6px}
+
+  .chip{display:inline-block;padding:5px 12px;border:2px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;margin:0 6px 6px 0;user-select:none}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .empty{text-align:center;padding:40px;color:var(--ink3);font-style:italic}
+  .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--ink);color:#fff;padding:14px 24px;border-radius:12px;font-weight:600;font-size:13px;z-index:200;transition:transform .3s;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .search{max-width:340px}
+
+  @media(max-width:900px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .content{padding:16px}
+    .nav{overflow-x:auto}
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-gate">
+  <div class="login-box">
+    <div class="login-logo">glint</div>
+    <div class="login-sub">Control Room</div>
+    <div style="margin-bottom:14px;text-align:left">
+      <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:6px">Admin Password</label>
+      <input id="admin-pass" type="password" placeholder="Enter password" onkeydown="if(event.key==='Enter')adminLogin()">
+    </div>
+    <button class="btn" style="width:100%" onclick="adminLogin()">Enter</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="shell" id="shell">
+  <div class="topbar">
+    <div class="brand">glint<span>Control Room</span></div>
+    <div class="topbar-right">
+      <div><span class="live-dot"></span><span style="font-size:12px;font-weight:600;color:var(--ink2)">Live</span></div>
+      <div class="clock" id="clock"></div>
+      <button class="btn btn-ghost" onclick="adminLogout()" style="padding:8px 16px">Log Out</button>
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="nav-tab active" onclick="showPage('live',this)">Live</div>
+    <div class="nav-tab" onclick="showPage('reports',this)">Reports</div>
+    <div class="nav-tab" onclick="showPage('history',this)">History</div>
+    <div class="nav-tab" onclick="showPage('workers',this)">Workers</div>
+    <div class="nav-tab" onclick="showPage('labels',this)">Labels</div>
+  </div>
+
+  <div class="content">
+
+    <!-- LIVE -->
+    <div class="page active" id="page-live">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Right Now</div>
+          <div class="page-sub">Who's working on what, updating live</div>
+        </div>
+        <button class="btn btn-ghost" onclick="loadLive()">↻ Refresh</button>
+      </div>
+      <div class="stats" id="live-stats"></div>
+      <div class="live-grid" id="live-grid"></div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="page" id="page-reports">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Reports</div>
+          <div class="page-sub">Time totals by item and by worker</div>
+        </div>
+        <button class="btn btn-ghost" onclick="loadReports()">↻ Refresh</button>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-label">Time per Item</div>
+        <div style="overflow-x:auto">
+          <table id="item-report">
+            <thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Time per Worker</div>
+        <div style="overflow-x:auto">
+          <table id="worker-report">
+            <thead><tr><th>Worker</th><th>Total Time</th><th>Items Worked</th><th>Sessions</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <div class="page" id="page-history">
+      <div class="page-head">
+        <div>
+          <div class="page-title">History</div>
+          <div class="page-sub">Every scan, newest first</div>
+        </div>
+        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistory()">
+      </div>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table id="history-table">
+            <thead><tr><th>Time</th><th>Item</th><th>Customer</th><th>Worker</th><th>Role</th><th>Action</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- WORKERS -->
+    <div class="page" id="page-workers">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Workers</div>
+          <div class="page-sub">Add people and set their login PIN and roles</div>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-label">Add Worker</div>
+          <div class="field" style="margin-bottom:12px">
+            <label>Name</label>
+            <input id="nw-name" placeholder="e.g. Aron">
+          </div>
+          <div class="field" style="margin-bottom:12px">
+            <label>Login PIN (4 digits)</label>
+            <input id="nw-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 1111">
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
+            <div id="nw-roles"></div>
+          </div>
+          <button class="btn" style="width:100%" onclick="addWorker()">Add Worker</button>
+        </div>
+
+        <div class="card">
+          <div class="card-label">Manage Roles</div>
+          <div class="row" style="margin-bottom:14px">
+            <div class="field"><input id="new-role" placeholder="New role name"></div>
+            <button class="btn" onclick="addRole()">Add</button>
+          </div>
+          <div id="roles-list"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-label">All Workers</div>
+        <div style="overflow-x:auto">
+          <table id="workers-table">
+            <thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- LABELS -->
+    <div class="page" id="page-labels">
+      <div class="page-head">
+        <div>
+          <div class="page-title">Labels Printed</div>
+          <div class="page-sub">Every barcode printed, newest first</div>
+        </div>
+        <input class="search" id="labels-search" placeholder="Search item, customer..." oninput="renderLabels()">
+      </div>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table id="labels-table">
+            <thead><tr><th>Printed</th><th>Item ID</th><th>Item</th><th>Customer</th><th>City</th><th>Part</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
+const ADMIN_PASS = 'glint2026'; // change this to your own
+
+let scans = [], workers = [], roles = [], labels = [];
+let nwSelectedRoles = [];
+let liveTimers = null;
+
+// ===== AUTH =====
+function adminLogin(){
+  const p = document.getElementById('admin-pass').value;
+  if(p === ADMIN_PASS || sessionStorage.getItem('glint_admin')==='1'){
+    sessionStorage.setItem('glint_admin','1');
+    document.getElementById('login-gate').style.display='none';
+    document.getElementById('shell').style.display='block';
+    bootstrap();
+  } else {
+    toast('Wrong password');
+  }
+}
+function adminLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
+if(sessionStorage.getItem('glint_admin')==='1'){ adminLogin(); }
+
+// ===== API =====
+async function sb(path, opts={}){
+  const r = await fetch(SUPABASE_URL+'/rest/v1/'+path, {
+    ...opts,
+    headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json', ...(opts.headers||{}) }
+  });
+  if(opts.method && opts.method!=='GET') return r;
+  return r.json();
+}
+
+async function bootstrap(){
+  startClock();
+  await Promise.all([loadLive(), loadWorkers(), loadRoles()]);
+  setInterval(loadLive, 15000); // auto-refresh live every 15s
+}
+
+// ===== CLOCK =====
+function startClock(){
+  const el = document.getElementById('clock');
+  setInterval(()=>{ el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}); }, 1000);
+}
+
+// ===== NAV =====
+function showPage(name, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  el.classList.add('active');
+  if(name==='reports') loadReports();
+  if(name==='history') loadHistory();
+  if(name==='labels') loadLabels();
+  if(name==='workers'){ loadWorkers(); loadRoles(); }
+}
+
+// ===== LIVE =====
+async function loadLive(){
+  scans = await sb('scans?select=*&order=created_at.desc&limit=2000');
+  computeLive();
+}
+
+function computeLive(){
+  // Determine each worker's current state from latest scan per item+role
+  // Active = last event for that item::role is "Started"
+  const openSessions = {}; // worker -> {itemId, itemDesc, role, startedAt}
+  const seen = {};
+  // Walk scans oldest->newest to track state
+  const chron = [...scans].reverse();
+  const itemRoleState = {};
+  chron.forEach(s=>{
+    const key = s.item_id+'::'+(s.role||'');
+    if((s.status||'').includes('Started')){
+      itemRoleState[key] = { worker:s.worker, itemId:s.item_id, itemDesc:s.item_desc, role:s.role, startedAt:s.created_at };
+    } else {
+      delete itemRoleState[key];
+    }
+  });
+  // Group active sessions by worker
+  const active = {};
+  Object.values(itemRoleState).forEach(sess=>{ active[sess.worker] = sess; });
+
+  // Stats
+  const workingCount = Object.keys(active).length;
+  const todayScans = scans.filter(s=> new Date(s.created_at).toDateString()===new Date().toDateString()).length;
+  const uniqueItems = new Set(scans.map(s=>s.item_id)).size;
+  document.getElementById('live-stats').innerHTML = `
+    <div class="stat"><div class="stat-num">${workingCount}</div><div class="stat-label">Working now</div></div>
+    <div class="stat"><div class="stat-num">${workers.length}</div><div class="stat-label">Total workers</div></div>
+    <div class="stat"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans today</div></div>
+    <div class="stat"><div class="stat-num">${uniqueItems}</div><div class="stat-label">Items tracked</div></div>`;
+
+  // Live cards — one per worker
+  const grid = document.getElementById('live-grid');
+  if(!workers.length){ grid.innerHTML='<div class="empty">No workers yet — add them in the Workers tab</div>'; return; }
+  grid.innerHTML = workers.map(w=>{
+    const sess = active[w.name];
+    if(sess){
+      return `<div class="live-card working">
+        <div class="live-worker">${w.name}</div>
+        <div class="live-role">${sess.role||'Working'}</div>
+        <div class="live-item">${sess.itemDesc||sess.itemId}<br><span style="color:var(--ink3);font-size:11px">${sess.itemId}</span></div>
+        <div class="live-timer" data-start="${sess.startedAt}">--:--</div>
+      </div>`;
+    }
+    return `<div class="live-card">
+      <div class="live-worker">${w.name}</div>
+      <div class="live-role" style="color:var(--ink3)">${(w.roles||[]).join(', ')||'—'}</div>
+      <div class="live-idle">Not working right now</div>
+    </div>`;
+  }).join('');
+
+  if(liveTimers) clearInterval(liveTimers);
+  liveTimers = setInterval(updateLiveTimers, 1000);
+  updateLiveTimers();
+}
+
+function updateLiveTimers(){
+  document.querySelectorAll('.live-timer').forEach(el=>{
+    const start = new Date(el.dataset.start).getTime();
+    const sec = Math.floor((Date.now()-start)/1000);
+    const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+    const pad=n=>String(n).padStart(2,'0');
+    el.textContent = h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  });
+}
+
+// ===== REPORTS =====
+async function loadReports(){
+  if(!scans.length) scans = await sb('scans?select=*&order=created_at.desc&limit=5000');
+  computeReports();
+}
+
+function computeReports(){
+  // Pair Started/Stopped per item::role to compute durations
+  const chron = [...scans].reverse();
+  const open = {};
+  const itemAgg = {}; // itemId -> {ms, sessions, customer, desc, last, active}
+  const workerAgg = {}; // worker -> {ms, items:Set, sessions}
+
+  chron.forEach(s=>{
+    const key = s.item_id+'::'+(s.role||'')+'::'+s.worker;
+    if((s.status||'').includes('Started')){
+      open[key] = s;
+    } else if((s.status||'').includes('Stopped') && open[key]){
+      const start = new Date(open[key].created_at).getTime();
+      const end = new Date(s.created_at).getTime();
+      const ms = Math.max(0, end-start);
+      // item
+      if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.created_at,active:false};
+      itemAgg[s.item_id].ms += ms; itemAgg[s.item_id].sessions++;
+      // worker
+      if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0};
+      workerAgg[s.worker].ms += ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++;
+      delete open[key];
+    }
+  });
+
+  // Mark items with open sessions as active + set last activity
+  scans.forEach(s=>{
+    if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.created_at,active:false};
+    if(new Date(s.created_at) > new Date(itemAgg[s.item_id].last)) itemAgg[s.item_id].last = s.created_at;
+  });
+  Object.keys(open).forEach(k=>{ const it=open[k].item_id; if(itemAgg[it]) itemAgg[it].active=true; });
+
+  // Render item report
+  const itemRows = Object.entries(itemAgg).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last)).map(([id,d])=>`
+    <tr>
+      <td><strong>${d.desc||id}</strong><br><span style="color:var(--ink3);font-size:11px">${id}</span></td>
+      <td>${d.customer||'—'}</td>
+      <td><strong>${fmtDur(d.ms)}</strong></td>
+      <td>${d.sessions}</td>
+      <td>${fmtDate(d.last)}</td>
+      <td>${d.active?'<span class="badge started">Working</span>':'<span class="badge stopped">Idle</span>'}</td>
+    </tr>`).join('');
+  document.querySelector('#item-report tbody').innerHTML = itemRows || '<tr><td colspan="6" class="empty">No completed sessions yet</td></tr>';
+
+  // Render worker report
+  const workerRows = Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([name,d])=>`
+    <tr>
+      <td><strong>${name}</strong></td>
+      <td><strong>${fmtDur(d.ms)}</strong></td>
+      <td>${d.items.size}</td>
+      <td>${d.sessions}</td>
+    </tr>`).join('');
+  document.querySelector('#worker-report tbody').innerHTML = workerRows || '<tr><td colspan="4" class="empty">No completed sessions yet</td></tr>';
+}
+
+// ===== HISTORY =====
+async function loadHistory(){
+  if(!scans.length) scans = await sb('scans?select=*&order=created_at.desc&limit=5000');
+  renderHistory();
+}
+function renderHistory(){
+  const q = (document.getElementById('history-search').value||'').toLowerCase();
+  const rows = scans.filter(s=>!q || (s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q))
+    .slice(0,500).map(s=>`
+    <tr>
+      <td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
+      <td><strong>${s.item_desc||s.item_id}</strong><br><span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
+      <td>${s.customer||'—'}</td>
+      <td>${s.worker}</td>
+      <td>${s.role||'—'}</td>
+      <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td>
+    </tr>`).join('');
+  document.querySelector('#history-table tbody').innerHTML = rows || '<tr><td colspan="6" class="empty">No scans yet</td></tr>';
+}
+
+// ===== WORKERS =====
+async function loadWorkers(){
+  workers = await sb('workers?select=*&order=name.asc');
+  renderWorkers();
+}
+function renderWorkers(){
+  document.querySelector('#workers-table tbody').innerHTML = workers.length ? workers.map(w=>`
+    <tr>
+      <td><strong>${w.name}</strong></td>
+      <td><span style="font-variant-numeric:tabular-nums">${w.pin||'—'}</span></td>
+      <td>${(w.roles||[]).join(', ')||'—'}</td>
+      <td style="text-align:right"><button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button></td>
+    </tr>`).join('') : '<tr><td colspan="4" class="empty">No workers yet</td></tr>';
+}
+
+async function addWorker(){
+  const name = document.getElementById('nw-name').value.trim();
+  const pin = document.getElementById('nw-pin').value.trim();
+  if(!name){ toast('Enter a name'); return; }
+  if(pin.length<4){ toast('PIN must be at least 4 digits'); return; }
+  if(!nwSelectedRoles.length){ toast('Pick at least one role'); return; }
+  const r = await sb('workers', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify({ name, pin, roles:nwSelectedRoles }) });
+  if(r.ok){
+    toast('✅ '+name+' added');
+    document.getElementById('nw-name').value='';
+    document.getElementById('nw-pin').value='';
+    nwSelectedRoles=[];
+    renderNwRoles();
+    loadWorkers();
+  } else { toast('Could not add worker'); }
+}
+
+async function deleteWorker(id, name){
+  if(!confirm('Remove '+name+'?')) return;
+  const r = await sb('workers?id=eq.'+id, { method:'DELETE', headers:{'Prefer':'return=minimal'} });
+  if(r.ok){ toast(name+' removed'); loadWorkers(); }
+}
+
+// ===== ROLES =====
+async function loadRoles(){
+  roles = await sb('roles?select=*&order=name.asc');
+  renderRoles();
+  renderNwRoles();
+}
+function renderRoles(){
+  document.getElementById('roles-list').innerHTML = roles.length ? roles.map(r=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-weight:600">${r.name}</span>
+      <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button>
+    </div>`).join('') : '<div class="empty" style="padding:16px">No roles yet</div>';
+}
+function renderNwRoles(){
+  document.getElementById('nw-roles').innerHTML = roles.map(r=>{
+    const on = nwSelectedRoles.includes(r.name);
+    return `<span class="chip ${on?'on':''}" onclick="toggleNwRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;
+  }).join('') || '<span style="color:var(--ink3);font-size:12px">Add a role first →</span>';
+}
+function toggleNwRole(name){
+  const i = nwSelectedRoles.indexOf(name);
+  if(i>=0) nwSelectedRoles.splice(i,1); else nwSelectedRoles.push(name);
+  renderNwRoles();
+}
+async function addRole(){
+  const name = document.getElementById('new-role').value.trim();
+  if(!name) return;
+  const r = await sb('roles', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify({ name }) });
+  if(r.ok){ toast('✅ Role added'); document.getElementById('new-role').value=''; loadRoles(); }
+  else toast('Role may already exist');
+}
+async function deleteRole(id){
+  const r = await sb('roles?id=eq.'+id, { method:'DELETE', headers:{'Prefer':'return=minimal'} });
+  if(r.ok){ loadRoles(); }
+}
+
+// ===== LABELS =====
+async function loadLabels(){
+  labels = await sb('labels?select=*&order=printed_at.desc&limit=2000');
+  renderLabels();
+}
+function renderLabels(){
+  const q = (document.getElementById('labels-search').value||'').toLowerCase();
+  const rows = labels.filter(l=>!q || (l.item_id+(l.item_name||'')+(l.customer||'')+(l.city||'')).toLowerCase().includes(q))
+    .map(l=>`
+    <tr>
+      <td style="white-space:nowrap">${fmtDate(l.printed_at)}</td>
+      <td><span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold2)">${l.item_id}</span></td>
+      <td>${l.item_name||'—'}</td>
+      <td>${l.customer||'—'}</td>
+      <td>${l.city||'—'}</td>
+      <td>${l.part?'<span class="badge started">'+l.part+'</span>':'—'}</td>
+    </tr>`).join('');
+  document.querySelector('#labels-table tbody').innerHTML = rows || '<tr><td colspan="6" class="empty">No labels printed yet</td></tr>';
+}
+
+// ===== HELPERS =====
+function fmtDur(ms){
+  const sec=Math.floor(ms/1000), h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60);
+  if(h>0) return h+'h '+m+'m';
+  if(m>0) return m+'m';
+  return Math.floor(sec)+'s';
+}
+function fmtDate(d){
+  const dt = new Date(d);
+  return dt.toLocaleDateString([], {month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2600);
+}
+</script>
+</body>
+</html>
