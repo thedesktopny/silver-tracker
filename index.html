@@ -201,18 +201,29 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <!-- ===== SCAN PAGE ===== -->
 <div id="page-scan" class="page active">
 
-  <div class="card" id="no-device-worker-card" style="display:none;text-align:center;padding:30px 18px">
-    <div style="font-size:40px;margin-bottom:10px">📱</div>
-    <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;color:var(--ink);margin-bottom:6px">This device isn't assigned</div>
-    <div style="font-size:12px;color:var(--ink3)">Ask the admin to assign a worker to this device in Setup</div>
+  <div class="card" id="login-card" style="display:none">
+    <div style="text-align:center;margin-bottom:16px">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:var(--ink)">Worker Login</div>
+      <div style="font-size:12px;color:var(--ink3);margin-top:2px">Enter your name and PIN to start</div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:6px">Your Name</label>
+      <input id="login-name" class="gen-input" type="text" placeholder="e.g. Aron" autocomplete="off" style="width:100%">
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:6px">PIN</label>
+      <input id="login-pin" class="gen-input" type="password" placeholder="4-digit PIN" autocomplete="off" inputmode="numeric" maxlength="6" style="width:100%">
+    </div>
+    <button onclick="doLogin()" class="log-btn" style="width:100%">Log In</button>
   </div>
 
   <div class="card" id="active-worker-card" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between">
       <div>
-        <div style="font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">Working as</div>
+        <div style="font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">Logged in as</div>
         <div style="font-size:24px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:2px" id="active-worker-name"></div>
       </div>
+      <button onclick="doLogout()" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--red);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:8px 14px;cursor:pointer;letter-spacing:.04em">Log Out</button>
     </div>
   </div>
 
@@ -337,15 +348,6 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
   </div>
 
   <div id="setup-content" style="display:none">
-
-  <div class="card">
-    <div class="card-label">This Device</div>
-    <div style="font-size:12px;color:var(--ink3);margin-bottom:10px">Assign which worker uses this specific device. They'll see their name automatically — no selection needed.</div>
-    <select id="device-worker-select" class="gen-input" style="cursor:pointer;margin-bottom:10px" onchange="assignDeviceWorker()">
-      <option value="">— Not assigned —</option>
-    </select>
-    <div id="device-assigned-status" style="font-size:11px;color:var(--green);font-weight:700;display:none">✅ This device is assigned</div>
-  </div>
 
   <div class="card">
     <div class="card-label">Roles</div>
@@ -540,6 +542,11 @@ document.addEventListener('DOMContentLoaded', () => {
   renderWorkerList();
 
   renderLabelHistory();
+
+  // Enter key to log in from PIN field
+  const loginPin = document.getElementById('login-pin');
+  if (loginPin) loginPin.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
   const input = document.getElementById('scan-input');
   let lastInputTime = 0;
   let fastCharCount = 0;
@@ -627,24 +634,68 @@ function checkTicketsPin() {
   }
 }
 
-// ===== WORKERS (device-locked) =====
+// ===== WORKER LOGIN =====
 function initDeviceWorker() {
-  const deviceWorkerName = localStorage.getItem('st_device_worker'); // persists on THIS device permanently
-  if (deviceWorkerName) {
-    const w = workers.find(w => w.name === deviceWorkerName);
-    if (w) { activateWorkerOnDevice(w); return; }
+  // Restore saved login from this device
+  const saved = JSON.parse(localStorage.getItem('st_logged_in_worker') || 'null');
+  if (saved && saved.name) {
+    activateWorkerOnDevice(saved);
+    return;
   }
-  // No worker assigned to this device
-  document.getElementById('no-device-worker-card').style.display = 'block';
+  showLoginScreen();
+}
+
+function showLoginScreen() {
+  document.getElementById('login-card').style.display = 'block';
   document.getElementById('active-worker-card').style.display = 'none';
   document.getElementById('role-select-card').style.display = 'none';
   document.getElementById('scan-card').style.display = 'none';
+  document.getElementById('scan-recent-card').style.display = 'none';
+  const awp = document.getElementById('active-work-panel');
+  if (awp) awp.style.display = 'none';
+}
+
+async function doLogin() {
+  const name = document.getElementById('login-name').value.trim();
+  const pin = document.getElementById('login-pin').value.trim();
+  if (!name || !pin) { showToast('Enter your name and PIN'); return; }
+
+  showToast('Checking...');
+  try {
+    // Look up worker in Supabase by name (case-insensitive)
+    const resp = await fetch(SUPABASE_URL + '/rest/v1/workers?name=ilike.' + encodeURIComponent(name) + '&select=*', {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+    });
+    const found = await resp.json();
+    if (!found.length) { showToast('⚠️ Worker not found'); return; }
+    const w = found[0];
+    if (String(w.pin) !== pin) { showToast('⚠️ Wrong PIN'); return; }
+
+    const worker = { name: w.name, roles: w.roles || [] };
+    localStorage.setItem('st_logged_in_worker', JSON.stringify(worker));
+    document.getElementById('login-name').value = '';
+    document.getElementById('login-pin').value = '';
+    activateWorkerOnDevice(worker);
+    showToast('✅ Welcome, ' + w.name);
+  } catch(e) {
+    showToast('⚠️ Login failed — check connection');
+  }
+}
+
+function doLogout() {
+  localStorage.removeItem('st_logged_in_worker');
+  selectedWorker = null;
+  selectedRole = null;
+  // Clear any active work timer display
+  stopActiveWorkTimer();
+  showLoginScreen();
+  showToast('Logged out');
 }
 
 function activateWorkerOnDevice(w) {
   selectedWorker = w;
   selectedRole = null;
-  document.getElementById('no-device-worker-card').style.display = 'none';
+  document.getElementById('login-card').style.display = 'none';
   document.getElementById('active-worker-card').style.display = 'block';
   document.getElementById('active-worker-name').textContent = w.name;
 
@@ -689,23 +740,11 @@ function selectRole(role) {
 // ===== DEVICE ASSIGNMENT (admin, in Setup) =====
 function renderDeviceWorkerSelect() {
   const sel = document.getElementById('device-worker-select');
-  const current = localStorage.getItem('st_device_worker') || '';
-  sel.innerHTML = '<option value="">— Not assigned —</option>' +
-    workers.map(w => `<option value="${w.name.replace(/"/g,'&quot;')}" ${w.name===current?'selected':''}>${w.name} (${w.roles.join(', ')})</option>`).join('');
-  document.getElementById('device-assigned-status').style.display = current ? 'block' : 'none';
+  if (!sel) return; // element removed — workers now log in individually
 }
 
 function assignDeviceWorker() {
-  const name = document.getElementById('device-worker-select').value;
-  if (name) {
-    localStorage.setItem('st_device_worker', name);
-    showToast('✅ This device assigned to ' + name);
-  } else {
-    localStorage.removeItem('st_device_worker');
-    showToast('Device unassigned');
-  }
-  document.getElementById('device-assigned-status').style.display = name ? 'block' : 'none';
-  initDeviceWorker();
+  // Obsolete — workers now log in individually
 }
 
 // ===== ROLES (admin-defined) =====
