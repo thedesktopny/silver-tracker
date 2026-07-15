@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
   :root{
     --bg:#f0ebe2; --surface:#faf7f1; --surface2:#f4efe6;
@@ -114,6 +115,22 @@
     .stats{grid-template-columns:repeat(2,1fr)}
     .content{padding:16px}
   }
+
+  /* Tickets */
+  .ticket{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+  .ticket-head{padding:16px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+  .ticket-head:hover{background:var(--surface2)}
+  .ticket-id{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--gold2)}
+  .ticket-cust{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;margin-top:2px}
+  .ticket-date{font-size:11px;color:var(--ink3);margin-top:2px}
+  .ticket-items{display:none;padding:0 18px 16px;border-top:1px solid var(--border)}
+  .ticket-items.open{display:block}
+  .item-row{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+  .item-cb{width:20px;height:20px;accent-color:var(--ink);cursor:pointer;flex-shrink:0;margin-top:2px}
+  .item-name{font-weight:700;font-size:15px}
+  .item-meta{font-size:11px;color:var(--ink3);margin-top:2px}
+  .split-btn{margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase}
+  .parts-box{margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border);display:none}
 </style>
 </head>
 <body>
@@ -142,6 +159,7 @@
 
   <div class="nav">
     <div class="nav-tab active" onclick="showPage('live',this)">Live</div>
+    <div class="nav-tab" onclick="showPage('tickets',this)">Print Labels</div>
     <div class="nav-tab" onclick="showPage('reports',this)">Reports</div>
     <div class="nav-tab" onclick="showPage('history',this)">History</div>
     <div class="nav-tab" onclick="showPage('workers',this)">Workers</div>
@@ -158,6 +176,20 @@
       </div>
       <div class="stats" id="live-stats"></div>
       <div class="live-grid" id="live-grid"></div>
+    </div>
+
+    <div class="page" id="page-tickets">
+      <div class="page-head">
+        <div><div class="page-title">Print Labels</div><div class="page-sub">Load a ticket, pick items, print barcodes</div></div>
+        <div class="head-actions">
+          <input class="search" id="ticket-search" placeholder="Search ticket # or customer..." oninput="filterTickets()">
+          <button class="btn btn-ghost" onclick="loadTickets()">↻ Reload</button>
+        </div>
+      </div>
+      <div id="print-bar" style="position:sticky;top:120px;z-index:10;margin-bottom:16px;display:none">
+        <button class="btn" style="width:100%;padding:15px" onclick="printSelected()">🖨️ Print Selected Labels (<span id="selected-count">0</span>)</button>
+      </div>
+      <div id="tickets-list"><div class="empty">Loading tickets…</div></div>
     </div>
 
     <div class="page" id="page-reports">
@@ -398,7 +430,196 @@ function showPage(name, el){
   if(name==='labels') loadLabels();
   if(name==='workers'){ loadWorkers(); loadRoles(); }
   if(name==='live') computeLive();
+  if(name==='tickets' && !allTickets.length) loadTickets();
 }
+
+// ===== TICKETS + PRINTING =====
+const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
+const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
+const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
+let allTickets = [];
+let labelSize = { width:102, height:59 };
+
+async function loadTickets(){
+  const el=document.getElementById('tickets-list');
+  el.innerHTML='<div class="empty">Loading tickets…</div>';
+  try{
+    let fetched=[]; let page=1, totalPages=1;
+    do{
+      const resp=await fetch(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      if(!resp.ok) throw new Error('HTTP '+resp.status);
+      const data=await resp.json();
+      const batch=(data.data&&data.data.ticketData)||[];
+      fetched=fetched.concat(batch);
+      const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
+      page++;
+    } while(page<=totalPages && page<=2);
+    allTickets=fetched;
+    renderTickets(allTickets);
+  }catch(err){
+    el.innerHTML='<div class="empty">Could not load tickets — '+err.message+'</div>';
+  }
+}
+function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
+function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
+function getCustomerCity(t){ const s=t.summary; return s&&s.customer&&s.customer.city?s.customer.city:''; }
+function getDevices(t){ return t.devices||[]; }
+function getDueDate(t){ const s=t.summary; if(s&&s.due_date) return new Date(s.due_date*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); return ''; }
+function getDeviceNote(device, ticket){
+  const notesArr=(ticket&&ticket.notes)||[];
+  const devId=String(device.device?device.device.id:(device.id||''));
+  const devName=device.device_name||(device.device?device.device.name:'');
+  const matching=notesArr.filter(n=>String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase())));
+  return matching.map(n=>(n.msg_text||'').trim()).filter(Boolean).join(' · ');
+}
+function isCandelabra(name){ return /candelabra/i.test(name||''); }
+
+function renderTickets(list){
+  const el=document.getElementById('tickets-list');
+  if(!list.length){ el.innerHTML='<div class="empty">No tickets found</div>'; return; }
+  el.innerHTML=list.map(t=>{
+    const oid=getOrderId(t), cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
+    const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div class="ticket">
+      <div class="ticket-head" onclick="toggleTicket('${oid}')">
+        <div>
+          <div class="ticket-id">${oid}</div>
+          <div class="ticket-cust">${cust}</div>
+          <div class="ticket-date">${city?'📍 '+city+'  ·  ':''}${due?'Due '+due:''}</div>
+        </div>
+        <div style="font-size:11px;color:var(--ink3)">${getDevices(t).length} item${getDevices(t).length!==1?'s':''} ▾</div>
+      </div>
+      <div class="ticket-items" id="ti-${safe}"></div>
+    </div>`;
+  }).join('');
+}
+
+function toggleTicket(oid){
+  const t=allTickets.find(x=>getOrderId(x)===oid); if(!t) return;
+  const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+  const box=document.getElementById('ti-'+safe);
+  if(box.classList.contains('open')){ box.classList.remove('open'); return; }
+  box.classList.add('open');
+  const cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
+  const devices=getDevices(t);
+  box.innerHTML=devices.map((device,idx)=>{
+    const num=idx+1, itemId=oid+'-'+num;
+    const name=device.device?device.device.name:'Item '+num;
+    const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
+    const note=getDeviceNote(device,t);
+    const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    const cbId='cb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+    let h=`<div class="item-row">
+      <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
+        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}"
+        data-customer="${esc(cust)}" data-city="${esc(city)}" data-note="${esc(note)}" data-due="${esc(due)}">
+      <div style="flex:1">
+        <div class="item-name">${name}</div>
+        ${services?`<div class="item-meta" style="color:var(--gold2)">${services}</div>`:''}
+        ${note?`<div class="item-meta" style="color:var(--red)">⚠️ ${note}</div>`:''}
+        <div class="item-meta">${itemId}</div>`;
+    if(isCandelabra(name)){
+      const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}')">⚙️ Split into parts</button>
+        <div class="parts-box" id="${sid}"></div>`;
+    }
+    h+=`</div></div>`;
+    return h;
+  }).join('')+`<div style="display:flex;gap:8px;padding:12px 0">
+    <button class="btn btn-sm" onclick="selectTicket('${oid}',${devices.length},true)">Select All</button>
+    <button class="btn btn-ghost btn-sm" onclick="selectTicket('${oid}',${devices.length},false)">Clear</button>
+  </div>`;
+}
+
+function toggleParts(itemId,name,cust,city,note,due){
+  const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
+  box.style.display='block';
+  box.innerHTML='<div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Each part prints its own label</div>'+
+    CANDELABRA_PARTS.map(part=>{
+      const pid=itemId+'-'+part.toUpperCase();
+      const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+      return `<div class="item-row" style="padding:8px 0">
+        <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
+          data-item-id="${pid}" data-item-name="${name} — ${part}" data-customer="${cust}"
+          data-city="${city}" data-note="${note}" data-due="${due}" data-part="${part}">
+        <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>
+      </div>`;
+    }).join('')+
+    `<div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-sm" onclick="selectParts('${itemId}',true)">All Parts</button>
+      <button class="btn btn-ghost btn-sm" onclick="selectParts('${itemId}',false)">None</button>
+    </div>`;
+  updateCount();
+}
+function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateCount(); }
+function selectTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('cb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} updateCount(); }
+
+function updateCount(){
+  const n=document.querySelectorAll('.item-cb:checked').length;
+  document.getElementById('selected-count').textContent=n;
+  document.getElementById('print-bar').style.display=n>0?'block':'none';
+}
+
+function filterTickets(){
+  const q=(document.getElementById('ticket-search').value||'').toLowerCase().trim();
+  if(!q){ renderTickets(allTickets); return; }
+  renderTickets(allTickets.filter(t=>(getOrderId(t).toLowerCase().includes(q)||getCustomerName(t).toLowerCase().includes(q))));
+}
+
+function makeBarcode(text){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#ffffff',lineColor:'#000000'});
+    return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
+  catch(e){ return ''; }
+}
+
+async function printSelected(){
+  const checked=document.querySelectorAll('.item-cb:checked');
+  if(!checked.length){ toast('Select items first'); return; }
+  const items=[...checked].map(cb=>({
+    itemId:cb.dataset.itemId, itemName:cb.dataset.itemName||'', customer:cb.dataset.customer||'',
+    city:cb.dataset.city||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
+  }));
+  // Log labels to Supabase
+  items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
+
+  const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
+  const labelsHtml=withBc.map(it=>`
+    <div class="label">
+      <div class="lt">
+        ${it.due?`<div class="l-due">DUE: ${it.due}</div>`:''}
+        ${it.city?`<div class="l-city">📍 ${it.city}</div>`:''}
+        ${it.note?`<div class="l-note">⚠️ ${it.note}</div>`:''}
+      </div>
+      <div class="lb"><img src="${it.bc}"></div>
+      <div class="lf">${it.part?`◆ ${it.part.toUpperCase()}`:'GLINT LACQUER'}</div>
+    </div>`).join('');
+  const W=labelSize.width, H=labelSize.height;
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title>
+<style>
+@page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}
+body{background:#fff;font-family:Arial,sans-serif}
+.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;justify-content:space-between;padding:3mm;overflow:hidden;page-break-after:always}
+.label:last-child{page-break-after:auto}
+.lt{text-align:center}
+.l-due{font-size:11pt;font-weight:700}
+.l-city{font-size:11pt;font-weight:700;margin-top:1mm}
+.l-note{font-size:10pt;font-weight:700;margin-top:1.5mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.2}
+.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}
+.lb img{max-width:98%;max-height:30mm;height:auto}
+.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1.5mm;font-size:12pt;font-weight:700;letter-spacing:.08em}
+</style></head><body>${labelsHtml}
+<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
+</body></html>`;
+  const w=window.open('','_blank','width=900,height=700');
+  if(!w){ toast('Allow popups to print'); return; }
+  w.document.write(html); w.document.close();
+  toast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
+}
+
+
 
 function setRange(r, el){
   reportRange=r;
@@ -448,6 +669,7 @@ function computeLive(){
         <div class="live-role">${s.role||'Working'}${isStale?' · ⚠️ long':''}</div>
         <div class="live-item">${s.itemDesc||s.itemId}<br><span style="color:var(--ink3);font-size:11px">${s.itemId}</span></div>
         <div class="live-timer" data-start="${s.startedAt}">--:--</div>
+        <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStop('${s.itemId.replace(/'/g,"\\'")}','${(s.role||'').replace(/'/g,"\\'")}','${w.name.replace(/'/g,"\\'")}','${(s.itemDesc||'').replace(/'/g,"\\'")}')">■ Force Stop</button>
       </div>`;
     }
     return `<div class="live-card"><div class="live-worker">${w.name}</div><div class="live-role" style="color:var(--ink3)">${(w.roles||[]).join(', ')||'—'}</div><div class="live-idle">Not working right now</div></div>`;
@@ -461,6 +683,17 @@ function updateLiveTimers(){
     const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60,pad=n=>String(n).padStart(2,'0');
     el.textContent=h>0?`${h}:${pad(m)}:${pad(s)}`:`${pad(m)}:${pad(s)}`;
   });
+}
+
+async function forceStop(itemId, role, worker, desc){
+  if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
+  const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({ item_id:itemId, item_desc:desc, status:role+' — Stopped (admin)', worker:worker, role:role })
+  });
+  if(r.ok){ toast('■ Stopped '+worker); await loadAllScans(); computeLive(); }
+  else toast('Could not stop');
 }
 
 function pairSessions(filterFn){
