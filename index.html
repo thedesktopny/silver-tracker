@@ -631,10 +631,25 @@ async function processScan(itemId) {
   itemId = itemId.toUpperCase();
   const task = selectedRole;
   const stateKey = itemId + '::' + task;
-  const isInProgress = itemTaskState[stateKey] === 'in_progress';
+
+  // Check Supabase for the TRUE latest state of this item+role (source of truth)
+  // This handles admin force-stops and multi-device consistency
+  let isInProgress = itemTaskState[stateKey] === 'in_progress';
+  try {
+    const q = SUPABASE_URL + '/rest/v1/scans?item_id=eq.' + encodeURIComponent(itemId) +
+      '&role=eq.' + encodeURIComponent(task) + '&select=status,created_at&order=created_at.desc&limit=1';
+    const resp = await fetch(q, { headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+    const rows = await resp.json();
+    if (Array.isArray(rows) && rows.length) {
+      isInProgress = (rows[0].status || '').includes('Started');
+    } else {
+      isInProgress = false; // no history for this item+role
+    }
+  } catch(e) { /* offline — fall back to local state */ }
+
   const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
 
-  // Toggle state
+  // Sync local state to match
   if (isInProgress) { delete itemTaskState[stateKey]; }
   else { itemTaskState[stateKey] = 'in_progress'; }
   localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
