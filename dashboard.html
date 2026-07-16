@@ -274,7 +274,7 @@
         <div class="card-label">All Workers</div>
         <div style="overflow-x:auto">
           <table id="workers-table">
-            <thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th style="text-align:center">Print Labels</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -502,7 +502,15 @@ function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
 function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
 function getCustomerCity(t){ const s=t.summary; return s&&s.customer&&s.customer.city?s.customer.city:''; }
 function getDevices(t){ return t.devices||[]; }
-function getDueDate(t){ const s=t.summary; if(s&&s.due_date) return new Date(s.due_date*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}); return ''; }
+function getDueDate(t){
+  const s=t.summary;
+  let ts = null;
+  if(s){ ts = s.due_date || s.due_on || null; }
+  // Fall back to first device's due date
+  if(!ts && t.devices && t.devices.length){ ts = t.devices[0].due_on || t.devices[0].due_date || null; }
+  if(ts) return new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
+  return '';
+}
 function getDeviceNote(device, ticket){
   const notesArr=(ticket&&ticket.notes)||[];
   const devId=String(device.device?device.device.id:(device.id||''));
@@ -821,10 +829,16 @@ function renderWorkers(){
   document.querySelector('#workers-table tbody').innerHTML=workers.length?workers.map(w=>`
     <tr><td><strong>${w.name}</strong></td><td><span style="font-variant-numeric:tabular-nums">${w.pin||'—'}</span></td>
     <td>${(w.roles||[]).join(', ')||'—'}</td>
+    <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.can_print?'checked':''} onchange="togglePrint(${w.id},this.checked)"></td>
     <td style="text-align:right;white-space:nowrap">
       <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">Edit</button>
       <button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button>
-    </td></tr>`).join(''):'<tr><td colspan="4" class="empty">No workers yet</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="5" class="empty">No workers yet</td></tr>';
+}
+async function togglePrint(id, on){
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({can_print:on})});
+  if(r.ok){ toast(on?'✅ Label access granted':'Label access removed'); const w=workers.find(x=>x.id===id); if(w)w.can_print=on; }
+  else toast('Could not update');
 }
 async function addWorker(){
   const name=document.getElementById('nw-name').value.trim();
