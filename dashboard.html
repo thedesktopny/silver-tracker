@@ -500,7 +500,7 @@ async function loadTickets(){
 }
 function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
 function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
-function getCustomerCity(t){ const s=t.summary; return s&&s.customer&&s.customer.city?s.customer.city:''; }
+function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
 function getDevices(t){ return t.devices||[]; }
 function getDueDate(t){
   const s=t.summary;
@@ -540,12 +540,25 @@ function renderTickets(list){
   }).join('');
 }
 
-function toggleTicket(oid){
-  const t=allTickets.find(x=>getOrderId(x)===oid); if(!t) return;
+async function toggleTicket(oid){
+  const idx0=allTickets.findIndex(x=>getOrderId(x)===oid); if(idx0<0) return;
   const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
   const box=document.getElementById('ti-'+safe);
   if(box.classList.contains('open')){ box.classList.remove('open'); return; }
   box.classList.add('open');
+
+  let t=allTickets[idx0];
+  // The list endpoint lacks city + notes — fetch full detail once
+  if(!t._full){
+    box.innerHTML='<div class="empty" style="padding:16px">Loading details…</div>';
+    try{
+      const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
+      const r=await fetch(proxied(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`));
+      const d=await r.json();
+      if(d&&d.data){ d.data._full=true; allTickets[idx0]=d.data; t=d.data; }
+    }catch(e){ /* fall back to list data */ }
+  }
+
   const cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
   const devices=getDevices(t);
   box.innerHTML=devices.map((device,idx)=>{
