@@ -501,6 +501,9 @@ async function loadTickets(){
 function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
 function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
 function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
+function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return s.customer.customer_group_name||''; } return ''; }
+function getCustomerPhone(t){ const s=t.summary; if(s&&s.customer){ return s.customer.mobile||s.customer.phone||''; } return ''; }
+function getCustomerAddress(t){ const s=t.summary; if(s&&s.customer){ return [s.customer.address1,s.customer.address2].filter(Boolean).join(', '); } return ''; }
 function getDevices(t){ return t.devices||[]; }
 function getDueDate(t){
   const s=t.summary;
@@ -516,7 +519,7 @@ function getDeviceNote(device, ticket){
   const devId=String(device.device?device.device.id:(device.id||''));
   const devName=device.device_name||(device.device?device.device.name:'');
   const matching=notesArr.filter(n=>String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase())));
-  return matching.map(n=>(n.msg_text||'').trim()).filter(Boolean).join(' · ');
+  return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · ');
 }
 function isCandelabra(name){ return /candelabra/i.test(name||''); }
 
@@ -560,8 +563,14 @@ async function toggleTicket(oid){
   }
 
   const cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
+  const group=getCustomerGroup(t), phone=getCustomerPhone(t), addr=getCustomerAddress(t);
   const devices=getDevices(t);
-  box.innerHTML=devices.map((device,idx)=>{
+  // On-screen info banner: show ALL customer details
+  const infoBanner=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin:10px 0;font-size:12px;line-height:1.7">
+    <strong>${cust}</strong>${phone?' · '+phone:''}<br>
+    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+'City: '+city:''}${addr?'<br>'+addr:''}
+  </div>`;
+  box.innerHTML=infoBanner+devices.map((device,idx)=>{
     const num=idx+1, itemId=oid+'-'+num;
     const name=device.device?device.device.name:'Item '+num;
     const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
@@ -571,7 +580,7 @@ async function toggleTicket(oid){
     let h=`<div class="item-row">
       <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
         data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}"
-        data-customer="${esc(cust)}" data-city="${esc(city)}" data-note="${esc(note)}" data-due="${esc(due)}">
+        data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}">
       <div style="flex:1">
         <div class="item-name">${name}</div>
         ${services?`<div class="item-meta" style="color:var(--gold2)">${services}</div>`:''}
@@ -579,7 +588,7 @@ async function toggleTicket(oid){
         <div class="item-meta">${itemId}</div>`;
     if(isCandelabra(name)){
       const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}')">⚙️ Split into parts</button>
+      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split into parts</button>
         <div class="parts-box" id="${sid}"></div>`;
     }
     h+=`</div></div>`;
@@ -590,7 +599,7 @@ async function toggleTicket(oid){
   </div>`;
 }
 
-function toggleParts(itemId,name,cust,city,note,due,services){
+function toggleParts(itemId,name,cust,city,note,due,services,group){
   const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
   const box=document.getElementById(sid);
   if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
@@ -602,7 +611,7 @@ function toggleParts(itemId,name,cust,city,note,due,services){
       return `<div class="item-row" style="padding:8px 0">
         <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
           data-item-id="${pid}" data-item-name="${name} — ${part}" data-services="${services||''}" data-customer="${cust}"
-          data-city="${city}" data-note="${note}" data-due="${due}" data-part="${part}">
+          data-city="${city}" data-group="${group||''}" data-note="${note}" data-due="${due}" data-part="${part}">
         <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>
       </div>`;
     }).join('')+
@@ -639,9 +648,9 @@ async function printSelected(){
   if(!checked.length){ toast('Select items first'); return; }
   const items=[...checked].map(cb=>({
     itemId:cb.dataset.itemId, itemName:cb.dataset.itemName||'', services:cb.dataset.services||'', customer:cb.dataset.customer||'',
-    city:cb.dataset.city||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
+    city:cb.dataset.city||'', group:cb.dataset.group||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
   }));
-  // Log labels to Supabase
+  // Log labels to Supabase (full info including city)
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
 
   const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
@@ -650,7 +659,7 @@ async function printSelected(){
       <div class="lt">
         <div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>
         ${it.services?`<div class="l-svc">${it.services}</div>`:''}
-        <div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.city?`<span>📍 ${it.city}</span>`:''}</div>
+        <div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>
         ${it.note?`<div class="l-note">⚠️ ${it.note}</div>`:''}
       </div>
       <div class="lb"><img src="${it.bc}"></div>
