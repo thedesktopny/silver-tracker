@@ -188,6 +188,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <nav class="nav no-print">
   <div class="nav-tab active" onclick="showPage('scan',this)">📡 Scan</div>
   <div class="nav-tab" onclick="showPage('history',this)">📋 My Log</div>
+  <div class="nav-tab" id="print-tab" style="display:none" onclick="showPage('print',this)">🏷️ Print</div>
 </nav>
 
 <div class="glint-header no-print">
@@ -272,6 +273,19 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
     <div class="card-label">Recent scans (this session)</div>
     <div id="history-list"><div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries yet</div></div>
   </div>
+</div>
+
+<div id="page-print" class="page">
+  <div class="card" style="padding:12px">
+    <div class="scan-input-wrap" style="display:flex;gap:8px;margin-bottom:0">
+      <input id="pr-search" class="scan-input" type="text" placeholder="Search ticket # or customer..." style="flex:1" oninput="prFilter()">
+      <button class="gen-btn" onclick="prLoad()">↻</button>
+    </div>
+  </div>
+  <div id="pr-print-bar" style="display:none;position:sticky;top:0;z-index:5;margin-bottom:10px">
+    <button class="log-btn" style="margin-top:0" onclick="prPrint()">🖨️ Print Selected (<span id="pr-count">0</span>)</button>
+  </div>
+  <div id="pr-list"><div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">Loading tickets…</div></div>
 </div>
 
 
@@ -386,8 +400,127 @@ function showPage(name, el) {
   document.getElementById('page-'+name).classList.add('active');
   if (el) el.classList.add('active');
   if (name==='scan') setTimeout(() => document.getElementById('scan-input').focus(), 100);
-  if (name==='tickets' && ticketsUnlocked && rdApiKey && !allTickets.length) loadTickets();
+  if (name==='print' && !prTickets.length) prLoad();
 }
+
+// ===== PRINT LABELS (for can_print workers) =====
+const PR_BASE='https://api.repairdesk.co/api/web/v1';
+const PR_KEY='smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
+const PR_PARTS=['Base','Arms','Cups','Plates'];
+let prTickets=[];
+function prProxy(url){ return 'https://corsproxy.io/?url='+encodeURIComponent(url); }
+function prOid(t){ return (t.summary&&t.summary.order_id)||''; }
+function prCust(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
+function prCity(t){ const s=t.summary; return s&&s.customer&&s.customer.city?s.customer.city:''; }
+function prDue(t){ const s=t.summary; let ts=s?(s.due_date||s.due_on):null; if(!ts&&t.devices&&t.devices.length)ts=t.devices[0].due_on||t.devices[0].due_date; return ts?new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}):''; }
+function prDevs(t){ return t.devices||[]; }
+function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase()))).map(n=>(n.msg_text||'').trim()).filter(Boolean).join(' · '); }
+function prIsCand(n){ return /candelabra/i.test(n||''); }
+
+async function prLoad(){
+  const el=document.getElementById('pr-list');
+  el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">Loading tickets…</div>';
+  try{
+    let fetched=[],page=1,tp=1;
+    do{
+      const r=await fetch(prProxy(`${PR_BASE}/tickets?api_key=${PR_KEY}&per_page=250&page=${page}&default_order=1`));
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const d=await r.json();
+      fetched=fetched.concat((d.data&&d.data.ticketData)||[]);
+      const pg=d.data&&d.data.pagination; tp=pg?parseInt(pg.total_pages):1; page++;
+    } while(page<=tp&&page<=2);
+    prTickets=fetched;
+    prRender(prTickets);
+  }catch(e){ el.innerHTML='<div style="color:var(--red);font-size:12px;padding:16px;text-align:center">Could not load — '+e.message+'</div>'; }
+}
+function prRender(list){
+  const el=document.getElementById('pr-list');
+  if(!list.length){ el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">No tickets</div>'; return; }
+  el.innerHTML=list.map(t=>{
+    const oid=prOid(t),safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
+      <div style="padding:14px 16px;cursor:pointer" onclick="prToggle('${oid}')">
+        <div style="font-size:10px;font-weight:700;color:var(--gold2);letter-spacing:.06em">${oid}</div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700">${prCust(t)}</div>
+        <div style="font-size:11px;color:var(--ink3)">${prCity(t)?'📍 '+prCity(t)+'  ·  ':''}${prDue(t)?'Due '+prDue(t):''}</div>
+      </div>
+      <div id="pri-${safe}" style="display:none;padding:0 16px 14px;border-top:1px solid var(--border)"></div>
+    </div>`;
+  }).join('');
+}
+function prFilter(){
+  const q=(document.getElementById('pr-search').value||'').toLowerCase().trim();
+  if(!q){ prRender(prTickets); return; }
+  prRender(prTickets.filter(t=>prOid(t).toLowerCase().includes(q)||prCust(t).toLowerCase().includes(q)));
+}
+function prToggle(oid){
+  const t=prTickets.find(x=>prOid(x)===oid); if(!t) return;
+  const safe=oid.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById('pri-'+safe);
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  box.style.display='block';
+  const cust=prCust(t),city=prCity(t),due=prDue(t),devs=prDevs(t);
+  box.innerHTML=devs.map((device,idx)=>{
+    const num=idx+1,itemId=oid+'-'+num;
+    const name=device.device?device.device.name:'Item '+num;
+    const note=prNote(device,t);
+    const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    const cbId='prcb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+    let h=`<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:20px;height:20px;accent-color:var(--ink);margin-top:2px"
+        data-item-id="${itemId}" data-item-name="${esc(name)}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-note="${esc(note)}" data-due="${esc(due)}">
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:14px">${name}</div>
+        ${note?`<div style="font-size:11px;color:var(--red)">⚠️ ${note}</div>`:''}
+        <div style="font-size:10px;color:var(--ink3)">${itemId}</div>`;
+    if(prIsCand(name)){
+      const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+      h+=`<button class="gen-btn" style="margin-top:6px;font-size:10px;padding:6px 10px" onclick="prToggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}')">⚙️ Split parts</button><div id="${sid}" style="display:none;margin-top:6px"></div>`;
+    }
+    h+=`</div></div>`;
+    return h;
+  }).join('')+`<div style="display:flex;gap:6px;padding:10px 0">
+    <button class="gen-btn" style="flex:1;font-size:10px" onclick="prSelTicket('${oid}',${devs.length},true)">All</button>
+    <button class="gen-btn" style="flex:1;font-size:10px;background:var(--surface2);color:var(--ink2)" onclick="prSelTicket('${oid}',${devs.length},false)">Clear</button>
+  </div>`;
+}
+function prToggleParts(itemId,name,cust,city,note,due){
+  const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'),box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; prCount(); return; }
+  box.style.display='block';
+  box.innerHTML=PR_PARTS.map(part=>{
+    const pid=itemId+'-'+part.toUpperCase(),cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div style="display:flex;gap:10px;padding:6px 0"><input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:18px;height:18px;accent-color:var(--ink)"
+      data-item-id="${pid}" data-item-name="${name} — ${part}" data-customer="${cust}" data-city="${city}" data-note="${note}" data-due="${due}" data-part="${part}">
+      <div style="font-weight:600;font-size:13px">${part}</div></div>`;
+  }).join('')+`<div style="display:flex;gap:6px;margin-top:6px">
+    <button class="gen-btn" style="flex:1;font-size:10px" onclick="prSelParts('${itemId}',true)">All parts</button>
+    <button class="gen-btn" style="flex:1;font-size:10px;background:var(--surface2);color:var(--ink2)" onclick="prSelParts('${itemId}',false)">None</button></div>`;
+  prCount();
+}
+function prSelParts(itemId,on){ PR_PARTS.forEach(p=>{const cb=document.getElementById('prcb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); prCount(); }
+function prSelTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('prcb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} prCount(); }
+function prCount(){ const n=document.querySelectorAll('.pr-cb:checked').length; document.getElementById('pr-count').textContent=n; document.getElementById('pr-print-bar').style.display=n>0?'block':'none'; }
+function prMakeBarcode(text){ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }catch(e){ return ''; } }
+async function prPrint(){
+  const checked=document.querySelectorAll('.pr-cb:checked');
+  if(!checked.length){ showToast('Select items first'); return; }
+  const items=[...checked].map(cb=>({itemId:cb.dataset.itemId,itemName:cb.dataset.itemName||'',customer:cb.dataset.customer||'',city:cb.dataset.city||'',note:cb.dataset.note||'',due:cb.dataset.due||'',part:cb.dataset.part||''}));
+  items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
+  const withBc=items.map(it=>({...it,bc:prMakeBarcode(it.itemId)}));
+  const labelsHtml=withBc.map(it=>`<div class="label"><div class="lt">${it.due?`<div class="l-due">DUE: ${it.due}</div>`:''}${it.city?`<div class="l-city">📍 ${it.city}</div>`:''}${it.note?`<div class="l-note">⚠️ ${it.note}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`◆ ${it.part.toUpperCase()}`:'GLINT LACQUER'}</div></div>`).join('');
+  const W=labelSize.width,H=labelSize.height;
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title><style>
+@page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}body{background:#fff;font-family:Arial,sans-serif}
+.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;justify-content:space-between;padding:3mm;overflow:hidden;page-break-after:always}.label:last-child{page-break-after:auto}
+.lt{text-align:center}.l-due{font-size:11pt;font-weight:700}.l-city{font-size:11pt;font-weight:700;margin-top:1mm}.l-note{font-size:10pt;font-weight:700;margin-top:1.5mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.2}
+.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}.lb img{max-width:98%;max-height:30mm;height:auto}
+.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1.5mm;font-size:12pt;font-weight:700;letter-spacing:.08em}
+</style></head><body>${labelsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script></body></html>`;
+  const w=window.open('','_blank','width=900,height=700'); if(!w){ showToast('Allow popups to print'); return; }
+  w.document.write(html); w.document.close();
+  showToast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
+}
+
 
 let ticketsUnlocked = false;
 function checkTicketsPin() {
@@ -440,7 +573,7 @@ async function doLogin() {
     const w = found[0];
     if (String(w.pin) !== pin) { showToast('⚠️ Wrong PIN'); return; }
 
-    const worker = { name: w.name, roles: w.roles || [] };
+    const worker = { name: w.name, roles: w.roles || [], canPrint: !!w.can_print };
     localStorage.setItem('st_logged_in_worker', JSON.stringify(worker));
     document.getElementById('login-name').value = '';
     document.getElementById('login-pin').value = '';
@@ -455,6 +588,7 @@ function doLogout() {
   localStorage.removeItem('st_logged_in_worker');
   selectedWorker = null;
   selectedRole = null;
+  document.getElementById('print-tab').style.display = 'none';
   // Clear any active work timer display
   stopActiveWorkTimer();
   showLoginScreen();
@@ -467,6 +601,8 @@ function activateWorkerOnDevice(w) {
   document.getElementById('login-card').style.display = 'none';
   document.getElementById('active-worker-card').style.display = 'block';
   document.getElementById('active-worker-name').textContent = w.name;
+  // Show Print tab only if this worker has label access
+  document.getElementById('print-tab').style.display = w.canPrint ? 'block' : 'none';
 
   if (w.roles.length > 1) {
     document.getElementById('role-select-card').style.display = 'block';
