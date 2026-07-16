@@ -453,11 +453,23 @@ function prFilter(){
   if(!q){ prRender(prTickets); return; }
   prRender(prTickets.filter(t=>prOid(t).toLowerCase().includes(q)||prCust(t).toLowerCase().includes(q)));
 }
-function prToggle(oid){
-  const t=prTickets.find(x=>prOid(x)===oid); if(!t) return;
+async function prToggle(oid){
+  const idx0=prTickets.findIndex(x=>prOid(x)===oid); if(idx0<0) return;
   const safe=oid.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById('pri-'+safe);
   if(box.style.display==='block'){ box.style.display='none'; return; }
   box.style.display='block';
+
+  let t=prTickets[idx0];
+  if(!t._full){
+    box.innerHTML='<div style="color:var(--ink3);font-size:12px;padding:12px;text-align:center">Loading details…</div>';
+    try{
+      const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
+      const r=await fetch(prProxy(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`));
+      const d=await r.json();
+      if(d&&d.data){ d.data._full=true; prTickets[idx0]=d.data; t=d.data; }
+    }catch(e){}
+  }
+
   const cust=prCust(t),city=prCity(t),due=prDue(t),devs=prDevs(t);
   box.innerHTML=devs.map((device,idx)=>{
     const num=idx+1,itemId=oid+'-'+num;
