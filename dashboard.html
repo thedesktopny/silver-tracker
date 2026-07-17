@@ -161,6 +161,7 @@
     <div class="nav-tab active" onclick="showPage('live',this)">Live</div>
     <div class="nav-tab" onclick="showPage('tickets',this)">Print Labels</div>
     <div class="nav-tab" onclick="showPage('reports',this)">Reports</div>
+    <div class="nav-tab" onclick="showPage('orders',this)">Orders</div>
     <div class="nav-tab" onclick="showPage('history',this)">History</div>
     <div class="nav-tab" onclick="showPage('workers',this)">Workers</div>
     <div class="nav-tab" onclick="showPage('labels',this)">Labels</div>
@@ -225,6 +226,14 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <div class="page" id="page-orders">
+      <div class="page-head">
+        <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time — search anything</div></div>
+        <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrders()">
+      </div>
+      <div id="orders-list"></div>
     </div>
 
     <div class="page" id="page-history">
@@ -356,6 +365,14 @@
   </div>
 </div>
 
+<div class="modal-bg" id="photos-modal">
+  <div class="modal">
+    <span class="modal-close" onclick="document.getElementById('photos-modal').classList.remove('show')">✕</span>
+    <div class="modal-title" id="photos-modal-title">Photos</div>
+    <div id="photos-modal-content" style="margin-top:16px"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -461,6 +478,7 @@ function showPage(name, el){
   document.getElementById('page-'+name).classList.add('active');
   el.classList.add('active');
   if(name==='reports') computeReports();
+  if(name==='orders') renderOrders();
   if(name==='history') renderHistory();
   if(name==='labels') loadLabels();
   if(name==='workers'){ loadWorkers(); loadRoles(); }
@@ -585,7 +603,8 @@ async function toggleTicket(oid){
         <div class="item-name">${name}</div>
         ${services?`<div class="item-meta" style="color:var(--gold2)">${services}</div>`:''}
         ${note?`<div class="item-meta" style="color:var(--red)">⚠️ ${note}</div>`:''}
-        <div class="item-meta">${itemId}</div>`;
+        <div class="item-meta">${itemId}</div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick='viewTicketPhotos("${itemId}","${esc(name)}",${JSON.stringify((device.PreConditions_images||[]).map(i=>i.medium||i.small))})'>🖼️ Photos</button>`;
     if(isCandelabra(name)){
       const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
       h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split into parts</button>
@@ -737,7 +756,7 @@ function computeLive(){
       return `<div class="live-card working">
         <div class="live-worker">${w.name}</div>
         <div class="live-role">${s.role||'Working'}${isStale?' · ⚠️ long':''}</div>
-        <div class="live-item">${s.itemDesc||s.itemId}<br><span style="color:var(--ink3);font-size:11px">${s.itemId}</span></div>
+        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItem('${s.itemId.replace(/'/g,"\\'")}')">${s.itemDesc||s.itemId}<br><span style="color:var(--ink3);font-size:11px">${s.itemId}</span></div>
         <div class="live-timer" data-start="${s.startedAt}">--:--</div>
         <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStop('${s.itemId.replace(/'/g,"\\'")}','${(s.role||'').replace(/'/g,"\\'")}','${w.name.replace(/'/g,"\\'")}','${(s.itemDesc||'').replace(/'/g,"\\'")}')">■ Force Stop</button>
       </div>`;
@@ -781,6 +800,61 @@ function pairSessions(filterFn){
 }
 function baseItemId(id){ return id.replace(/-(BASE|ARMS|CUPS|PLATES)$/i,''); }
 
+// ===== ORDERS VIEW =====
+function orderIdOf(itemId){ const m=itemId.match(/^(T-\d+)/i); return m?m[1]:itemId.split('-').slice(0,2).join('-'); }
+function renderOrders(){
+  const q=(document.getElementById('orders-search').value||'').toLowerCase().trim();
+  const orders={};
+  scans.forEach(s=>{
+    const oid=orderIdOf(s.item_id);
+    if(!orders[oid]) orders[oid]={items:{}, customer:s.customer, last:s.created_at};
+    if(!orders[oid].items[s.item_id]) orders[oid].items[s.item_id]={desc:s.item_desc, events:[]};
+    orders[oid].items[s.item_id].events.push(s);
+    if(new Date(s.created_at)>new Date(orders[oid].last)) orders[oid].last=s.created_at;
+    if(s.customer&&!orders[oid].customer) orders[oid].customer=s.customer;
+  });
+  let list=Object.entries(orders).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last));
+  if(q) list=list.filter(([oid,o])=>{
+    if(oid.toLowerCase().includes(q)||(o.customer||'').toLowerCase().includes(q)) return true;
+    return Object.entries(o.items).some(([iid,it])=>iid.toLowerCase().includes(q)||(it.desc||'').toLowerCase().includes(q)||it.events.some(e=>(e.worker||'').toLowerCase().includes(q)));
+  });
+  const el=document.getElementById('orders-list');
+  if(!list.length){ el.innerHTML='<div class="empty">No orders match</div>'; return; }
+  el.innerHTML=list.map(([oid,o])=>{
+    const items=Object.entries(o.items);
+    let doneCount=0, totalMs=0;
+    const itemRows=items.map(([iid,it])=>{
+      const evts=[...it.events].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+      let ms=0, open=null, working=false;
+      evts.forEach(e=>{ if((e.status||'').includes('Started')){open=e;working=true;} else if((e.status||'').includes('Stopped')&&open){ms+=new Date(e.created_at)-new Date(open.created_at);open=null;working=false;} });
+      totalMs+=ms;
+      const done=evts.length>0&&!working;
+      if(done)doneCount++;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openItem('${iid.replace(/'/g,"\\'")}')">
+        <div><span style="font-weight:600">${it.desc||iid}</span> <span style="color:var(--ink3);font-size:11px">${iid}</span></div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span style="font-size:12px;color:var(--ink3)">${fmtDur(ms)}</span>
+          ${working?'<span class="badge started">Working</span>':(done?'<span class="badge stopped">Done</span>':'<span class="badge" style="background:var(--surface2);color:var(--ink3)">—</span>')}
+        </div>
+      </div>`;
+    }).join('');
+    const pct=items.length?Math.round(doneCount/items.length*100):0;
+    return `<div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--gold2)">${oid}</div>
+          <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700">${o.customer||'Unknown'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11px;color:var(--ink3)">${doneCount}/${items.length} done · ${fmtDur(totalMs)}</div>
+          <div style="width:120px;height:6px;background:var(--surface2);border-radius:3px;margin-top:4px;overflow:hidden"><div style="width:${pct}%;height:100%;background:var(--green)"></div></div>
+        </div>
+      </div>
+      ${itemRows}
+    </div>`;
+  }).join('');
+}
+
 function computeReports(){
   const {sessions, open}=pairSessions(inRange);
   const itemAgg={};
@@ -819,24 +893,66 @@ function computeReports(){
   document.querySelector('#worker-report tbody').innerHTML=wr||'<tr><td colspan="4" class="empty">No sessions in this range</td></tr>';
 }
 
-function openItem(itemId){
+async function openItem(itemId){
   const evts=scans.filter(s=>s.item_id===itemId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  if(!evts.length) return;
-  document.getElementById('item-modal-title').textContent=evts[0].item_desc||itemId;
-  document.getElementById('item-modal-sub').textContent=itemId+(evts[0].customer?' · '+evts[0].customer:'');
-  document.getElementById('item-timeline').innerHTML=evts.map(e=>{
+  document.getElementById('item-modal-title').textContent=(evts[0]&&evts[0].item_desc)||itemId;
+  document.getElementById('item-modal-sub').textContent=itemId+((evts[0]&&evts[0].customer)?' · '+evts[0].customer:'');
+  const tl=document.getElementById('item-timeline');
+  // Total time
+  let totalMs=0, openEvt=null;
+  evts.forEach(e=>{ if((e.status||'').includes('Started'))openEvt=e; else if((e.status||'').includes('Stopped')&&openEvt){ totalMs+=new Date(e.created_at)-new Date(openEvt.created_at); openEvt=null; } });
+  let html=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;text-align:center">
+    <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time worked</div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700">${fmtDur(totalMs)}</div>
+  </div>`;
+  // Timeline
+  html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Timeline</div>';
+  html+=evts.length?evts.map(e=>{
     const started=(e.status||'').includes('Started');
-    return `<div class="timeline-row">
-      <div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
-      <div style="flex:1">
-        <div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${e.role||'—'}</div>
-        <div style="font-size:12px;color:var(--ink3)">${e.worker} · ${fmtDateFull(e.created_at)}</div>
-      </div>
-    </div>`;
-  }).join('');
+    return `<div class="timeline-row"><div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
+      <div style="flex:1"><div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${e.role||'—'}</div>
+      <div style="font-size:12px;color:var(--ink3)">${e.worker} · ${fmtDateFull(e.created_at)}</div></div></div>`;
+  }).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No scans yet</div>';
+  tl.innerHTML=html;
   document.getElementById('item-modal').classList.add('show');
+  // Load notes + photos async
+  try{
+    const nr=await sb('item_notes?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
+    if(nr&&nr.length){
+      tl.innerHTML+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Worker Notes</div>'+
+        nr.map(n=>`<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px"><div style="font-size:13px">${n.note}</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">${n.worker}${n.role?' · '+n.role:''} · ${fmtDateFull(n.created_at)}</div></div>`).join('');
+    }
+  }catch(e){}
+  try{
+    const ir=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
+    if(ir&&ir.length){
+      tl.innerHTML+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Photos ('+ir.length+')</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+ir.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
+    }
+  }catch(e){}
 }
 function closeItem(){ document.getElementById('item-modal').classList.remove('show'); }
+
+async function viewTicketPhotos(itemId, name, preImages){
+  document.getElementById('photos-modal-title').textContent=name;
+  const el=document.getElementById('photos-modal-content');
+  el.innerHTML='<div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div>';
+  document.getElementById('photos-modal').classList.add('show');
+  let html='';
+  try{
+    const imgs=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
+    if(imgs&&imgs.length){
+      html+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Our Photos ('+imgs.length+')</div>';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'+imgs.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
+    }
+  }catch(e){}
+  if(preImages&&preImages.length){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Photos (RepairDesk)</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+preImages.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
+  }
+  el.innerHTML=html||'<div style="text-align:center;color:var(--ink3);padding:20px">No photos for this item</div>';
+}
+
 
 function renderHistory(){
   const q=(document.getElementById('history-search').value||'').toLowerCase();
@@ -905,9 +1021,32 @@ async function saveEdit(){
 async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); renderRoles(); renderNwRoles(); }
 function renderRoles(){
   document.getElementById('roles-list').innerHTML=roles.length?roles.map(r=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-weight:600">${r.name}</span>
-      <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button></div>`).join(''):'<div class="empty" style="padding:16px">No roles yet</div>';
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700;font-size:15px">${r.name}</span>
+        <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">
+          Photo after work:
+          <select onchange="updateRoleSetting(${r.id},'image_capture',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="off" ${(!r.image_capture||r.image_capture==='off')?'selected':''}>Off</option>
+            <option value="optional" ${r.image_capture==='optional'?'selected':''}>Optional</option>
+            <option value="required" ${r.image_capture==='required'?'selected':''}>Required</option>
+          </select>
+        </label>
+        <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" style="width:18px;height:18px;accent-color:var(--ink)" ${r.can_split?'checked':''} onchange="updateRoleSetting(${r.id},'can_split',this.checked)">
+          Can split any item
+        </label>
+      </div>
+    </div>`).join(''):'<div class="empty" style="padding:16px">No roles yet</div>';
+}
+async function updateRoleSetting(id, field, value){
+  const body={}; body[field]=value;
+  const r=await sb('roles?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});
+  if(r.ok){ const role=roles.find(x=>x.id===id); if(role)role[field]=value; toast('✅ Updated'); }
+  else toast('Could not update');
 }
 function renderNwRoles(){
   document.getElementById('nw-roles').innerHTML=roles.map(r=>{const on=nwSelectedRoles.includes(r.name);return `<span class="chip ${on?'on':''}" onclick="toggleNwRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;}).join('')||'<span style="color:var(--ink3);font-size:12px">Add a role first →</span>';
