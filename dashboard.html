@@ -605,11 +605,13 @@ async function toggleTicket(oid){
         ${note?`<div class="item-meta" style="color:var(--red)">⚠️ ${note}</div>`:''}
         <div class="item-meta">${itemId}</div>
         <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick='viewTicketPhotos("${itemId}","${esc(name)}",${JSON.stringify((device.PreConditions_images||[]).map(i=>i.medium||i.small))})'>🖼️ Photos</button>`;
+    const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
     if(isCandelabra(name)){
-      const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split into parts</button>
-        <div class="parts-box" id="${sid}"></div>`;
+      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split into parts (Base·Arms·Cups·Plates)</button>`;
+    } else {
+      h+=`<button class="split-btn" onclick="customSplit('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">✂️ Split item</button>`;
     }
+    h+=`<div class="parts-box" id="${sid}"></div>`;
     h+=`</div></div>`;
     return h;
   }).join('')+`<div style="display:flex;gap:8px;padding:12px 0">
@@ -642,6 +644,40 @@ function toggleParts(itemId,name,cust,city,note,due,services,group){
 }
 function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateCount(); }
 function selectTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('cb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} updateCount(); }
+
+// Custom split — admin types their own part names for any item
+function customSplit(itemId,name,cust,city,note,due,services,group){
+  const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
+  box.style.display='block';
+  box.dataset.meta=JSON.stringify({itemId,name,cust,city,note,due,services,group});
+  const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  box.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Type a part name and add it — each makes its own label</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input type="text" id="cs-input-${key}" placeholder="e.g. Lid, Handle, Left side..." style="flex:1" onkeydown="if(event.key==='Enter')addCustomPart('${itemId}')">
+      <button class="btn btn-sm" onclick="addCustomPart('${itemId}')">+ Add</button>
+    </div>
+    <div id="cs-list-${key}"></div>`;
+  updateCount();
+}
+function addCustomPart(itemId){
+  const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const inp=document.getElementById('cs-input-'+key);
+  const part=inp.value.trim(); if(!part) return;
+  const box=document.getElementById('split-'+key);
+  const meta=JSON.parse(box.dataset.meta);
+  const list=document.getElementById('cs-list-'+key);
+  const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+  const div=document.createElement('div');
+  div.className='item-row'; div.style.padding='8px 0';
+  div.innerHTML=`<input type="checkbox" class="item-cb" id="${cbId}" checked onchange="updateCount()"
+    data-item-id="${pid}" data-item-name="${meta.name} — ${part}" data-services="${meta.services||''}" data-customer="${meta.cust}" data-city="${meta.city}" data-group="${meta.group||''}" data-note="${meta.note}" data-due="${meta.due}" data-part="${part}">
+    <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>`;
+  list.appendChild(div);
+  inp.value=''; inp.focus();
+  updateCount();
+}
 
 function updateCount(){
   const n=document.querySelectorAll('.item-cb:checked').length;
@@ -756,7 +792,7 @@ function computeLive(){
       return `<div class="live-card working">
         <div class="live-worker">${w.name}</div>
         <div class="live-role">${s.role||'Working'}${isStale?' · ⚠️ long':''}</div>
-        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItem('${s.itemId.replace(/'/g,"\\'")}')">${s.itemDesc||s.itemId}<br><span style="color:var(--ink3);font-size:11px">${s.itemId}</span></div>
+        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItem('${s.itemId.replace(/'/g,"\\'")}')">${s.itemDesc&&s.itemDesc!==s.itemId?s.itemDesc+'<br><span style="color:var(--ink3);font-size:11px">'+s.itemId+'</span>':s.itemId}</div>
         <div class="live-timer" data-start="${s.startedAt}">--:--</div>
         <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStop('${s.itemId.replace(/'/g,"\\'")}','${(s.role||'').replace(/'/g,"\\'")}','${w.name.replace(/'/g,"\\'")}','${(s.itemDesc||'').replace(/'/g,"\\'")}')">■ Force Stop</button>
       </div>`;
@@ -831,7 +867,7 @@ function renderOrders(){
       const done=evts.length>0&&!working;
       if(done)doneCount++;
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openItem('${iid.replace(/'/g,"\\'")}')">
-        <div><span style="font-weight:600">${it.desc||iid}</span> <span style="color:var(--ink3);font-size:11px">${iid}</span></div>
+        <div><span style="font-weight:600">${it.desc&&it.desc!==iid?it.desc:''}</span> <span style="color:var(--ink3);font-size:11px">${iid}</span></div>
         <div style="display:flex;gap:10px;align-items:center">
           <span style="font-size:12px;color:var(--ink3)">${fmtDur(ms)}</span>
           ${working?'<span class="badge started">Working</span>':(done?'<span class="badge stopped">Done</span>':'<span class="badge" style="background:var(--surface2);color:var(--ink3)">—</span>')}
@@ -871,7 +907,7 @@ function computeReports(){
   let rows=Object.entries(itemAgg).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last)).map(([id,d])=>{
     const pm=id.match(/-(BASE|ARMS|CUPS|PLATES)$/i);
     return `<tr class="clickable" onclick="openItem('${id.replace(/'/g,"\\'")}')">
-      <td><strong>${d.desc||id}</strong> ${pm?'<span class="badge part">'+pm[1].toUpperCase()+'</span>':''}<br><span style="color:var(--ink3);font-size:11px">${id}</span></td>
+      <td><strong>${d.desc&&d.desc!==id?d.desc:''}</strong> ${pm?'<span class="badge part">'+pm[1].toUpperCase()+'</span>':''}${d.desc&&d.desc!==id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${id}</span></td>
       <td>${d.customer||'—'}</td>
       <td><strong>${fmtDur(d.ms)}</strong></td>
       <td>${d.sessions}</td>
@@ -958,7 +994,7 @@ function renderHistory(){
   const q=(document.getElementById('history-search').value||'').toLowerCase();
   const rows=scans.filter(s=>!q||(s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q)).slice(0,800).map(s=>`
     <tr><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
-    <td><strong>${s.item_desc||s.item_id}</strong><br><span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
+    <td><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:''}</strong>${s.item_desc&&s.item_desc!==s.item_id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
     <td>${s.customer||'—'}</td><td>${s.worker}</td><td>${s.role||'—'}</td>
     <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td></tr>`).join('');
   document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No scans yet</td></tr>';
