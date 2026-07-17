@@ -257,6 +257,14 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
       <div id="active-work-task" style="font-size:12px;color:var(--green);font-weight:700;margin-top:2px;letter-spacing:.04em;text-transform:uppercase"></div>
       <div id="active-work-timer" style="font-size:32px;color:var(--ink);font-weight:700;margin-top:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em">00:00</div>
       <div style="font-size:10px;color:var(--ink3);margin-top:2px">scan again to stop</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
+        <button onclick="viewItemImages()" id="view-imgs-btn" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🖼️ Photos</button>
+      </div>
+      <div id="note-box" style="display:none;margin-top:10px">
+        <textarea id="note-text" placeholder="Type a note about this item..." style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-family:'Jost',sans-serif;font-size:13px;resize:vertical;min-height:60px"></textarea>
+        <button onclick="saveNote()" style="width:100%;margin-top:6px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer;text-transform:uppercase">Save Note</button>
+      </div>
     </div>
   </div>
 
@@ -292,10 +300,50 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 </div><!-- app-shell -->
 <div class="toast" id="toast"></div>
 
+<!-- Image capture modal -->
+<div id="img-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px">
+  <div style="background:var(--bg);border-radius:16px;padding:20px;width:100%;max-width:440px;max-height:92vh;overflow-y:auto">
+    <div id="img-modal-title" style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;text-align:center;margin-bottom:4px">Capture Photo</div>
+    <div id="img-modal-sub" style="font-size:12px;color:var(--ink3);text-align:center;margin-bottom:14px"></div>
+    <video id="img-video" autoplay muted playsinline style="width:100%;border-radius:12px;display:none;background:#000"></video>
+    <canvas id="img-canvas" style="display:none"></canvas>
+    <img id="img-preview" style="width:100%;border-radius:12px;display:none">
+    <div id="img-buttons" style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="imgCapture()" id="img-snap-btn" style="flex:1;background:var(--ink);border:none;border-radius:10px;color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:14px;cursor:pointer;text-transform:uppercase">📷 Take Photo</button>
+    </div>
+    <div id="img-confirm" style="display:none;gap:8px;margin-top:12px">
+      <button onclick="imgRetake()" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:10px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">Retake</button>
+      <button onclick="imgSave()" id="img-save-btn" style="flex:2;background:var(--green);border:none;border-radius:10px;color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">✓ Save & Finish</button>
+    </div>
+    <button onclick="imgCancel()" id="img-cancel-btn" style="width:100%;margin-top:8px;background:none;border:none;color:var(--ink3);font-family:'Jost',sans-serif;font-size:11px;cursor:pointer">Cancel</button>
+  </div>
+</div>
+
+<!-- Pre-images viewer modal -->
+<div id="preimg-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closePreImg()">
+  <div style="background:var(--bg);border-radius:16px;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700">Item Photos</div>
+      <button onclick="closePreImg()" style="background:none;border:none;font-size:22px;color:var(--ink3);cursor:pointer;font-weight:700">✕</button>
+    </div>
+    <div id="preimg-content"><div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div></div>
+  </div>
+</div>
+
 <script>
 // ===== STATE =====
 let selectedWorker = null; // {name, roles:[...]}
 let selectedRole = null; // current active role for this scan session
+let roleSettings = {}; // roleName -> {image_capture, can_split}
+async function loadRoleSettings(){
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/roles?select=*',{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const rows=await r.json();
+    roleSettings={};
+    (rows||[]).forEach(x=>{ roleSettings[x.name]={image_capture:x.image_capture||'off',can_split:!!x.can_split}; });
+  }catch(e){}
+}
+function curRoleSetting(){ return roleSettings[selectedRole]||{image_capture:'off',can_split:false}; }
 let sessionLog = [];
 let roles = JSON.parse(localStorage.getItem('st_roles') || '["Cleaning","Polish","Lacquer"]');
 let workers = JSON.parse(localStorage.getItem('st_workers') || '[{"name":"David","roles":["Cleaning"]},{"name":"Worker 2","roles":["Polish","Lacquer"]}]');
@@ -491,10 +539,17 @@ async function prToggle(oid){
         <div style="font-weight:700;font-size:14px">${name}</div>
         ${services?`<div style="font-size:11px;color:var(--gold2)">${services}</div>`:''}
         ${note?`<div style="font-size:11px;color:var(--red)">⚠️ ${note}</div>`:''}
-        <div style="font-size:10px;color:var(--ink3)">${itemId}</div>`;
+        <div style="font-size:10px;color:var(--ink3)">${itemId}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button class="gen-btn" style="font-size:10px;padding:5px 9px;background:var(--surface2);color:var(--ink2)" onclick="openPreImg('${itemId}','${esc(name)}')">🖼️ Photos</button>`;
     if(prIsCand(name)){
       const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-      h+=`<button class="gen-btn" style="margin-top:6px;font-size:10px;padding:6px 10px" onclick="prToggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split parts</button><div id="${sid}" style="display:none;margin-top:6px"></div>`;
+      h+=`<button class="gen-btn" style="font-size:10px;padding:5px 9px" onclick="prToggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split parts</button></div><div id="${sid}" style="display:none;margin-top:6px"></div>`;
+    } else if(curRoleSetting().can_split){
+      const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+      h+=`<button class="gen-btn" style="font-size:10px;padding:5px 9px" onclick="prCustomSplit('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">✂️ Split item</button></div><div id="${sid}" style="display:none;margin-top:6px"></div>`;
+    } else {
+      h+=`</div>`;
     }
     h+=`</div></div>`;
     return h;
@@ -502,6 +557,38 @@ async function prToggle(oid){
     <button class="gen-btn" style="flex:1;font-size:10px" onclick="prSelTicket('${oid}',${devs.length},true)">All</button>
     <button class="gen-btn" style="flex:1;font-size:10px;background:var(--surface2);color:var(--ink2)" onclick="prSelTicket('${oid}',${devs.length},false)">Clear</button>
   </div>`;
+}
+// Custom split — worker types their own part names
+function prCustomSplit(itemId,name,cust,city,note,due,services,group){
+  const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'),box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; prCount(); return; }
+  box.style.display='block';
+  box.dataset.meta=JSON.stringify({itemId,name,cust,city,note,due,services,group});
+  box.innerHTML=`<div style="font-size:10px;color:var(--ink3);margin-bottom:6px">Type a part name and add it — each makes its own label</div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <input type="text" id="cs-input-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}" placeholder="e.g. Lid, Handle, Left side..." style="flex:1;padding:8px;border:2px solid var(--border);border-radius:8px;font-size:13px">
+      <button class="gen-btn" style="font-size:10px" onclick="prAddCustomPart('${itemId}')">+ Add</button>
+    </div>
+    <div id="cs-list-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}"></div>`;
+  prCount();
+}
+function prAddCustomPart(itemId){
+  const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const inp=document.getElementById('cs-input-'+key);
+  const part=inp.value.trim(); if(!part){ return; }
+  const box=document.getElementById('prsplit-'+key);
+  const meta=JSON.parse(box.dataset.meta);
+  const list=document.getElementById('cs-list-'+key);
+  const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+  const div=document.createElement('div');
+  div.style.cssText='display:flex;gap:10px;padding:6px 0;align-items:center';
+  div.innerHTML=`<input type="checkbox" class="pr-cb" id="${cbId}" checked onchange="prCount()" style="width:18px;height:18px;accent-color:var(--ink)"
+    data-item-id="${pid}" data-item-name="${meta.name} — ${part}" data-services="${meta.services||''}" data-customer="${meta.cust}" data-city="${meta.city}" data-group="${meta.group||''}" data-note="${meta.note}" data-due="${meta.due}" data-part="${part}">
+    <div style="font-weight:600;font-size:13px">${part}</div>`;
+  list.appendChild(div);
+  inp.value=''; inp.focus();
+  prCount();
 }
 function prToggleParts(itemId,name,cust,city,note,due,services,group){
   const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'),box=document.getElementById(sid);
@@ -562,7 +649,7 @@ function initDeviceWorker() {
   // Restore saved login from this device
   const saved = JSON.parse(localStorage.getItem('st_logged_in_worker') || 'null');
   if (saved && saved.name) {
-    activateWorkerOnDevice(saved);
+    loadRoleSettings().then(()=>activateWorkerOnDevice(saved));
     return;
   }
   showLoginScreen();
@@ -596,6 +683,7 @@ async function doLogin() {
 
     const worker = { name: w.name, roles: w.roles || [], canPrint: !!w.can_print };
     localStorage.setItem('st_logged_in_worker', JSON.stringify(worker));
+    await loadRoleSettings();
     document.getElementById('login-name').value = '';
     document.getElementById('login-pin').value = '';
     activateWorkerOnDevice(worker);
@@ -806,30 +894,173 @@ async function processScan(itemId) {
 
   const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
 
-  // Sync local state to match
+  // If STOPPING and this role REQUIRES a photo, capture it first before completing
+  const rs = curRoleSetting();
+  if (isInProgress && rs.image_capture === 'required') {
+    const info0 = itemCache[itemId] || {};
+    pendingStop = { itemId, task, info: info0 };
+    openImgModal(itemId, info0.name || itemId, true);
+    return; // stop is completed inside imgSave() after photo
+  }
+
+  await completeScan(itemId, task, isInProgress);
+
+  // If STOPPING and photo is OPTIONAL, offer it (non-blocking)
+  if (isInProgress && rs.image_capture === 'optional') {
+    const info0 = itemCache[itemId] || {};
+    pendingStop = null;
+    setTimeout(()=>{ if(confirm('Add a photo of this finished item?')){ openImgModal(itemId, info0.name || itemId, false); } }, 300);
+  }
+}
+
+let pendingStop = null;
+
+// ===== WORKER NOTES =====
+function openNoteBox(){
+  const box=document.getElementById('note-box');
+  box.style.display = box.style.display==='none'?'block':'none';
+  if(box.style.display==='block') document.getElementById('note-text').focus();
+}
+async function saveNote(){
+  const txt=document.getElementById('note-text').value.trim();
+  if(!txt){ showToast('Type a note first'); return; }
+  if(!activeWork){ showToast('No active item'); return; }
+  try{
+    await fetch(SUPABASE_URL+'/rest/v1/item_notes',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:activeWork.itemId,item_desc:activeWork.name,note:txt,worker:selectedWorker.name,role:activeWork.task})});
+    document.getElementById('note-text').value='';
+    document.getElementById('note-box').style.display='none';
+    showToast('✅ Note saved');
+  }catch(e){ showToast('Could not save note'); }
+}
+
+// ===== IMAGE CAPTURE (Supabase Storage) =====
+let imgStream=null, imgBlob=null, imgTarget=null, imgRequired=false;
+function openImgModal(itemId, name, required){
+  imgTarget={itemId, name}; imgRequired=required;
+  document.getElementById('img-modal-title').textContent = required?'Photo Required':'Add Photo';
+  document.getElementById('img-modal-sub').textContent = name;
+  document.getElementById('img-cancel-btn').style.display = required?'none':'block';
+  document.getElementById('img-modal').style.display='flex';
+  document.getElementById('img-preview').style.display='none';
+  document.getElementById('img-confirm').style.display='none';
+  document.getElementById('img-buttons').style.display='flex';
+  const v=document.getElementById('img-video');
+  v.style.display='block';
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(s=>{ imgStream=s; v.srcObject=s; v.play(); }).catch(e=>{ showToast('⚠️ Camera error: '+e.message); });
+}
+function imgCapture(){
+  const v=document.getElementById('img-video'), c=document.getElementById('img-canvas');
+  c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
+  c.toBlob(b=>{ imgBlob=b;
+    const url=URL.createObjectURL(b);
+    const p=document.getElementById('img-preview'); p.src=url; p.style.display='block';
+    v.style.display='none';
+    document.getElementById('img-buttons').style.display='none';
+    document.getElementById('img-confirm').style.display='flex';
+  },'image/jpeg',0.7);
+}
+function imgRetake(){
+  document.getElementById('img-preview').style.display='none';
+  document.getElementById('img-video').style.display='block';
+  document.getElementById('img-confirm').style.display='none';
+  document.getElementById('img-buttons').style.display='flex';
+}
+async function imgSave(){
+  if(!imgBlob){ showToast('Take a photo first'); return; }
+  document.getElementById('img-save-btn').textContent='Uploading…';
+  const fname=imgTarget.itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+'.jpg';
+  try{
+    const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'image/jpeg'},body:imgBlob});
+    if(!up.ok) throw new Error('upload failed');
+    const publicUrl=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
+    await fetch(SUPABASE_URL+'/rest/v1/item_images',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:imgTarget.itemId,item_desc:imgTarget.name,image_url:publicUrl,worker:selectedWorker.name,role:selectedRole})});
+    stopImgCam();
+    document.getElementById('img-modal').style.display='none';
+    document.getElementById('img-save-btn').textContent='✓ Save & Finish';
+    showToast('✅ Photo saved');
+    // If this photo was gating a required stop, complete it now
+    if(pendingStop){ const ps=pendingStop; pendingStop=null; await completeScan(ps.itemId, ps.task, true); }
+  }catch(e){ showToast('⚠️ Upload failed'); document.getElementById('img-save-btn').textContent='✓ Save & Finish'; }
+}
+function imgCancel(){
+  if(imgRequired){ showToast('Photo is required to finish'); return; }
+  stopImgCam();
+  document.getElementById('img-modal').style.display='none';
+  pendingStop=null;
+}
+function stopImgCam(){ if(imgStream){ imgStream.getTracks().forEach(t=>t.stop()); imgStream=null; } imgBlob=null; }
+
+// ===== VIEW ITEM PHOTOS (pre-images from RepairDesk + worker photos) =====
+async function viewItemImages(){
+  if(!activeWork){ showToast('No active item'); return; }
+  openPreImg(activeWork.itemId, activeWork.name);
+}
+async function openPreImg(itemId, name){
+  document.getElementById('preimg-modal').style.display='flex';
+  const el=document.getElementById('preimg-content');
+  el.innerHTML='<div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div>';
+  let html='';
+  // Worker-captured photos from Supabase
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc',{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const imgs=await r.json();
+    if(imgs&&imgs.length){
+      html+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Our Photos ('+imgs.length+')</div>';
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'+imgs.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
+    }
+  }catch(e){}
+  // Pre-images from RepairDesk (need the ticket detail)
+  try{
+    const oid=itemId.split('-').slice(0,2).join('-'); // T-1054
+    const num=parseInt(itemId.split('-')[2])||1;
+    // find ticket in prTickets if loaded, else fetch
+    let t=(typeof prTickets!=='undefined')?prTickets.find(x=>prOid&&prOid(x)===oid):null;
+    if(!t){
+      const tid=oid.replace(/\D/g,'');
+      const rr=await fetch(prProxy(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`));
+      const dd=await rr.json(); if(dd&&dd.data) t=dd.data;
+    }
+    if(t&&t.devices){
+      const dev=t.devices[num-1];
+      const pre=(dev&&dev.PreConditions_images)||[];
+      if(pre.length){
+        html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Photos (RepairDesk)</div>';
+        html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+pre.map(i=>`<a href="${i.medium||i.small}" target="_blank"><img src="${i.small||i.medium}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
+      }
+    }
+  }catch(e){}
+  el.innerHTML = html || '<div style="text-align:center;color:var(--ink3);padding:20px">No photos for this item yet</div>';
+}
+function closePreImg(){ document.getElementById('preimg-modal').style.display='none'; }
+
+
+async function completeScan(itemId, task, isInProgress) {
+  const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
+  const stateKey = itemId + '::' + task;
+
+  // Sync local state
   if (isInProgress) { delete itemTaskState[stateKey]; }
   else { itemTaskState[stateKey] = 'in_progress'; }
   localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
 
   const info = itemCache[itemId] || {};
 
-  // Update persistent active-work panel
   if (isInProgress) {
-    // Stopped — clear active work if it was this item
     if (activeWork && activeWork.itemId === itemId && activeWork.task === task) {
       activeWork = null;
       localStorage.setItem('st_active_work', 'null');
       stopActiveWorkTimer();
     }
   } else {
-    // Started — set active work
     activeWork = { itemId, name: info.name || itemId, task, startedAt: Date.now() };
     localStorage.setItem('st_active_work', JSON.stringify(activeWork));
     startActiveWorkTimer();
   }
   renderActiveWork();
 
-  // Log it
   const entry = {
     itemId, itemDesc: info.name||'', customer: info.customer||'',
     status: newStatus, worker: selectedWorker.name, timestamp: new Date().toISOString()
@@ -838,36 +1069,19 @@ async function processScan(itemId) {
   renderHistory();
   renderScanRecent();
 
-  // Send to Supabase
   try {
     await fetch(SUPABASE_URL + '/rest/v1/scans', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({
-        item_id: itemId,
-        item_desc: info.name || '',
-        customer: info.customer || '',
-        city: info.city || '',
-        status: newStatus,
-        worker: selectedWorker.name,
-        role: task
-      })
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ item_id: itemId, item_desc: info.name || '', customer: info.customer || '', city: info.city || '', status: newStatus, worker: selectedWorker.name, role: task })
     });
   } catch(e) {}
 
   if (navigator.vibrate) navigator.vibrate(isInProgress ? [50,50,50] : 120);
   showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
 
-  // Clear input, ready for next scan
   document.getElementById('scan-input').value = '';
-  setTimeout(() => {
-    document.getElementById('scan-input').focus();
-  }, 100);
+  setTimeout(() => { document.getElementById('scan-input').focus(); }, 100);
 }
 
 function renderScanRecent() {
