@@ -1210,7 +1210,7 @@ function renderHistory(){
     if(to&&d>to) return false;
     return true;
   }).slice(0,800).map(s=>`
-    <tr><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
+    <tr class="clickable" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')"><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
     <td><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:''}</strong>${s.item_desc&&s.item_desc!==s.item_id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
     <td>${s.customer||'—'}</td><td>${s.worker}</td><td>${s.role||'—'}</td>
     <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td></tr>`).join('');
