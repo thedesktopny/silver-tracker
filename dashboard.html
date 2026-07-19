@@ -55,7 +55,7 @@
 
   .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
   .stat{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
-  .stat-num{font-family:'Cormorant Garamond',serif;font-size:40px;font-weight:700;line-height:1}
+  .stat-num{font-family:'Jost',sans-serif;font-size:38px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.01em}
   .stat-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-top:6px}
   .stat.alert{border-color:var(--red)}
   .stat.alert .stat-num{color:var(--red)}
@@ -486,7 +486,9 @@ function showPage(name, el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
-  el.classList.add('active');
+  // Highlight the matching nav tab (works even when called without a click)
+  if(el && el.classList){ el.classList.add('active'); }
+  else { document.querySelectorAll('.nav-tab').forEach(t=>{ if(t.textContent.trim().toLowerCase()===name.toLowerCase()) t.classList.add('active'); }); }
   if(name==='reports') computeReports();
   if(name==='orders') renderOrders();
   if(name==='history') renderHistory();
@@ -495,6 +497,18 @@ function showPage(name, el){
   if(name==='live') computeLive();
   if(name==='tickets' && !allTickets.length) loadTickets();
   if(name==='settings') loadLabelSizeInputs();
+}
+
+// Jump to an order's full details from anywhere
+function goToOrder(oid){
+  showPage('orders');
+  const box=document.getElementById('orders-search');
+  if(box){ box.value=oid; renderOrders(); }
+  const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+  setTimeout(()=>{
+    const btn=document.getElementById('ord-btn-'+safe);
+    if(btn){ loadOrderDetail(oid, safe); btn.scrollIntoView({behavior:'smooth',block:'center'}); }
+  }, 200);
 }
 
 // ===== TICKETS + PRINTING =====
@@ -974,7 +988,7 @@ function renderOrders(){
       </div>
       ${orderWorkerSummary?`<div style="font-size:11px;color:var(--ink3);background:var(--surface2);border-radius:6px;padding:6px 10px;margin-bottom:8px">⏱️ Time by worker: ${orderWorkerSummary}</div>`:''}
       ${itemRows}
-      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" id="ord-btn-${safe}" onclick="loadOrderDetail('${oid}','${safe}')">📋 Show full order info + photos</button>
+      <button class="btn btn-sm" style="margin-top:12px;width:100%;background:var(--gold);color:#fff;font-weight:700" id="ord-btn-${safe}" onclick="loadOrderDetail('${oid}','${safe}')">📋 Show full order info + photos</button>
       <div id="ord-detail-${safe}" style="display:none;margin-top:10px"></div>
     </div>`;
   }).join('');
@@ -1130,7 +1144,8 @@ async function openItem(itemId){
   // Total time
   let totalMs=0, openEvt=null;
   evts.forEach(e=>{ if((e.status||'').includes('Started'))openEvt=e; else if((e.status||'').includes('Stopped')&&openEvt){ totalMs+=new Date(e.created_at)-new Date(openEvt.created_at); openEvt=null; } });
-  let html=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;text-align:center">
+  let html=`<button class="btn btn-sm" style="width:100%;margin-bottom:14px;background:var(--gold);color:#fff;font-weight:700" onclick="closeItem();goToOrder('${orderIdOf(itemId).replace(/'/g,"\\'")}')">📋 View full order (${orderIdOf(itemId)})</button>
+  <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;text-align:center">
     <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time worked</div>
     <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700">${fmtDur(totalMs)}</div>
   </div>`;
