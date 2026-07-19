@@ -196,19 +196,24 @@
     <div class="page" id="page-reports">
       <div class="page-head">
         <div><div class="page-title">Reports</div><div class="page-sub">Time totals by item and by worker</div></div>
-        <div class="head-actions">
+        <div class="head-actions" style="flex-wrap:wrap">
           <div class="seg" id="range-seg">
             <button class="on" onclick="setRange('today',this)">Today</button>
             <button onclick="setRange('week',this)">Week</button>
             <button onclick="setRange('month',this)">Month</button>
             <button onclick="setRange('all',this)">All</button>
           </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+            <input type="date" id="range-from" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+            <span>→</span>
+            <input type="date" id="range-to" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+          </div>
           <button class="btn btn-ghost btn-sm" onclick="exportReports()">⬇ Export CSV</button>
         </div>
       </div>
 
       <div class="card" style="margin-bottom:16px">
-        <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">click a row for full timeline</span></div>
+        <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">👆 tap any item to see its full timeline, notes & photos</span></div>
         <div style="overflow-x:auto">
           <table id="item-report">
             <thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead>
@@ -218,7 +223,7 @@
       </div>
 
       <div class="card">
-        <div class="card-label">Time per Worker</div>
+        <div class="card-label">Time per Worker <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">👆 tap any worker to see everything they worked on</span></div>
         <div style="overflow-x:auto">
           <table id="worker-report">
             <thead><tr><th>Worker</th><th>Total Time</th><th>Items Worked</th><th>Sessions</th></tr></thead>
@@ -239,8 +244,13 @@
     <div class="page" id="page-history">
       <div class="page-head">
         <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first</div></div>
-        <div class="head-actions">
+        <div class="head-actions" style="flex-wrap:wrap">
           <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistory()">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+            <input type="date" id="hist-from" onchange="renderHistory()" style="padding:6px 8px;font-size:12px;width:auto">
+            <span>→</span>
+            <input type="date" id="hist-to" onchange="renderHistory()" style="padding:6px 8px;font-size:12px;width:auto">
+          </div>
           <button class="btn btn-ghost btn-sm" onclick="exportHistory()">⬇ Export CSV</button>
         </div>
       </div>
@@ -748,13 +758,33 @@ body{background:#fff;font-family:Arial,sans-serif}
 
 function setRange(r, el){
   reportRange=r;
+  customFrom=null; customTo=null;
+  document.getElementById('range-from').value='';
+  document.getElementById('range-to').value='';
   document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
   el.classList.add('on');
   computeReports();
 }
+let customFrom=null, customTo=null;
+function setCustomRange(){
+  const f=document.getElementById('range-from').value, t=document.getElementById('range-to').value;
+  customFrom=f?new Date(f+'T00:00:00'):null;
+  customTo=t?new Date(t+'T23:59:59'):null;
+  if(customFrom||customTo){
+    reportRange='custom';
+    document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
+  }
+  computeReports();
+}
 function inRange(dateStr){
+  const d=new Date(dateStr);
+  if(reportRange==='custom'){
+    if(customFrom && d<customFrom) return false;
+    if(customTo && d>customTo) return false;
+    return true;
+  }
   if(reportRange==='all') return true;
-  const d=new Date(dateStr), now=new Date();
+  const now=new Date();
   if(reportRange==='today') return d.toDateString()===now.toDateString();
   if(reportRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
   if(reportRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
@@ -785,19 +815,23 @@ function computeLive(){
 
   const grid=document.getElementById('live-grid');
   if(!workers.length){ grid.innerHTML='<div class="empty">No workers yet — add them in the Workers tab</div>'; return; }
+  const activeList=Object.values(active);
+  window._activeSessions=activeList; // for safe lookup by index
   grid.innerHTML=workers.map(w=>{
     const s=active[w.name];
     if(s){
+      const si=activeList.indexOf(s);
       const isStale=(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
+      const descHtml = (s.itemDesc&&s.itemDesc!==s.itemId) ? (esc(s.itemDesc)+'<br><span style="color:var(--ink3);font-size:11px">'+esc(s.itemId)+'</span>') : esc(s.itemId);
       return `<div class="live-card working">
-        <div class="live-worker">${w.name}</div>
-        <div class="live-role">${s.role||'Working'}${isStale?' · ⚠️ long':''}</div>
-        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItem('${s.itemId.replace(/'/g,"\\'")}')">${s.itemDesc&&s.itemDesc!==s.itemId?s.itemDesc+'<br><span style="color:var(--ink3);font-size:11px">'+s.itemId+'</span>':s.itemId}</div>
+        <div class="live-worker">${esc(w.name)}</div>
+        <div class="live-role">${esc(s.role||'Working')}${isStale?' · ⚠️ long':''}</div>
+        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItemBySession(${si})">${descHtml}</div>
         <div class="live-timer" data-start="${s.startedAt}">--:--</div>
-        <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStop('${s.itemId.replace(/'/g,"\\'")}','${(s.role||'').replace(/'/g,"\\'")}','${w.name.replace(/'/g,"\\'")}','${(s.itemDesc||'').replace(/'/g,"\\'")}')">■ Force Stop</button>
+        <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStopBySession(${si})">■ Force Stop</button>
       </div>`;
     }
-    return `<div class="live-card"><div class="live-worker">${w.name}</div><div class="live-role" style="color:var(--ink3)">${(w.roles||[]).join(', ')||'—'}</div><div class="live-idle">Not working right now</div></div>`;
+    return `<div class="live-card"><div class="live-worker">${esc(w.name)}</div><div class="live-role" style="color:var(--ink3)">${esc((w.roles||[]).join(', ')||'—')}</div><div class="live-idle">Not working right now</div></div>`;
   }).join('');
   if(liveTimers) clearInterval(liveTimers);
   liveTimers=setInterval(updateLiveTimers,1000); updateLiveTimers();
@@ -810,7 +844,21 @@ function updateLiveTimers(){
   });
 }
 
-async function forceStop(itemId, role, worker, desc){
+function escg(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function esc(s){ return escg(s); }
+
+function forceStopBySession(idx){
+  const s=(window._activeSessions||[])[idx];
+  if(!s){ toast('Session not found — refresh'); return; }
+  // find the worker for this session
+  const worker=s.worker;
+  doForceStop(s.itemId, s.role||'', worker, s.itemDesc||'');
+}
+function openItemBySession(idx){
+  const s=(window._activeSessions||[])[idx];
+  if(s) openItem(s.itemId);
+}
+async function doForceStop(itemId, role, worker, desc){
   if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
   const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{
     method:'POST',
@@ -819,6 +867,10 @@ async function forceStop(itemId, role, worker, desc){
   });
   if(r.ok){ toast('■ Stopped '+worker); await loadAllScans(); computeLive(); }
   else toast('Could not stop');
+}
+
+async function forceStop(itemId, role, worker, desc){
+  return doForceStop(itemId, role, worker, desc);
 }
 
 function pairSessions(filterFn){
@@ -925,8 +977,47 @@ function computeReports(){
 
   const workerAgg={};
   sessions.forEach(s=>{ if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0}; workerAgg[s.worker].ms+=s.ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++; });
-  const wr=Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([n,d])=>`<tr><td><strong>${n}</strong></td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.items.size}</td><td>${d.sessions}</td></tr>`).join('');
+  const wr=Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([n,d])=>`<tr class="clickable" onclick="openWorker('${n.replace(/'/g,"\\'")}')"><td><strong>${n}</strong></td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.items.size}</td><td>${d.sessions}</td></tr>`).join('');
   document.querySelector('#worker-report tbody').innerHTML=wr||'<tr><td colspan="4" class="empty">No sessions in this range</td></tr>';
+}
+
+// ===== WORKER DETAIL =====
+function openWorker(name){
+  document.getElementById('item-modal-title').textContent=name;
+  document.getElementById('item-modal-sub').textContent='Work history';
+  const tl=document.getElementById('item-timeline');
+  const res=pairSessions(inRange);
+  const mine=res.sessions.filter(s=>s.worker===name).sort((a,b)=>new Date(b.end)-new Date(a.end));
+  const openNow=res.open.filter(o=>o.worker===name);
+  let totalMs=mine.reduce((a,s)=>a+s.ms,0);
+  const items=new Set(mine.map(s=>s.item_id));
+  let html=`<div style="display:flex;gap:8px;margin-bottom:16px">
+    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${fmtDur(totalMs)}</div></div>
+    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Items</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${items.size}</div></div>
+    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Sessions</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${mine.length}</div></div>
+  </div>`;
+  if(openNow.length){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Working Now</div>';
+    html+=openNow.map(o=>`<div style="background:#eef7f2;border:1px solid var(--green);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer" onclick="openItem('${o.item_id.replace(/'/g,"\\'")}')">
+      <div style="font-weight:700">${o.item_desc&&o.item_desc!==o.item_id?o.item_desc:o.item_id} <span style="color:var(--ink3);font-size:11px">${o.item_id}</span></div>
+      <div style="font-size:12px;color:var(--green)">▶ ${o.role||'—'} · started ${fmtDateFull(o.created_at)}</div></div>`).join('');
+  }
+  html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Completed Sessions</div>';
+  html+=mine.length?mine.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:10px 0;cursor:pointer" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')">
+    <div style="display:flex;justify-content:space-between">
+      <div style="font-weight:700">${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}</div>
+      <div style="font-weight:700;color:var(--gold2)">${fmtDur(s.ms)}</div>
+    </div>
+    <div style="font-size:11px;color:var(--ink3)">${s.item_id} · ${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}</div>
+  </div>`).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No completed sessions in this range</div>';
+  tl.innerHTML=html;
+  document.getElementById('item-modal').classList.add('show');
 }
 
 async function openItem(itemId){
@@ -992,12 +1083,21 @@ async function viewTicketPhotos(itemId, name, preImages){
 
 function renderHistory(){
   const q=(document.getElementById('history-search').value||'').toLowerCase();
-  const rows=scans.filter(s=>!q||(s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q)).slice(0,800).map(s=>`
+  const fEl=document.getElementById('hist-from'), tEl=document.getElementById('hist-to');
+  const from=fEl&&fEl.value?new Date(fEl.value+'T00:00:00'):null;
+  const to=tEl&&tEl.value?new Date(tEl.value+'T23:59:59'):null;
+  const rows=scans.filter(s=>{
+    if(q&&!(s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q)) return false;
+    const d=new Date(s.created_at);
+    if(from&&d<from) return false;
+    if(to&&d>to) return false;
+    return true;
+  }).slice(0,800).map(s=>`
     <tr><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
     <td><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:''}</strong>${s.item_desc&&s.item_desc!==s.item_id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
     <td>${s.customer||'—'}</td><td>${s.worker}</td><td>${s.role||'—'}</td>
     <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td></tr>`).join('');
-  document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No scans yet</td></tr>';
+  document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No scans in this range</td></tr>';
 }
 
 async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); renderWorkers(); }
