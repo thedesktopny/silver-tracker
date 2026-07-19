@@ -2,1924 +2,1334 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Silver Tracker</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glint Lacquer — Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap');
-
-:root {
-  --bg:#ede8df;
-  --surface:#faf7f3;
-  --surface2:#e8e1d6;
-  --border:#c8bfb0;
-  --ink:#18160f;
-  --ink2:#3a3628;
-  --ink3:#7a7060;
-  --gold:#b89040;
-  --gold2:#8a6a20;
-  --radius:12px;
-  --green:#1e5c38;
-  --blue:#1e3d6e;
-  --orange:#7a4810;
-  --red:#6e2020;
-  --purple:#4a2868;
-}
-
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-height:100vh}
-.app-shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 60px rgba(0,0,0,.12)}
-
-/* NAV */
-.nav{display:flex;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:0;z-index:100}
-.nav-tab{flex:1;padding:14px 4px;text-align:center;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;user-select:none;margin-bottom:-2px}
-.nav-tab.active{color:var(--gold)!important;border-bottom-color:var(--gold)}
-
-/* HEADER */
-.glint-header{background:var(--surface);border-bottom:2px solid var(--border);padding:22px 20px 18px;text-align:center}
-.glint-header img{height:38px;object-fit:contain}
-.glint-header .subtitle{font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink3);margin-top:8px;font-weight:700}
-
-/* PAGES */
-.page{display:none;padding:0 14px 120px}
-.page.active{display:block}
-
-/* CARD */
-.card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:12px}
-.card-label{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);margin-bottom:12px}
-
-/* INPUTS */
-.gen-input,.scan-input,.search-input,.sheet-input{
-  width:100%;background:var(--surface);border:2px solid var(--border);border-radius:8px;
-  padding:13px 14px;font-family:'Jost',sans-serif;font-size:14px;font-weight:400;
-  color:var(--ink);outline:none;transition:border-color .2s;-webkit-appearance:none;
-}
-.gen-input:focus,.scan-input:focus,.search-input:focus,.sheet-input:focus{border-color:var(--ink)}
-.gen-input::placeholder,.scan-input::placeholder,.search-input::placeholder,.sheet-input::placeholder{color:var(--ink3)}
-.scan-input{padding:15px 48px 15px 16px;font-size:16px;font-weight:500}
-.sheet-input{font-size:12px}
-.scan-input-wrap{position:relative}
-.scan-icon{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:18px;opacity:.3}
-.gen-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
-
-/* BUTTONS */
-.gen-btn{padding:13px 18px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:opacity .15s}
-.gen-btn:active{opacity:.8}
-.log-btn{width:100%;padding:18px;background:var(--ink);border:none;border-radius:var(--radius);color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;transition:opacity .2s;margin-top:4px}
-.log-btn:active{opacity:.85}
-.log-btn:disabled{opacity:.15;cursor:not-allowed}
-.copy-btn{width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--radius);color:var(--gold2);font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;cursor:pointer;margin-bottom:10px}
-.print-btn-main{width:100%;padding:16px;background:var(--ink);border:none;border-radius:var(--radius);color:#fff;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;margin-top:10px}
-.print-btn-main:disabled{opacity:.15;cursor:not-allowed}
-
-/* WORKERS */
-.worker-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
-.worker-btn{padding:11px 20px;border-radius:50px;border:2px solid var(--border);background:var(--surface);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none}
-.worker-btn.selected{border-color:var(--ink);background:var(--ink);color:#fff;font-weight:600}
-
-/* STATUS GRID */
-.status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.status-btn{padding:15px 6px;border-radius:var(--radius);border:2px solid var(--border);background:var(--surface);cursor:pointer;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.03em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink)}
-.status-btn .s-icon{font-size:20px;line-height:1}
-.status-btn:active{transform:scale(.97)}
-.status-btn.sel{background:var(--ink);border-color:var(--ink);color:#fff}
-.status-btn:hover:not(.sel){border-color:var(--ink2)}
-.selected-status-label{text-align:center;font-size:10px;font-weight:600;color:var(--ink3);margin-top:10px;min-height:16px;letter-spacing:.08em;text-transform:uppercase}
-
-/* HISTORY */
-.log-entry{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--surface2)}
-.log-entry:last-child{border-bottom:none}
-.log-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
-.log-meta{flex:1}
-.log-id{font-size:13px;color:var(--ink);font-weight:700;letter-spacing:.04em}
-.log-desc{font-size:13px;color:var(--ink2);margin-top:2px;font-style:italic;font-family:'Cormorant Garamond',serif;font-weight:600}
-.log-status{font-size:11px;color:var(--ink2);margin-top:2px;font-weight:500}
-.log-who{font-size:10px;color:var(--ink3);margin-top:2px;letter-spacing:.04em;font-weight:500}
-.log-time{font-size:10px;color:var(--ink3);text-align:right;flex-shrink:0;letter-spacing:.02em;font-weight:500}
-
-/* TICKETS */
-.ticket-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;cursor:pointer;transition:border-color .2s,box-shadow .2s}
-.ticket-card:hover{border-color:var(--ink);box-shadow:0 4px 20px rgba(0,0,0,.1)}
-.ticket-header{padding:16px}
-.ticket-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
-.ticket-id{font-size:11px;color:var(--gold2);letter-spacing:.14em;font-weight:700;text-transform:uppercase}
-.ticket-count{font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em}
-.ticket-title{font-size:22px;color:var(--ink);font-weight:700;font-family:'Cormorant Garamond',serif;letter-spacing:.01em}
-.ticket-sub{font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.04em}
-.ticket-badge{display:inline-block;font-size:10px;padding:5px 12px;border-radius:6px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.05em;background:var(--surface2);color:var(--ink2);border:2px solid var(--border);white-space:normal;max-width:180px;text-align:right;line-height:1.3}
-.ticket-item-count{display:inline-block;font-size:11px;padding:6px 14px;border-radius:6px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.06em;background:var(--ink);color:#fff;white-space:nowrap}
-.ticket-items{display:none;border-top:2px solid var(--border);padding:14px 16px;background:var(--bg)}
-.ticket-items.open{display:block}
-.item-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
-.item-row:last-child{border-bottom:none}
-.item-cb{width:18px;height:18px;accent-color:var(--ink);cursor:pointer;flex-shrink:0;margin-top:3px}
-.item-info{flex:1}
-.item-name{font-size:18px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700}
-.item-meta{font-size:10px;color:var(--ink3);margin-top:4px;letter-spacing:.04em;font-weight:500}
-.s-badge{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:700;letter-spacing:.06em}
-.s-open{background:#dce8f5;color:var(--blue)}
-.s-progress{background:#f5eddc;color:var(--gold2)}
-.s-done{background:#dceee5;color:var(--green)}
-.search-bar{display:flex;gap:8px;margin-bottom:14px}
-
-/* LABELS */
-.label-preview-grid{display:block;margin-top:12px}
-.label-preview-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
-.label-preview-card .qr-wrap{display:flex;justify-content:center;margin-bottom:8px}
-.label-preview-card .lbl-id{font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.08em}
-.label-preview-card .lbl-name{font-size:13px;color:var(--ink2);margin-top:3px;font-family:'Cormorant Garamond',serif;font-weight:600;font-style:italic}
-.label-preview-card .lbl-customer{font-size:10px;color:var(--ink3);margin-top:2px;font-weight:500}
-.label-preview-card .lbl-sel{display:inline-block;margin-top:5px;font-size:9px;font-weight:700;color:var(--green);background:#dceee5;border-radius:4px;padding:2px 7px;letter-spacing:.04em}
-
-/* SCRIPT */
-.script-box{background:var(--ink);border:none;border-radius:var(--radius);padding:16px;font-size:11px;line-height:1.8;color:#9abf9a;overflow-x:auto;white-space:pre;margin-bottom:12px;max-height:260px;overflow-y:auto}
-.step-list{list-style:none}
-.step-list li{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--surface2);font-size:12px;line-height:1.5;color:var(--ink3)}
-.step-list li:last-child{border-bottom:none}
-.step-num{width:22px;height:22px;background:var(--ink);border-radius:50%;color:#fff;font-family:'Jost',sans-serif;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-
-/* MISC */
-.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-row{text-align:center;padding:24px;color:var(--ink3);font-size:13px;font-weight:500}
-.toast{position:fixed;bottom:88px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);border:none;border-radius:50px;padding:12px 24px;font-size:12px;font-weight:600;letter-spacing:.06em;color:#fff;opacity:0;transition:all .3s;z-index:999;pointer-events:none;max-width:440px;width:calc(100% - 40px);text-align:center}
-.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-#default-badge{font-size:9px;font-weight:700;color:var(--gold2);background:rgba(184,144,64,.1);border:1.5px solid rgba(184,144,64,.3);border-radius:50px;padding:4px 12px;cursor:pointer;letter-spacing:.08em}
-
-@media print{
-  @page { size: 102mm 59mm; margin: 3mm; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  body{ background:white; margin:0; padding:0; }
-  .app-shell,.nav,.glint-header{ display:none!important; }
-  .page{ display:none!important; }
-  #page-tickets{ display:block!important; padding:0!important; }
-  .no-print,.search-bar,.print-btn-main,.card,.ticket-card{ display:none!important; }
-  #label-print-area{ display:block!important; }
-  .label-preview-grid{ display:block; }
-  .label-preview-card{
-    display:block!important;
-    width:96mm;
-    height:53mm;
-    page-break-after:always;
-    break-after:page;
-    border:none;
-    padding:4mm;
-    background:white;
-    box-sizing:border-box;
-    overflow:hidden;
+  :root{
+    --bg:#f0ebe2; --surface:#faf7f1; --surface2:#f4efe6;
+    --ink:#1c1a17; --ink2:#4a4640; --ink3:#8a8378;
+    --gold:#b8960c; --gold2:#8a6a20;
+    --border:#ddd5c7; --green:#3f7d54; --orange:#b5701f; --red:#a4433a;
+    --radius:14px;
   }
-  .label-preview-card .qr-wrap{ margin-bottom:2mm; }
-  .label-preview-card .qr-wrap img, .label-preview-card .qr-wrap canvas{ width:28mm!important; height:28mm!important; }
-  .lbl-sel{ display:none!important; }
-  .lbl-id{ font-size:14pt!important; font-weight:700!important; color:#000!important; }
-  .lbl-name{ font-size:11pt!important; color:#000!important; }
-  .lbl-customer{ font-size:9pt!important; color:#333!important; }
-}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
+
+  #login-gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:100}
+  .login-box{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:40px;width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)}
+  .login-logo{font-family:'Cormorant Garamond',serif;font-size:42px;font-weight:700;letter-spacing:-.02em}
+  .login-sub{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink3);margin-top:-4px;margin-bottom:28px}
+
+  .shell{display:none;min-height:100vh}
+  .topbar{background:var(--surface);border-bottom:2px solid var(--border);padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:20}
+  .brand{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;letter-spacing:-.01em}
+  .brand span{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink3);display:block;margin-top:-6px;font-family:'Jost',sans-serif;font-weight:600}
+  .topbar-right{display:flex;align-items:center;gap:20px}
+  .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .clock{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink2);font-size:13px}
+
+  .nav{display:flex;gap:2px;padding:0 20px;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:64px;z-index:19;overflow-x:auto}
+  .nav-tab{padding:16px 22px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .15s;white-space:nowrap}
+  .nav-tab:hover{color:var(--ink2)}
+  .nav-tab.active{color:var(--ink);border-bottom-color:var(--gold)}
+
+  .content{max-width:1200px;margin:0 auto;padding:28px}
+  .page{display:none}
+  .page.active{display:block}
+
+  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap}
+  .page-title{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700}
+  .page-sub{font-size:13px;color:var(--ink3);margin-top:2px}
+  .head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+  .grid{display:grid;gap:16px}
+  .card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
+  .card-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
+  .stat{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
+  .stat-num{font-family:'Cormorant Garamond',serif;font-size:40px;font-weight:700;line-height:1}
+  .stat-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-top:6px}
+  .stat.alert{border-color:var(--red)}
+  .stat.alert .stat-num{color:var(--red)}
+
+  .live-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+  .live-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden}
+  .live-card.working{border-color:var(--green)}
+  .live-card.working::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--green)}
+  .live-worker{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700}
+  .live-role{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold2);margin-top:2px}
+  .live-item{font-size:13px;color:var(--ink2);margin-top:10px;line-height:1.3}
+  .live-timer{font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;margin-top:8px}
+  .live-idle{font-size:13px;color:var(--ink3);margin-top:10px;font-style:italic}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:10px 12px;border-bottom:2px solid var(--border)}
+  td{padding:12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+  tr:hover td{background:var(--surface2)}
+  tr.clickable{cursor:pointer}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.04em}
+  .badge.started{background:#e6f0e9;color:var(--green)}
+  .badge.stopped{background:#f5ebe0;color:var(--orange)}
+  .badge.part{background:#efe8d4;color:var(--gold2)}
+
+  input,select{font-family:'Jost',sans-serif;font-size:14px;padding:11px 14px;border:2px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);width:100%;outline:none}
+  input:focus,select:focus{border-color:var(--gold)}
+  .btn{font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:11px 20px;border:none;border-radius:10px;cursor:pointer;background:var(--ink);color:#fff;transition:opacity .15s;white-space:nowrap}
+  .btn:active{opacity:.85}
+  .btn-ghost{background:var(--surface2);border:2px solid var(--border);color:var(--ink2)}
+  .btn-sm{padding:6px 12px;font-size:10px}
+  .btn-danger{background:none;border:2px solid var(--red);color:var(--red);padding:6px 12px;font-size:10px}
+  .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .field{flex:1;min-width:120px}
+  .field label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:6px}
+
+  .chip{display:inline-block;padding:5px 12px;border:2px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;margin:0 6px 6px 0;user-select:none}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .seg{display:inline-flex;border:2px solid var(--border);border-radius:10px;overflow:hidden}
+  .seg button{background:var(--surface);border:none;padding:9px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);cursor:pointer}
+  .seg button.on{background:var(--ink);color:#fff}
+
+  .empty{text-align:center;padding:40px;color:var(--ink3);font-style:italic}
+  .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--ink);color:#fff;padding:14px 24px;border-radius:12px;font-weight:600;font-size:13px;z-index:200;transition:transform .3s;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .search{max-width:340px}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(28,26,23,.5);display:none;align-items:center;justify-content:center;z-index:80;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:26px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto}
+  .modal-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;margin-bottom:4px}
+  .modal-close{float:right;cursor:pointer;color:var(--ink3);font-size:22px;line-height:1;font-weight:700}
+  .timeline-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+  .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:5px}
+
+  @media(max-width:900px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .content{padding:16px}
+  }
+
+  /* Tickets */
+  .ticket{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
+  .ticket-head{padding:16px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+  .ticket-head:hover{background:var(--surface2)}
+  .ticket-id{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--gold2)}
+  .ticket-cust{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;margin-top:2px}
+  .ticket-date{font-size:11px;color:var(--ink3);margin-top:2px}
+  .ticket-items{display:none;padding:0 18px 16px;border-top:1px solid var(--border)}
+  .ticket-items.open{display:block}
+  .item-row{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+  .item-cb{width:20px;height:20px;accent-color:var(--ink);cursor:pointer;flex-shrink:0;margin-top:2px}
+  .item-name{font-weight:700;font-size:15px}
+  .item-meta{font-size:11px;color:var(--ink3);margin-top:2px}
+  .split-btn{margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase}
+  .parts-box{margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border);display:none}
 </style>
 </head>
 <body>
-<div class="app-shell">
 
-<!-- NAV -->
-<nav class="nav no-print">
-  <div class="nav-tab active" onclick="showPage('scan',this)">📡 Scan</div>
-  <div class="nav-tab" onclick="showPage('history',this)">📋 My Log</div>
-  <div class="nav-tab" id="print-tab" style="display:none" onclick="showPage('print',this)">🏷️ Print</div>
-</nav>
-
-<div class="glint-header no-print">
-  <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
-  <div class="subtitle">Item Tracking System</div>
-</div>
-
-<!-- ===== SCAN PAGE ===== -->
-<div id="page-scan" class="page active">
-
-  <div class="card" id="login-card" style="display:none">
-    <div style="text-align:center;margin-bottom:16px">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:var(--ink)">Worker Login</div>
-      <div style="font-size:12px;color:var(--ink3);margin-top:2px">Enter your name and PIN to start</div>
+<div id="login-gate">
+  <div class="login-box">
+    <div class="login-logo">glint</div>
+    <div class="login-sub">Control Room</div>
+    <div style="margin-bottom:14px;text-align:left">
+      <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:6px">Admin Password</label>
+      <input id="admin-pass" type="password" placeholder="Enter password" onkeydown="if(event.key==='Enter')adminLogin()">
     </div>
-    <div style="margin-bottom:10px">
-      <label style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:6px">Your Name</label>
-      <input id="login-name" class="gen-input" type="text" placeholder="e.g. Aron" autocomplete="off" style="width:100%">
-    </div>
-    <div style="margin-bottom:14px">
-      <label style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:6px">PIN</label>
-      <input id="login-pin" class="gen-input" type="password" placeholder="4-digit PIN" autocomplete="off" inputmode="numeric" maxlength="6" style="width:100%">
-    </div>
-    <button onclick="doLogin()" class="log-btn" style="width:100%">Log In</button>
-  </div>
-
-  <div class="card" id="active-worker-card" style="display:none">
-    <div style="display:flex;align-items:center;justify-content:space-between">
-      <div>
-        <div style="font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">Logged in as</div>
-        <div style="font-size:24px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:2px" id="active-worker-name"></div>
-      </div>
-      <button onclick="doLogout()" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--red);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:8px 14px;cursor:pointer;letter-spacing:.04em">Log Out</button>
-    </div>
-  </div>
-
-  <div class="card" id="role-select-card" style="display:none">
-    <div class="card-label">What are you doing now?</div>
-    <div class="worker-row" id="role-row"></div>
-  </div>
-
-  <div class="card" id="scan-card" style="display:none">
-    <div class="card-label" id="scan-card-label">Scan item</div>
-    <div class="scan-input-wrap" style="margin-bottom:10px;display:flex;gap:8px">
-      <div style="position:relative;flex:1">
-        <input id="scan-input" class="scan-input" type="text" placeholder="Ready to scan..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="none" style="width:100%" oninput="onScanType()">
-        <span class="scan-icon">▦</span>
-        <div id="scan-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:30;background:var(--surface);border:2px solid var(--border);border-top:none;border-radius:0 0 10px 10px;max-height:280px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.1)"></div>
-      </div>
-      <button onclick="toggleKeyboard()" id="keyboard-btn" class="gen-btn" style="flex-shrink:0;background:var(--surface2);border:2px solid var(--border);color:var(--ink2)" title="Show keyboard">⌨️</button>
-      <button onclick="submitScan()" class="gen-btn" style="flex-shrink:0">Enter</button>
-    </div>
-    <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
-      📷 Use Camera to Scan
-    </button>
-    <div id="camera-container" style="display:none;position:relative;border-radius:10px;overflow:hidden;margin-bottom:10px">
-      <video id="camera-video" style="width:100%;border-radius:10px;display:block" autoplay muted playsinline></video>
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60%;height:40%;border:3px solid var(--gold);border-radius:8px;pointer-events:none"></div>
-      <button onclick="toggleCamera()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:none;border-radius:50px;color:white;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer">✕ Close</button>
-    </div>
-  </div>
-
-  <div class="card" id="active-work-panel" style="display:none;background:#eef7f2;border:2px solid var(--green)">
-    <div style="text-align:center">
-      <div style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.12em;text-transform:uppercase">▶ Currently Working On</div>
-      <div id="active-work-name" style="font-size:20px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:6px;line-height:1.2"></div>
-      <div id="active-work-task" style="font-size:12px;color:var(--green);font-weight:700;margin-top:2px;letter-spacing:.04em;text-transform:uppercase"></div>
-      <div id="active-work-timer" style="font-size:32px;color:var(--ink);font-weight:700;margin-top:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em">00:00</div>
-      <div style="font-size:10px;color:var(--ink3);margin-top:2px">scan again to stop</div>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
-        <button onclick="viewItemImages()" id="view-imgs-btn" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🖼️ Photos</button>
-      </div>
-      <div id="note-box" style="display:none;margin-top:10px">
-        <textarea id="note-text" placeholder="Type a note about this item..." style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-family:'Jost',sans-serif;font-size:13px;resize:vertical;min-height:60px"></textarea>
-        <button onclick="saveNote()" style="width:100%;margin-top:6px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer;text-transform:uppercase">Save Note</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="card" id="scan-recent-card" style="display:none">
-    <div class="card-label">Your recent scans</div>
-    <div id="scan-recent-list"></div>
-  </div>
-
-</div>
-
-<!-- ===== HISTORY PAGE ===== -->
-<div id="page-history" class="page">
-  <div class="card">
-    <div class="card-label">Recent scans (this session)</div>
-    <div id="history-list"><div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries yet</div></div>
+    <button class="btn" style="width:100%" onclick="adminLogin()">Enter</button>
   </div>
 </div>
 
-<div id="page-print" class="page">
-  <div class="card" style="padding:12px">
-    <div class="scan-input-wrap" style="display:flex;gap:8px;margin-bottom:0">
-      <input id="pr-search" class="scan-input" type="text" placeholder="Search ticket # or customer..." style="flex:1" oninput="prFilter()">
-      <button class="gen-btn" onclick="prLoad()">↻</button>
+<div class="shell" id="shell">
+  <div class="topbar">
+    <div class="brand">glint<span>Control Room</span></div>
+    <div class="topbar-right">
+      <div><span class="live-dot"></span><span style="font-size:12px;font-weight:600;color:var(--ink2)">Live</span></div>
+      <div class="clock" id="clock"></div>
+      <button class="btn btn-ghost btn-sm" onclick="adminLogout()">Log Out</button>
     </div>
   </div>
-  <div id="pr-print-bar" style="display:none;position:sticky;top:0;z-index:5;margin-bottom:10px">
-    <button class="log-btn" style="margin-top:0" onclick="prPrint()">🖨️ Print Selected (<span id="pr-count">0</span>)</button>
+
+  <div class="nav">
+    <div class="nav-tab active" onclick="showPage('live',this)">Live</div>
+    <div class="nav-tab" onclick="showPage('tickets',this)">Print Labels</div>
+    <div class="nav-tab" onclick="showPage('reports',this)">Reports</div>
+    <div class="nav-tab" onclick="showPage('orders',this)">Orders</div>
+    <div class="nav-tab" onclick="showPage('history',this)">History</div>
+    <div class="nav-tab" onclick="showPage('workers',this)">Workers</div>
+    <div class="nav-tab" onclick="showPage('labels',this)">Labels</div>
+    <div class="nav-tab" onclick="showPage('settings',this)">Settings</div>
   </div>
-  <div id="pr-list"><div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">Loading tickets…</div></div>
+
+  <div class="content">
+
+    <div class="page active" id="page-live">
+      <div class="page-head">
+        <div><div class="page-title">Right Now</div><div class="page-sub">Who's working on what, updating live</div></div>
+        <button class="btn btn-ghost" onclick="loadLive()">↻ Refresh</button>
+      </div>
+      <div class="stats" id="live-stats"></div>
+      <div class="live-grid" id="live-grid"></div>
+    </div>
+
+    <div class="page" id="page-tickets">
+      <div class="page-head">
+        <div><div class="page-title">Print Labels</div><div class="page-sub">Load a ticket, pick items, print barcodes</div></div>
+        <div class="head-actions">
+          <input class="search" id="ticket-search" placeholder="Search ticket # or customer..." oninput="filterTickets()">
+          <button class="btn btn-ghost" onclick="loadTickets()">↻ Reload</button>
+        </div>
+      </div>
+      <div id="print-bar" style="position:sticky;top:120px;z-index:10;margin-bottom:16px;display:none">
+        <button class="btn" style="width:100%;padding:15px" onclick="printSelected()">🖨️ Print Selected Labels (<span id="selected-count">0</span>)</button>
+      </div>
+      <div id="tickets-list"><div class="empty">Loading tickets…</div></div>
+    </div>
+
+    <div class="page" id="page-reports">
+      <div class="page-head">
+        <div><div class="page-title">Reports</div><div class="page-sub">Time totals by item and by worker</div></div>
+        <div class="head-actions" style="flex-wrap:wrap">
+          <div class="seg" id="range-seg">
+            <button class="on" onclick="setRange('today',this)">Today</button>
+            <button onclick="setRange('week',this)">Week</button>
+            <button onclick="setRange('month',this)">Month</button>
+            <button onclick="setRange('all',this)">All</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+            <input type="date" id="range-from" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+            <span>→</span>
+            <input type="date" id="range-to" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="exportReports()">⬇ Export CSV</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">👆 tap any item to see its full timeline, notes & photos</span></div>
+        <div style="overflow-x:auto">
+          <table id="item-report">
+            <thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Time per Worker <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">👆 tap any worker to see everything they worked on</span></div>
+        <div style="overflow-x:auto">
+          <table id="worker-report">
+            <thead><tr><th>Worker</th><th>Total Time</th><th>Items Worked</th><th>Sessions</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-orders">
+      <div class="page-head">
+        <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time — search anything</div></div>
+        <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrders()">
+      </div>
+      <div id="orders-list"></div>
+    </div>
+
+    <div class="page" id="page-history">
+      <div class="page-head">
+        <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first</div></div>
+        <div class="head-actions" style="flex-wrap:wrap">
+          <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistory()">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+            <input type="date" id="hist-from" onchange="renderHistory()" style="padding:6px 8px;font-size:12px;width:auto">
+            <span>→</span>
+            <input type="date" id="hist-to" onchange="renderHistory()" style="padding:6px 8px;font-size:12px;width:auto">
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="exportHistory()">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table id="history-table">
+            <thead><tr><th>Time</th><th>Item</th><th>Customer</th><th>Worker</th><th>Role</th><th>Action</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-workers">
+      <div class="page-head">
+        <div><div class="page-title">Workers</div><div class="page-sub">Add people and set their login PIN and roles</div></div>
+      </div>
+      <div class="grid" id="workers-grid" style="grid-template-columns:1fr 1fr;gap:16px">
+        <div class="card">
+          <div class="card-label">Add Worker</div>
+          <div class="field" style="margin-bottom:12px"><label>Name</label><input id="nw-name" placeholder="e.g. Aron"></div>
+          <div class="field" style="margin-bottom:12px"><label>Login PIN (4 digits)</label><input id="nw-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 1111"></div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
+            <div id="nw-roles"></div>
+          </div>
+          <button class="btn" style="width:100%" onclick="addWorker()">Add Worker</button>
+        </div>
+        <div class="card">
+          <div class="card-label">Manage Roles</div>
+          <div class="row" style="margin-bottom:14px">
+            <div class="field"><input id="new-role" placeholder="New role name"></div>
+            <button class="btn" onclick="addRole()">Add</button>
+          </div>
+          <div id="roles-list"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="card-label">All Workers</div>
+        <div style="overflow-x:auto">
+          <table id="workers-table">
+            <thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th style="text-align:center">Print Labels</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-labels">
+      <div class="page-head">
+        <div><div class="page-title">Labels Printed</div><div class="page-sub">Every barcode printed, newest first</div></div>
+        <div class="head-actions">
+          <input class="search" id="labels-search" placeholder="Search item, customer..." oninput="renderLabels()">
+          <button class="btn btn-ghost btn-sm" onclick="exportLabels()">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div class="card">
+        <div style="overflow-x:auto">
+          <table id="labels-table">
+            <thead><tr><th>Printed</th><th>Item ID</th><th>Item</th><th>Customer</th><th>City</th><th>Part</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-settings">
+      <div class="page-head">
+        <div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div>
+      </div>
+      <div class="card" style="max-width:480px">
+        <div class="card-label">Change Admin Password</div>
+        <div class="field" style="margin-bottom:12px"><label>Current Password</label><input id="cur-pass" type="password" placeholder="Enter current password"></div>
+        <div class="field" style="margin-bottom:12px"><label>New Password</label><input id="new-pass" type="password" placeholder="At least 6 characters"></div>
+        <div class="field" style="margin-bottom:16px"><label>Confirm New Password</label><input id="new-pass2" type="password" placeholder="Repeat new password"></div>
+        <button class="btn" style="width:100%" onclick="changeAdminPassword()">Update Password</button>
+      </div>
+
+      <div class="card" style="max-width:480px;margin-top:16px">
+        <div class="card-label">Label Size</div>
+        <div class="page-sub" style="margin-bottom:14px">Set your Dymo label dimensions in millimeters</div>
+        <div class="row" style="margin-bottom:14px">
+          <div class="field"><label>Width (mm)</label><input id="ls-width" type="number" min="20" max="300"></div>
+          <div class="field"><label>Height (mm)</label><input id="ls-height" type="number" min="10" max="300"></div>
+          <button class="btn" onclick="saveLabelSize()">Save</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(102,59)">102 × 59</button>
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(89,36)">89 × 36</button>
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(57,32)">57 × 32</button>
+          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(54,25)">54 × 25</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 
+<div class="modal-bg" id="edit-modal">
+  <div class="modal">
+    <span class="modal-close" onclick="closeEdit()">✕</span>
+    <div class="modal-title">Edit Worker</div>
+    <div class="page-sub" style="margin-bottom:20px">Update PIN or roles</div>
+    <input type="hidden" id="edit-id">
+    <div class="field" style="margin-bottom:14px"><label>Name</label><input id="edit-name"></div>
+    <div class="field" style="margin-bottom:14px"><label>Login PIN</label><input id="edit-pin" inputmode="numeric" maxlength="6"></div>
+    <div style="margin-bottom:20px">
+      <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
+      <div id="edit-roles"></div>
+    </div>
+    <button class="btn" style="width:100%" onclick="saveEdit()">Save Changes</button>
+  </div>
+</div>
 
-</div><!-- app-shell -->
+<div class="modal-bg" id="item-modal">
+  <div class="modal">
+    <span class="modal-close" onclick="closeItem()">✕</span>
+    <div class="modal-title" id="item-modal-title">Item</div>
+    <div class="page-sub" id="item-modal-sub" style="margin-bottom:20px"></div>
+    <div id="item-timeline"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="photos-modal">
+  <div class="modal">
+    <span class="modal-close" onclick="document.getElementById('photos-modal').classList.remove('show')">✕</span>
+    <div class="modal-title" id="photos-modal-title">Photos</div>
+    <div id="photos-modal-content" style="margin-top:16px"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<!-- Image capture modal -->
-<div id="img-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px">
-  <div style="background:var(--bg);border-radius:16px;padding:20px;width:100%;max-width:440px;max-height:92vh;overflow-y:auto">
-    <div id="img-modal-title" style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;text-align:center;margin-bottom:4px">Capture Photo</div>
-    <div id="img-modal-sub" style="font-size:12px;color:var(--ink3);text-align:center;margin-bottom:14px"></div>
-    <video id="img-video" autoplay muted playsinline style="width:100%;border-radius:12px;display:none;background:#000"></video>
-    <canvas id="img-canvas" style="display:none"></canvas>
-    <img id="img-preview" style="width:100%;border-radius:12px;display:none">
-    <div id="img-buttons" style="display:flex;gap:8px;margin-top:12px">
-      <button onclick="imgCapture()" id="img-snap-btn" style="flex:1;background:var(--ink);border:none;border-radius:10px;color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:14px;cursor:pointer;text-transform:uppercase">📷 Take Photo</button>
-    </div>
-    <div id="img-confirm" style="display:none;gap:8px;margin-top:12px">
-      <button onclick="imgRetake()" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:10px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">Retake</button>
-      <button onclick="imgSave()" id="img-save-btn" style="flex:2;background:var(--green);border:none;border-radius:10px;color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">✓ Save & Finish</button>
-    </div>
-    <button onclick="imgCancel()" id="img-cancel-btn" style="width:100%;margin-top:8px;background:none;border:none;color:var(--ink3);font-family:'Jost',sans-serif;font-size:11px;cursor:pointer">Cancel</button>
-  </div>
-</div>
-
-<!-- Pre-images viewer modal -->
-<div id="preimg-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closePreImg()">
-  <div style="background:var(--bg);border-radius:16px;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700">Item Photos</div>
-      <button onclick="closePreImg()" style="background:none;border:none;font-size:22px;color:var(--ink3);cursor:pointer;font-weight:700">✕</button>
-    </div>
-    <div id="preimg-content"><div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div></div>
-  </div>
-</div>
-
 <script>
-// ===== STATE =====
-let selectedWorker = null; // {name, roles:[...]}
-let selectedRole = null; // current active role for this scan session
-let roleSettings = {}; // roleName -> {image_capture, can_split}
-async function loadRoleSettings(){
-  try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/roles?select=*',{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
-    const rows=await r.json();
-    roleSettings={};
-    (rows||[]).forEach(x=>{ roleSettings[x.name]={image_capture:x.image_capture||'off',can_split:!!x.can_split}; });
-  }catch(e){}
-}
-function curRoleSetting(){ return roleSettings[selectedRole]||{image_capture:'off',can_split:false}; }
-let sessionLog = [];
-let roles = JSON.parse(localStorage.getItem('st_roles') || '["Cleaning","Polish","Lacquer"]');
-let workers = JSON.parse(localStorage.getItem('st_workers') || '[{"name":"David","roles":["Cleaning"]},{"name":"Worker 2","roles":["Polish","Lacquer"]}]');
-let sheetUrl = localStorage.getItem('st_url') || '';
-let rdApiKey = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
-let allTickets = [];
-let itemCache = {}; // itemId -> {name, customer, ticketId}
-let itemTaskState = JSON.parse(localStorage.getItem('st_item_task_state') || '{}'); // itemId::role -> 'in_progress' | null
-let adminPin = localStorage.getItem('st_admin_pin') || '1234';
-let newWorkerSelectedRoles = [];
-let labelHistory = JSON.parse(localStorage.getItem('st_label_history') || '[]');
-let labelSize = JSON.parse(localStorage.getItem('st_label_size') || '{"width":102,"height":59}');
-let activeWork = JSON.parse(localStorage.getItem('st_active_work') || 'null'); // {itemId, name, task, startedAt}
-let activeWorkTimer = null;
+const FALLBACK_PASS = 'glint2026'; // used only if no password is set in the database yet
+const IDLE_ALERT_HOURS = 12;
 
-const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
-function getStatusColor(status) {
-  if (status.includes('Stopped')) return '#8a5a20';
-  if (status.includes('Started')) return '#1e5c38';
-  return '#7a7060';
-}
+let scans=[], workers=[], roles=[], labels=[];
+let nwSelectedRoles=[], editSelectedRoles=[];
+let liveTimers=null, reportRange='today';
+let currentAdminPass = null;
 
-// ===== INIT =====
-document.addEventListener('DOMContentLoaded', () => {
-  initDeviceWorker();
-
-  renderLabelHistory();
-
-  // Enter key to log in from PIN field
-  const loginPin = document.getElementById('login-pin');
-  if (loginPin) loginPin.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-
-  const input = document.getElementById('scan-input');
-  let lastInputTime = 0;
-  let fastCharCount = 0;
-
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const val = input.value.trim();
-      if (val) processScan(val);
-      fastCharCount = 0;
-    }
-  });
-
-  // Detect hardware scanner: characters arrive in a rapid burst
-  input.addEventListener('input', () => {
-    const now = Date.now();
-    const gap = now - lastInputTime;
-    lastInputTime = now;
-
-    if (gap < 40) {
-      fastCharCount++;
-    } else {
-      fastCharCount = 0;
-    }
-
-    clearTimeout(window._scanTimer);
-    window._scanTimer = setTimeout(() => {
-      const val = input.value.trim();
-      // If a burst of fast characters happened (scanner) and no Enter came, auto-submit
-      if (fastCharCount >= 3 && val.length >= 4) {
-        processScan(val);
-        fastCharCount = 0;
-      }
-    }, 120);
-  });
-});
-
-function submitScan() {
-  const input = document.getElementById('scan-input');
-  const val = input.value.trim();
-  if (val) processScan(val);
-}
-
-let scanSuggestTimer=null;
-let acTickets=[]; // cached tickets for autocomplete
-function onScanType(){
-  const val=document.getElementById('scan-input').value.trim();
-  clearTimeout(scanSuggestTimer);
-  if(!keyboardOn || val.length<2){ hideSuggest(); return; }
-  if(/^T-\d+-\d+/i.test(val)){ hideSuggest(); return; } // already a full ID
-  scanSuggestTimer=setTimeout(()=>runScanSuggest(val), 300);
-}
-function hideSuggest(){ const el=document.getElementById('scan-suggest'); if(el){ el.style.display='none'; el.innerHTML=''; } }
-async function runScanSuggest(q){
-  const el=document.getElementById('scan-suggest');
-  el.style.display='block';
-  el.innerHTML='<div style="padding:12px;color:var(--ink3);font-size:12px;text-align:center">Searching…</div>';
-  if(!acTickets.length){
-    try{
-      const r=await fetch('https://corsproxy.io/?url='+encodeURIComponent('https://api.repairdesk.co/api/web/v1/tickets?api_key=smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf&per_page=250&page=1&default_order=1'));
-      const d=await r.json();
-      acTickets=(d.data&&d.data.ticketData)||[];
-    }catch(e){ el.innerHTML='<div style="padding:12px;color:var(--red);font-size:12px;text-align:center">Search unavailable</div>'; return; }
-  }
-  const ql=q.toLowerCase();
-  const matches=acTickets.filter(t=>{
-    const oid=((t.summary&&t.summary.order_id)||'').toLowerCase();
-    const cust=((t.summary&&t.summary.customer&&t.summary.customer.fullName)||'').toLowerCase();
-    return oid.includes(ql)||cust.includes(ql);
-  }).slice(0,12);
-  if(!matches.length){ el.innerHTML='<div style="padding:12px;color:var(--ink3);font-size:12px;text-align:center">No matches — type the full ID</div>'; return; }
-  el.innerHTML=matches.map(t=>{
-    const oid=(t.summary&&t.summary.order_id)||'';
-    const cust=(t.summary&&t.summary.customer&&t.summary.customer.fullName)||'Unknown';
-    const devs=t.devices||[];
-    return `<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;color:var(--gold2);font-weight:700">${oid} · ${cust}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-        ${devs.map((d,i)=>{ const nm=d.device?d.device.name:'Item '+(i+1); const iid=oid+'-'+(i+1);
-          return `<button onclick="pickSuggest('${iid}')" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Jost',sans-serif;font-size:11px;font-weight:600;cursor:pointer">${nm} <span style="color:var(--ink3)">${iid}</span></button>`;
-        }).join('')}
-      </div>
-    </div>`;
-  }).join('');
-}
-function pickSuggest(itemId){
-  hideSuggest();
-  document.getElementById('scan-input').value=itemId;
-  processScan(itemId);
-}
-
-let keyboardOn = false;
-function toggleKeyboard() {
-  const input = document.getElementById('scan-input');
-  const btn = document.getElementById('keyboard-btn');
-  keyboardOn = !keyboardOn;
-  if (keyboardOn) {
-    input.setAttribute('inputmode', 'text');
-    btn.style.background = 'var(--ink)';
-    btn.style.color = '#fff';
-    input.blur();
-    setTimeout(() => input.focus(), 50); // re-focus to trigger keyboard
-  } else {
-    input.setAttribute('inputmode', 'none');
-    btn.style.background = 'var(--surface2)';
-    btn.style.color = 'var(--ink2)';
-    input.blur();
-    setTimeout(() => input.focus(), 50); // keep focus for scanner, no keyboard
-  }
-}
-
-// ===== NAV =====
-function showPage(name, el) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  if (el) el.classList.add('active');
-  if (name==='scan') setTimeout(() => document.getElementById('scan-input').focus(), 100);
-  if (name==='print' && !prTickets.length) prLoad();
-}
-
-// ===== PRINT LABELS (for can_print workers) =====
-const PR_BASE='https://api.repairdesk.co/api/web/v1';
-const PR_KEY='smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
-const PR_PARTS=['Base','Arms','Cups','Plates'];
-let prTickets=[];
-function prProxy(url){ return 'https://corsproxy.io/?url='+encodeURIComponent(url); }
-function prOid(t){ return (t.summary&&t.summary.order_id)||''; }
-function prCust(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
-function prCity(t){ const s=t.summary; return s&&s.customer&&s.customer.city?s.customer.city:''; }
-function prGroup(t){ const s=t.summary; return s&&s.customer&&s.customer.customer_group_name?s.customer.customer_group_name:''; }
-function prPhone(t){ const s=t.summary; return s&&s.customer?(s.customer.mobile||s.customer.phone||''):''; }
-function prDue(t){ const s=t.summary; let ts=s?(s.due_date||s.due_on):null; if(!ts&&t.devices&&t.devices.length)ts=t.devices[0].due_on||t.devices[0].due_date; return ts?new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}):''; }
-function prDevs(t){ return t.devices||[]; }
-function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase()))).map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · '); }
-function prIsCand(n){ return /candelabra/i.test(n||''); }
-
-async function prLoad(){
-  const el=document.getElementById('pr-list');
-  el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">Loading tickets…</div>';
+async function fetchAdminPass(){
   try{
-    let fetched=[],page=1,tp=1;
-    do{
-      const r=await fetch(prProxy(`${PR_BASE}/tickets?api_key=${PR_KEY}&per_page=250&page=${page}&default_order=1`));
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const d=await r.json();
-      fetched=fetched.concat((d.data&&d.data.ticketData)||[]);
-      const pg=d.data&&d.data.pagination; tp=pg?parseInt(pg.total_pages):1; page++;
-    } while(page<=tp&&page<=2);
-    prTickets=fetched;
-    prRender(prTickets);
-  }catch(e){ el.innerHTML='<div style="color:var(--red);font-size:12px;padding:16px;text-align:center">Could not load — '+e.message+'</div>'; }
+    const rows = await sb('settings?key=eq.admin_password&select=value');
+    if(rows && rows.length) return rows[0].value;
+  }catch(e){}
+  return FALLBACK_PASS;
 }
-function prRender(list){
-  const el=document.getElementById('pr-list');
-  if(!list.length){ el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">No tickets</div>'; return; }
+
+async function adminLogin(){
+  const p=document.getElementById('admin-pass').value;
+  // Already logged in this session
+  if(sessionStorage.getItem('glint_admin')==='1'){
+    document.getElementById('login-gate').style.display='none';
+    document.getElementById('shell').style.display='block';
+    bootstrap();
+    return;
+  }
+  currentAdminPass = await fetchAdminPass();
+  if(p===currentAdminPass){
+    sessionStorage.setItem('glint_admin','1');
+    document.getElementById('login-gate').style.display='none';
+    document.getElementById('shell').style.display='block';
+    bootstrap();
+  } else toast('Wrong password');
+}
+function adminLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
+if(sessionStorage.getItem('glint_admin')==='1') adminLogin();
+
+function loadLabelSizeInputs(){
+  const w=document.getElementById('ls-width'), h=document.getElementById('ls-height');
+  if(w) w.value=labelSize.width;
+  if(h) h.value=labelSize.height;
+}
+function saveLabelSize(){
+  const w=parseFloat(document.getElementById('ls-width').value), h=parseFloat(document.getElementById('ls-height').value);
+  if(!w||!h||w<10||h<10){ toast('Enter valid dimensions'); return; }
+  labelSize={width:w,height:h};
+  localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
+  toast('✅ Label size saved: '+w+' × '+h+' mm');
+}
+function setLabelPreset(w,h){
+  labelSize={width:w,height:h};
+  localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
+  loadLabelSizeInputs();
+  toast('✅ Label size: '+w+' × '+h+' mm');
+}
+
+async function changeAdminPassword(){
+  const cur=document.getElementById('cur-pass').value;
+  const n1=document.getElementById('new-pass').value;
+  const n2=document.getElementById('new-pass2').value;
+  const existing = currentAdminPass || await fetchAdminPass();
+  if(cur!==existing){ toast('Current password is wrong'); return; }
+  if(n1.length<6){ toast('New password must be at least 6 characters'); return; }
+  if(n1!==n2){ toast('New passwords do not match'); return; }
+  // Upsert into settings
+  const r = await fetch(SUPABASE_URL+'/rest/v1/settings',{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({key:'admin_password', value:n1})
+  });
+  if(r.ok){
+    currentAdminPass=n1;
+    document.getElementById('cur-pass').value='';
+    document.getElementById('new-pass').value='';
+    document.getElementById('new-pass2').value='';
+    toast('✅ Password updated');
+  } else toast('Could not update password');
+}
+
+async function sb(path, opts={}){
+  const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',...(opts.headers||{})}});
+  if(opts.method && opts.method!=='GET') return r;
+  return r.json();
+}
+
+async function bootstrap(){
+  startClock();
+  await Promise.all([loadAllScans(), loadWorkers(), loadRoles()]);
+  computeLive();
+  setInterval(async ()=>{ await loadAllScans(); computeLive(); }, 15000);
+}
+async function loadAllScans(){ scans = await sb('scans?select=*&order=created_at.desc&limit=5000'); }
+
+function startClock(){ const el=document.getElementById('clock'); setInterval(()=>{el.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000); }
+
+function showPage(name, el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  el.classList.add('active');
+  if(name==='reports') computeReports();
+  if(name==='orders') renderOrders();
+  if(name==='history') renderHistory();
+  if(name==='labels') loadLabels();
+  if(name==='workers'){ loadWorkers(); loadRoles(); }
+  if(name==='live') computeLive();
+  if(name==='tickets' && !allTickets.length) loadTickets();
+  if(name==='settings') loadLabelSizeInputs();
+}
+
+// ===== TICKETS + PRINTING =====
+const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
+const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
+// RepairDesk blocks browser (CORS) requests, so we route through a proxy.
+function proxied(url){ return 'https://corsproxy.io/?url=' + encodeURIComponent(url); }
+const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
+let allTickets = [];
+let labelSize = JSON.parse(localStorage.getItem('glint_label_size') || '{"width":102,"height":59}');
+
+async function loadTickets(){
+  const el=document.getElementById('tickets-list');
+  el.innerHTML='<div class="empty">Loading tickets…</div>';
+  try{
+    let fetched=[]; let page=1, totalPages=1;
+    do{
+      const resp=await fetch(proxied(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`));
+      if(!resp.ok) throw new Error('HTTP '+resp.status);
+      const data=await resp.json();
+      const batch=(data.data&&data.data.ticketData)||[];
+      fetched=fetched.concat(batch);
+      const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
+      page++;
+    } while(page<=totalPages && page<=2);
+    allTickets=fetched;
+    renderTickets(allTickets);
+  }catch(err){
+    el.innerHTML='<div class="empty">Could not load tickets — '+err.message+'</div>';
+  }
+}
+function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
+function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
+function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
+function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return s.customer.customer_group_name||''; } return ''; }
+function getCustomerPhone(t){ const s=t.summary; if(s&&s.customer){ return s.customer.mobile||s.customer.phone||''; } return ''; }
+function getCustomerAddress(t){ const s=t.summary; if(s&&s.customer){ return [s.customer.address1,s.customer.address2].filter(Boolean).join(', '); } return ''; }
+function getDevices(t){ return t.devices||[]; }
+function getDueDate(t){
+  const s=t.summary;
+  let ts = null;
+  if(s){ ts = s.due_date || s.due_on || null; }
+  // Fall back to first device's due date
+  if(!ts && t.devices && t.devices.length){ ts = t.devices[0].due_on || t.devices[0].due_date || null; }
+  if(ts) return new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
+  return '';
+}
+function getDeviceNote(device, ticket){
+  const notesArr=(ticket&&ticket.notes)||[];
+  const devId=String(device.device?device.device.id:(device.id||''));
+  const devName=device.device_name||(device.device?device.device.name:'');
+  const matching=notesArr.filter(n=>String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase())));
+  return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · ');
+}
+function isCandelabra(name){ return /candelabra/i.test(name||''); }
+
+function renderTickets(list){
+  const el=document.getElementById('tickets-list');
+  if(!list.length){ el.innerHTML='<div class="empty">No tickets found</div>'; return; }
   el.innerHTML=list.map(t=>{
-    const oid=prOid(t),safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
-      <div style="padding:14px 16px;cursor:pointer" onclick="prToggle('${oid}')">
-        <div style="font-size:10px;font-weight:700;color:var(--gold2);letter-spacing:.06em">${oid}</div>
-        <div style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700">${prCust(t)}</div>
-        <div style="font-size:11px;color:var(--ink3)">${prCity(t)?'📍 '+prCity(t)+'  ·  ':''}${prDue(t)?'Due '+prDue(t):''}</div>
+    const oid=getOrderId(t), cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
+    const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div class="ticket">
+      <div class="ticket-head" onclick="toggleTicket('${oid}')">
+        <div>
+          <div class="ticket-id">${oid}</div>
+          <div class="ticket-cust">${cust}</div>
+          <div class="ticket-date">${city?'📍 '+city+'  ·  ':''}${due?'Due '+due:''}</div>
+        </div>
+        <div style="font-size:11px;color:var(--ink3)">${getDevices(t).length} item${getDevices(t).length!==1?'s':''} ▾</div>
       </div>
-      <div id="pri-${safe}" style="display:none;padding:0 16px 14px;border-top:1px solid var(--border)"></div>
+      <div class="ticket-items" id="ti-${safe}"></div>
     </div>`;
   }).join('');
 }
-function prFilter(){
-  const q=(document.getElementById('pr-search').value||'').toLowerCase().trim();
-  if(!q){ prRender(prTickets); return; }
-  prRender(prTickets.filter(t=>prOid(t).toLowerCase().includes(q)||prCust(t).toLowerCase().includes(q)));
-}
-async function prToggle(oid){
-  const idx0=prTickets.findIndex(x=>prOid(x)===oid); if(idx0<0) return;
-  const safe=oid.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById('pri-'+safe);
-  if(box.style.display==='block'){ box.style.display='none'; return; }
-  box.style.display='block';
 
-  let t=prTickets[idx0];
+async function toggleTicket(oid){
+  const idx0=allTickets.findIndex(x=>getOrderId(x)===oid); if(idx0<0) return;
+  const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+  const box=document.getElementById('ti-'+safe);
+  if(box.classList.contains('open')){ box.classList.remove('open'); return; }
+  box.classList.add('open');
+
+  let t=allTickets[idx0];
+  // The list endpoint lacks city + notes — fetch full detail once
   if(!t._full){
-    box.innerHTML='<div style="color:var(--ink3);font-size:12px;padding:12px;text-align:center">Loading details…</div>';
+    box.innerHTML='<div class="empty" style="padding:16px">Loading details…</div>';
     try{
       const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
-      const r=await fetch(prProxy(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`));
+      const r=await fetch(proxied(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`));
       const d=await r.json();
-      if(d&&d.data){ d.data._full=true; prTickets[idx0]=d.data; t=d.data; }
-    }catch(e){}
+      if(d&&d.data){ d.data._full=true; allTickets[idx0]=d.data; t=d.data; }
+    }catch(e){ /* fall back to list data */ }
   }
 
-  const cust=prCust(t),city=prCity(t),due=prDue(t),devs=prDevs(t),group=prGroup(t),phone=prPhone(t);
-  const infoBanner=`<div style="background:var(--surface2);border-radius:8px;padding:10px;margin:8px 0;font-size:12px;line-height:1.6">
+  const cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
+  const group=getCustomerGroup(t), phone=getCustomerPhone(t), addr=getCustomerAddress(t);
+  const devices=getDevices(t);
+  // On-screen info banner: show ALL customer details
+  const infoBanner=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin:10px 0;font-size:12px;line-height:1.7">
     <strong>${cust}</strong>${phone?' · '+phone:''}<br>
-    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+city:''}
+    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+'City: '+city:''}${addr?'<br>'+addr:''}
   </div>`;
-  box.innerHTML=infoBanner+devs.map((device,idx)=>{
-    const num=idx+1,itemId=oid+'-'+num;
+  box.innerHTML=infoBanner+devices.map((device,idx)=>{
+    const num=idx+1, itemId=oid+'-'+num;
     const name=device.device?device.device.name:'Item '+num;
     const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
-    const note=prNote(device,t);
+    const note=getDeviceNote(device,t);
     const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-    const cbId='prcb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-    let h=`<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
-      <input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:20px;height:20px;accent-color:var(--ink);margin-top:2px"
-        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}">
+    const cbId='cb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+    let h=`<div class="item-row">
+      <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
+        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}"
+        data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}">
       <div style="flex:1">
-        <div style="font-weight:700;font-size:14px">${name}</div>
-        ${services?`<div style="font-size:11px;color:var(--gold2)">${services}</div>`:''}
-        ${note?`<div style="font-size:11px;color:var(--red)">⚠️ ${note}</div>`:''}
-        <div style="font-size:10px;color:var(--ink3)">${itemId}</div>
-        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-        <button class="gen-btn" style="font-size:10px;padding:5px 9px;background:var(--surface2);color:var(--ink2)" onclick="openPreImg('${itemId}','${esc(name)}')">🖼️ Photos</button>`;
-    if(prIsCand(name)){
-      const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-      h+=`<button class="gen-btn" style="font-size:10px;padding:5px 9px" onclick="prToggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split parts</button></div><div id="${sid}" style="display:none;margin-top:6px"></div>`;
+        <div class="item-name">${name}</div>
+        ${services?`<div class="item-meta" style="color:var(--gold2)">${services}</div>`:''}
+        ${note?`<div class="item-meta" style="color:var(--red)">⚠️ ${note}</div>`:''}
+        <div class="item-meta">${itemId}</div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick='viewTicketPhotos("${itemId}","${esc(name)}",${JSON.stringify((device.PreConditions_images||[]).map(i=>i.medium||i.small))})'>🖼️ Photos</button>`;
+    const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+    if(isCandelabra(name)){
+      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split into parts (Base·Arms·Cups·Plates)</button>`;
     } else {
-      const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-      h+=`<button class="gen-btn" style="font-size:10px;padding:5px 9px" onclick="prCustomSplit('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">✂️ Split item</button></div><div id="${sid}" style="display:none;margin-top:6px"></div>`;
+      h+=`<button class="split-btn" onclick="customSplit('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">✂️ Split item</button>`;
     }
+    h+=`<div class="parts-box" id="${sid}"></div>`;
     h+=`</div></div>`;
     return h;
-  }).join('')+`<div style="display:flex;gap:6px;padding:10px 0">
-    <button class="gen-btn" style="flex:1;font-size:10px" onclick="prSelTicket('${oid}',${devs.length},true)">All</button>
-    <button class="gen-btn" style="flex:1;font-size:10px;background:var(--surface2);color:var(--ink2)" onclick="prSelTicket('${oid}',${devs.length},false)">Clear</button>
+  }).join('')+`<div style="display:flex;gap:8px;padding:12px 0">
+    <button class="btn btn-sm" onclick="selectTicket('${oid}',${devices.length},true)">Select All</button>
+    <button class="btn btn-ghost btn-sm" onclick="selectTicket('${oid}',${devices.length},false)">Clear</button>
   </div>`;
 }
-// Custom split — worker types their own part names
-function prCustomSplit(itemId,name,cust,city,note,due,services,group){
-  const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'),box=document.getElementById(sid);
-  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; prCount(); return; }
+
+function toggleParts(itemId,name,cust,city,note,due,services,group){
+  const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
+  box.style.display='block';
+  box.innerHTML='<div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Each part prints its own label</div>'+
+    CANDELABRA_PARTS.map(part=>{
+      const pid=itemId+'-'+part.toUpperCase();
+      const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+      return `<div class="item-row" style="padding:8px 0">
+        <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
+          data-item-id="${pid}" data-item-name="${name} — ${part}" data-services="${services||''}" data-customer="${cust}"
+          data-city="${city}" data-group="${group||''}" data-note="${note}" data-due="${due}" data-part="${part}">
+        <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>
+      </div>`;
+    }).join('')+
+    `<div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-sm" onclick="selectParts('${itemId}',true)">All Parts</button>
+      <button class="btn btn-ghost btn-sm" onclick="selectParts('${itemId}',false)">None</button>
+    </div>`;
+  updateCount();
+}
+function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateCount(); }
+function selectTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('cb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} updateCount(); }
+
+// Custom split — admin types their own part names for any item
+function customSplit(itemId,name,cust,city,note,due,services,group){
+  const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
   box.style.display='block';
   box.dataset.meta=JSON.stringify({itemId,name,cust,city,note,due,services,group});
-  box.innerHTML=`<div style="font-size:10px;color:var(--ink3);margin-bottom:6px">Type a part name and add it — each makes its own label</div>
-    <div style="display:flex;gap:6px;margin-bottom:8px">
-      <input type="text" id="cs-input-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}" placeholder="e.g. Lid, Handle, Left side..." style="flex:1;padding:8px;border:2px solid var(--border);border-radius:8px;font-size:13px">
-      <button class="gen-btn" style="font-size:10px" onclick="prAddCustomPart('${itemId}')">+ Add</button>
+  const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  box.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Type a part name and add it — each makes its own label</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <input type="text" id="cs-input-${key}" placeholder="e.g. Lid, Handle, Left side..." style="flex:1" onkeydown="if(event.key==='Enter')addCustomPart('${itemId}')">
+      <button class="btn btn-sm" onclick="addCustomPart('${itemId}')">+ Add</button>
     </div>
-    <div id="cs-list-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}"></div>`;
-  prCount();
+    <div id="cs-list-${key}"></div>`;
+  updateCount();
 }
-function prAddCustomPart(itemId){
+function addCustomPart(itemId){
   const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
   const inp=document.getElementById('cs-input-'+key);
-  const part=inp.value.trim(); if(!part){ return; }
-  const box=document.getElementById('prsplit-'+key);
+  const part=inp.value.trim(); if(!part) return;
+  const box=document.getElementById('split-'+key);
   const meta=JSON.parse(box.dataset.meta);
   const list=document.getElementById('cs-list-'+key);
   const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
-  const cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+  const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
   const div=document.createElement('div');
-  div.style.cssText='display:flex;gap:10px;padding:6px 0;align-items:center';
-  div.innerHTML=`<input type="checkbox" class="pr-cb" id="${cbId}" checked onchange="prCount()" style="width:18px;height:18px;accent-color:var(--ink)"
+  div.className='item-row'; div.style.padding='8px 0';
+  div.innerHTML=`<input type="checkbox" class="item-cb" id="${cbId}" checked onchange="updateCount()"
     data-item-id="${pid}" data-item-name="${meta.name} — ${part}" data-services="${meta.services||''}" data-customer="${meta.cust}" data-city="${meta.city}" data-group="${meta.group||''}" data-note="${meta.note}" data-due="${meta.due}" data-part="${part}">
-    <div style="font-weight:600;font-size:13px">${part}</div>`;
+    <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>`;
   list.appendChild(div);
   inp.value=''; inp.focus();
-  prCount();
+  updateCount();
 }
-function prToggleParts(itemId,name,cust,city,note,due,services,group){
-  const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'),box=document.getElementById(sid);
-  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; prCount(); return; }
-  box.style.display='block';
-  box.innerHTML=PR_PARTS.map(part=>{
-    const pid=itemId+'-'+part.toUpperCase(),cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div style="display:flex;gap:10px;padding:6px 0"><input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:18px;height:18px;accent-color:var(--ink)"
-      data-item-id="${pid}" data-item-name="${name} — ${part}" data-services="${services||''}" data-customer="${cust}" data-city="${city}" data-group="${group||''}" data-note="${note}" data-due="${due}" data-part="${part}">
-      <div style="font-weight:600;font-size:13px">${part}</div></div>`;
-  }).join('')+`<div style="display:flex;gap:6px;margin-top:6px">
-    <button class="gen-btn" style="flex:1;font-size:10px" onclick="prSelParts('${itemId}',true)">All parts</button>
-    <button class="gen-btn" style="flex:1;font-size:10px;background:var(--surface2);color:var(--ink2)" onclick="prSelParts('${itemId}',false)">None</button></div>`;
-  prCount();
+
+function updateCount(){
+  const n=document.querySelectorAll('.item-cb:checked').length;
+  document.getElementById('selected-count').textContent=n;
+  document.getElementById('print-bar').style.display=n>0?'block':'none';
 }
-function prSelParts(itemId,on){ PR_PARTS.forEach(p=>{const cb=document.getElementById('prcb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); prCount(); }
-function prSelTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('prcb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} prCount(); }
-function prCount(){ const n=document.querySelectorAll('.pr-cb:checked').length; document.getElementById('pr-count').textContent=n; document.getElementById('pr-print-bar').style.display=n>0?'block':'none'; }
-function prMakeBarcode(text){ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }catch(e){ return ''; } }
-async function prPrint(){
-  const checked=document.querySelectorAll('.pr-cb:checked');
-  if(!checked.length){ showToast('Select items first'); return; }
-  const items=[...checked].map(cb=>({itemId:cb.dataset.itemId,itemName:cb.dataset.itemName||'',services:cb.dataset.services||'',customer:cb.dataset.customer||'',city:cb.dataset.city||'',group:cb.dataset.group||'',note:cb.dataset.note||'',due:cb.dataset.due||'',part:cb.dataset.part||''}));
+
+function filterTickets(){
+  const q=(document.getElementById('ticket-search').value||'').toLowerCase().trim();
+  if(!q){ renderTickets(allTickets); return; }
+  renderTickets(allTickets.filter(t=>(getOrderId(t).toLowerCase().includes(q)||getCustomerName(t).toLowerCase().includes(q))));
+}
+
+function makeBarcode(text){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#ffffff',lineColor:'#000000'});
+    return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
+  catch(e){ return ''; }
+}
+
+async function printSelected(){
+  const checked=document.querySelectorAll('.item-cb:checked');
+  if(!checked.length){ toast('Select items first'); return; }
+  const items=[...checked].map(cb=>({
+    itemId:cb.dataset.itemId, itemName:cb.dataset.itemName||'', services:cb.dataset.services||'', customer:cb.dataset.customer||'',
+    city:cb.dataset.city||'', group:cb.dataset.group||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
+  }));
+  // Log labels to Supabase (full info including city)
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
-  const withBc=items.map(it=>({...it,bc:prMakeBarcode(it.itemId)}));
-  const labelsHtml=withBc.map(it=>`<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note">⚠️ ${it.note}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`◆ ${it.part.toUpperCase()}`:'GLINT LACQUER'}</div></div>`).join('');
-  const W=labelSize.width,H=labelSize.height;
-  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title><style>
-@page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}body{background:#fff;font-family:Arial,sans-serif}
-.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;justify-content:space-between;padding:2.5mm 3mm;overflow:hidden;page-break-after:always}.label:last-child{page-break-after:auto}
-.lt{text-align:center}.l-item{font-size:11pt;font-weight:700;line-height:1.1}.l-svc{font-size:8pt;color:#444;margin-top:.5mm}
+
+  const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
+  const labelsHtml=withBc.map(it=>`
+    <div class="label">
+      <div class="lt">
+        <div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>
+        ${it.services?`<div class="l-svc">${it.services}</div>`:''}
+        <div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>
+        ${it.note?`<div class="l-note">⚠️ ${it.note}</div>`:''}
+      </div>
+      <div class="lb"><img src="${it.bc}"></div>
+      <div class="lf">${it.part?`◆ ${it.part.toUpperCase()}`:'GLINT LACQUER'}</div>
+    </div>`).join('');
+  const W=labelSize.width, H=labelSize.height;
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title>
+<style>
+@page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}
+body{background:#fff;font-family:Arial,sans-serif}
+.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;justify-content:space-between;padding:2.5mm 3mm;overflow:hidden;page-break-after:always}
+.label:last-child{page-break-after:auto}
+.lt{text-align:center}
+.l-item{font-size:11pt;font-weight:700;line-height:1.1}
+.l-svc{font-size:8pt;color:#444;margin-top:.5mm}
 .l-row{display:flex;justify-content:center;gap:4mm;margin-top:1mm;font-size:9.5pt;font-weight:700}
 .l-note{font-size:9pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.15}
-.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}.lb img{max-width:98%;max-height:26mm;height:auto}
-.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm;font-size:11pt;font-weight:700;letter-spacing:.08em}</style></head><body>${labelsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script></body></html>`;
-  const w=window.open('','_blank','width=900,height=700'); if(!w){ showToast('Allow popups to print'); return; }
+.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}
+.lb img{max-width:98%;max-height:26mm;height:auto}
+.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm;font-size:11pt;font-weight:700;letter-spacing:.08em}
+</style></head><body>${labelsHtml}
+<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
+</body></html>`;
+  const w=window.open('','_blank','width=900,height=700');
+  if(!w){ toast('Allow popups to print'); return; }
   w.document.write(html); w.document.close();
-  showToast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
+  toast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
 }
 
 
-let ticketsUnlocked = false;
-function checkTicketsPin() {
-  const entered = document.getElementById('tickets-pin-input').value.trim();
-  if (entered === adminPin) {
-    ticketsUnlocked = true;
-    document.getElementById('tickets-pin-lock').style.display = 'none';
-    document.getElementById('tickets-content').style.display = 'block';
-    if (rdApiKey && !allTickets.length) loadTickets();
-  } else {
-    showToast('⚠️ Incorrect PIN');
-    document.getElementById('tickets-pin-input').value = '';
+
+function setRange(r, el){
+  reportRange=r;
+  customFrom=null; customTo=null;
+  document.getElementById('range-from').value='';
+  document.getElementById('range-to').value='';
+  document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  computeReports();
+}
+let customFrom=null, customTo=null;
+function setCustomRange(){
+  const f=document.getElementById('range-from').value, t=document.getElementById('range-to').value;
+  customFrom=f?new Date(f+'T00:00:00'):null;
+  customTo=t?new Date(t+'T23:59:59'):null;
+  if(customFrom||customTo){
+    reportRange='custom';
+    document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
   }
+  computeReports();
 }
-
-// ===== WORKER LOGIN =====
-function initDeviceWorker() {
-  // Restore saved login from this device
-  const saved = JSON.parse(localStorage.getItem('st_logged_in_worker') || 'null');
-  if (saved && saved.name) {
-    loadRoleSettings().then(()=>activateWorkerOnDevice(saved));
-    return;
+function inRange(dateStr){
+  const d=new Date(dateStr);
+  if(reportRange==='custom'){
+    if(customFrom && d<customFrom) return false;
+    if(customTo && d>customTo) return false;
+    return true;
   }
-  showLoginScreen();
+  if(reportRange==='all') return true;
+  const now=new Date();
+  if(reportRange==='today') return d.toDateString()===now.toDateString();
+  if(reportRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
+  if(reportRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
+  return true;
 }
 
-function showLoginScreen() {
-  document.getElementById('login-card').style.display = 'block';
-  document.getElementById('active-worker-card').style.display = 'none';
-  document.getElementById('role-select-card').style.display = 'none';
-  document.getElementById('scan-card').style.display = 'none';
-  document.getElementById('scan-recent-card').style.display = 'none';
-  const awp = document.getElementById('active-work-panel');
-  if (awp) awp.style.display = 'none';
-}
-
-async function doLogin() {
-  const name = document.getElementById('login-name').value.trim();
-  const pin = document.getElementById('login-pin').value.trim();
-  if (!name || !pin) { showToast('Enter your name and PIN'); return; }
-
-  showToast('Checking...');
-  try {
-    // Look up worker in Supabase by name (case-insensitive)
-    const resp = await fetch(SUPABASE_URL + '/rest/v1/workers?name=ilike.' + encodeURIComponent(name) + '&select=*', {
-      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
-    });
-    const found = await resp.json();
-    if (!found.length) { showToast('⚠️ Worker not found'); return; }
-    const w = found[0];
-    if (String(w.pin) !== pin) { showToast('⚠️ Wrong PIN'); return; }
-
-    const worker = { name: w.name, roles: w.roles || [], canPrint: !!w.can_print };
-    localStorage.setItem('st_logged_in_worker', JSON.stringify(worker));
-    await loadRoleSettings();
-    document.getElementById('login-name').value = '';
-    document.getElementById('login-pin').value = '';
-    activateWorkerOnDevice(worker);
-    showToast('✅ Welcome, ' + w.name);
-  } catch(e) {
-    showToast('⚠️ Login failed — check connection');
-  }
-}
-
-function doLogout() {
-  localStorage.removeItem('st_logged_in_worker');
-  selectedWorker = null;
-  selectedRole = null;
-  document.getElementById('print-tab').style.display = 'none';
-  // Clear any active work timer display
-  stopActiveWorkTimer();
-  showLoginScreen();
-  showToast('Logged out');
-}
-
-function activateWorkerOnDevice(w) {
-  selectedWorker = w;
-  selectedRole = null;
-  document.getElementById('login-card').style.display = 'none';
-  document.getElementById('active-worker-card').style.display = 'block';
-  document.getElementById('active-worker-name').textContent = w.name;
-  // Show Print tab only if this worker has label access
-  document.getElementById('print-tab').style.display = w.canPrint ? 'block' : 'none';
-
-  if (w.roles.length > 1) {
-    document.getElementById('role-select-card').style.display = 'block';
-    document.getElementById('scan-card').style.display = 'none';
-    document.getElementById('scan-recent-card').style.display = 'none';
-    renderRoleButtons(w.roles);
-  } else {
-    selectedRole = w.roles[0] || '';
-    document.getElementById('role-select-card').style.display = 'none';
-    document.getElementById('scan-card').style.display = 'block';
-    document.getElementById('scan-recent-card').style.display = 'block';
-    document.getElementById('scan-card-label').textContent = 'Scan item — ' + selectedRole;
-    renderScanRecent();
-    renderActiveWork();
-    if (activeWork) startActiveWorkTimer();
-    setTimeout(() => document.getElementById('scan-input').focus(), 150);
-  }
-}
-
-function renderRoleButtons(workerRoles) {
-  document.getElementById('role-row').innerHTML = workerRoles.map(r =>
-    `<button class="worker-btn" onclick="selectRole('${r.replace(/'/g,"\\'")}')">${r}</button>`
-  ).join('');
-}
-
-function selectRole(role) {
-  selectedRole = role;
-  document.getElementById('scan-card').style.display = 'block';
-  document.getElementById('scan-recent-card').style.display = 'block';
-  document.getElementById('scan-card-label').textContent = 'Scan item — ' + role;
-  document.querySelectorAll('#role-row .worker-btn').forEach(b => {
-    b.classList.toggle('selected', b.textContent.trim() === role);
+function loadLive(){ loadAllScans().then(computeLive); }
+function computeLive(){
+  const chron=[...scans].reverse();
+  const itemRoleState={};
+  chron.forEach(s=>{
+    const key=s.item_id+'::'+(s.role||'');
+    if((s.status||'').includes('Started')) itemRoleState[key]={worker:s.worker,itemId:s.item_id,itemDesc:s.item_desc,role:s.role,startedAt:s.created_at};
+    else delete itemRoleState[key];
   });
-  renderScanRecent();
-  renderActiveWork();
-  if (activeWork) startActiveWorkTimer();
-  setTimeout(() => document.getElementById('scan-input').focus(), 150);
+  const active={}; Object.values(itemRoleState).forEach(s=>active[s.worker]=s);
+  const now=Date.now();
+  const stale=Object.values(itemRoleState).filter(s=>(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000);
+
+  const workingCount=Object.keys(active).length;
+  const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
+  const uniqueItems=new Set(scans.map(s=>s.item_id)).size;
+  document.getElementById('live-stats').innerHTML=`
+    <div class="stat"><div class="stat-num">${workingCount}</div><div class="stat-label">Working now</div></div>
+    <div class="stat"><div class="stat-num">${workers.length}</div><div class="stat-label">Total workers</div></div>
+    <div class="stat"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans today</div></div>
+    <div class="stat ${stale.length?'alert':''}"><div class="stat-num">${stale.length}</div><div class="stat-label">Left running ${IDLE_ALERT_HOURS}h+</div></div>`;
+
+  const grid=document.getElementById('live-grid');
+  if(!workers.length){ grid.innerHTML='<div class="empty">No workers yet — add them in the Workers tab</div>'; return; }
+  const activeList=Object.values(active);
+  window._activeSessions=activeList; // for safe lookup by index
+  grid.innerHTML=workers.map(w=>{
+    const s=active[w.name];
+    if(s){
+      const si=activeList.indexOf(s);
+      const isStale=(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
+      const descHtml = (s.itemDesc&&s.itemDesc!==s.itemId) ? (esc(s.itemDesc)+'<br><span style="color:var(--ink3);font-size:11px">'+esc(s.itemId)+'</span>') : esc(s.itemId);
+      return `<div class="live-card working">
+        <div class="live-worker">${esc(w.name)}</div>
+        <div class="live-role">${esc(s.role||'Working')}${isStale?' · ⚠️ long':''}</div>
+        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItemBySession(${si})">${descHtml}</div>
+        <div class="live-timer" data-start="${s.startedAt}">--:--</div>
+        <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStopBySession(${si})">■ Force Stop</button>
+      </div>`;
+    }
+    return `<div class="live-card"><div class="live-worker">${esc(w.name)}</div><div class="live-role" style="color:var(--ink3)">${esc((w.roles||[]).join(', ')||'—')}</div><div class="live-idle">Not working right now</div></div>`;
+  }).join('');
+  if(liveTimers) clearInterval(liveTimers);
+  liveTimers=setInterval(updateLiveTimers,1000); updateLiveTimers();
+}
+function updateLiveTimers(){
+  document.querySelectorAll('.live-timer').forEach(el=>{
+    const sec=Math.floor((Date.now()-new Date(el.dataset.start).getTime())/1000);
+    const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60,pad=n=>String(n).padStart(2,'0');
+    el.textContent=h>0?`${h}:${pad(m)}:${pad(s)}`:`${pad(m)}:${pad(s)}`;
+  });
 }
 
-// ===== DEVICE ASSIGNMENT (admin, in Setup) =====
-function renderDeviceWorkerSelect() {
-  const sel = document.getElementById('device-worker-select');
-  if (!sel) return; // element removed — workers now log in individually
+function escg(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function esc(s){ return escg(s); }
+
+function forceStopBySession(idx){
+  const s=(window._activeSessions||[])[idx];
+  if(!s){ toast('Session not found — refresh'); return; }
+  // find the worker for this session
+  const worker=s.worker;
+  doForceStop(s.itemId, s.role||'', worker, s.itemDesc||'');
+}
+function openItemBySession(idx){
+  const s=(window._activeSessions||[])[idx];
+  if(s) openItem(s.itemId);
+}
+async function doForceStop(itemId, role, worker, desc){
+  if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
+  const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify({ item_id:itemId, item_desc:desc, status:role+' — Stopped (admin)', worker:worker, role:role })
+  });
+  if(r.ok){ toast('■ Stopped '+worker); await loadAllScans(); computeLive(); }
+  else toast('Could not stop');
 }
 
-function assignDeviceWorker() {
-  // Obsolete — workers now log in individually
+async function forceStop(itemId, role, worker, desc){
+  return doForceStop(itemId, role, worker, desc);
 }
 
-// ===== ROLES (admin-defined) =====
-function addRole() {
-  const val = document.getElementById('new-role-input').value.trim();
-  if (!val) return;
-  if (roles.includes(val)) { showToast('Role already exists'); return; }
-  roles.push(val);
-  localStorage.setItem('st_roles', JSON.stringify(roles));
-  document.getElementById('new-role-input').value = '';
-  renderRoleList();
-  renderNewWorkerRoles();
-  showToast('✅ Role added: ' + val);
+function pairSessions(filterFn){
+  const chron=[...scans].reverse();
+  const open={}; const sessions=[];
+  chron.forEach(s=>{
+    const key=s.item_id+'::'+(s.role||'')+'::'+s.worker;
+    if((s.status||'').includes('Started')) open[key]=s;
+    else if((s.status||'').includes('Stopped') && open[key]){
+      sessions.push({ item_id:s.item_id, item_desc:s.item_desc, customer:s.customer, worker:s.worker, role:s.role, start:open[key].created_at, end:s.created_at, ms:Math.max(0,new Date(s.created_at)-new Date(open[key].created_at)) });
+      delete open[key];
+    }
+  });
+  return { sessions: filterFn?sessions.filter(x=>filterFn(x.end)):sessions, open:Object.values(open) };
 }
+function baseItemId(id){ return id.replace(/-(BASE|ARMS|CUPS|PLATES)$/i,''); }
 
-function removeRole(i) {
-  const roleName = roles[i];
-  roles.splice(i, 1);
-  localStorage.setItem('st_roles', JSON.stringify(roles));
-  workers.forEach(w => { w.roles = w.roles.filter(r => r !== roleName); });
-  localStorage.setItem('st_workers', JSON.stringify(workers));
-  renderRoleList();
-  renderNewWorkerRoles();
-  renderWorkerList();
-  renderDeviceWorkerSelect();
+// ===== ORDERS VIEW =====
+function orderIdOf(itemId){ const m=itemId.match(/^(T-\d+)/i); return m?m[1]:itemId.split('-').slice(0,2).join('-'); }
+function analyzeItem(events){
+  // Returns {ms, working, workingBy, done, byWorker:{name:ms}, lastEnd}
+  const evts=[...events].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  let ms=0, working=false, workingBy=null, lastEnd=null;
+  const byWorker={}; const openByKey={};
+  evts.forEach(e=>{
+    const key=(e.role||'')+'::'+e.worker;
+    if((e.status||'').includes('Started')){ openByKey[key]=e; working=true; workingBy=e.worker; }
+    else if((e.status||'').includes('Stopped')&&openByKey[key]){
+      const dur=new Date(e.created_at)-new Date(openByKey[key].created_at);
+      ms+=dur; byWorker[e.worker]=(byWorker[e.worker]||0)+dur;
+      delete openByKey[key]; lastEnd=e.created_at;
+    }
+  });
+  // if any key still open, it's still working
+  const stillOpen=Object.keys(openByKey).length>0;
+  working=stillOpen; if(!stillOpen) workingBy=null; else workingBy=Object.values(openByKey)[0].worker;
+  const done=evts.length>0&&!stillOpen;
+  return {ms, working, workingBy, done, byWorker, lastEnd, openByKey};
 }
-
-function renderRoleList() {
-  if(!document.getElementById('role-list')) return;
-  document.getElementById('role-list').innerHTML = roles.map((r,i) =>
-    `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span style="font-weight:600;color:var(--ink)">${r}</span>
-      <span onclick="removeRole(${i})" style="color:var(--red);cursor:pointer;padding:4px 8px;font-weight:700">✕</span>
-    </div>`
-  ).join('');
-}
-
-// ===== ADD WORKER with role selection =====
-function renderNewWorkerRoles() {
-  if(!document.getElementById('new-worker-roles')) return;
-  document.getElementById('new-worker-roles').innerHTML = roles.map(r => {
-    const sel = newWorkerSelectedRoles.includes(r);
-    return `<button type="button" class="worker-btn ${sel?'selected':''}" onclick="toggleNewWorkerRole('${r.replace(/'/g,"\\'")}')">${r}</button>`;
+function renderOrders(){
+  const q=(document.getElementById('orders-search').value||'').toLowerCase().trim();
+  const orders={};
+  scans.forEach(s=>{
+    const oid=orderIdOf(s.item_id);
+    if(!orders[oid]) orders[oid]={items:{}, customer:s.customer, last:s.created_at};
+    if(!orders[oid].items[s.item_id]) orders[oid].items[s.item_id]={desc:s.item_desc, events:[]};
+    orders[oid].items[s.item_id].events.push(s);
+    if(new Date(s.created_at)>new Date(orders[oid].last)) orders[oid].last=s.created_at;
+    if(s.customer&&s.customer!=='undefined'&&!orders[oid].customer) orders[oid].customer=s.customer;
+  });
+  let list=Object.entries(orders).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last));
+  if(q) list=list.filter(([oid,o])=>{
+    if(oid.toLowerCase().includes(q)||(o.customer||'').toLowerCase().includes(q)) return true;
+    return Object.entries(o.items).some(([iid,it])=>iid.toLowerCase().includes(q)||(it.desc||'').toLowerCase().includes(q)||it.events.some(e=>(e.worker||'').toLowerCase().includes(q)));
+  });
+  const el=document.getElementById('orders-list');
+  if(!list.length){ el.innerHTML='<div class="empty">No orders match</div>'; return; }
+  el.innerHTML=list.map(([oid,o])=>{
+    const items=Object.entries(o.items);
+    let doneCount=0, totalMs=0, anyWorking=false;
+    const orderWorkers={};
+    const itemRows=items.map(([iid,it])=>{
+      const a=analyzeItem(it.events);
+      totalMs+=a.ms;
+      if(a.done)doneCount++;
+      if(a.working)anyWorking=true;
+      Object.entries(a.byWorker).forEach(([w,ms])=>{ orderWorkers[w]=(orderWorkers[w]||0)+ms; });
+      if(a.workingBy) orderWorkers[a.workingBy]=orderWorkers[a.workingBy]||0;
+      // Part label
+      const pm=iid.match(/-(BASE|ARMS|CUPS|PLATES|[A-Z0-9]+)$/i);
+      const partBadge = (pm && /^(BASE|ARMS|CUPS|PLATES)$/i.test(pm[1])) ? `<span class="badge part">${pm[1].toUpperCase()}</span>` : '';
+      // Who worked list
+      const workerList=Object.entries(a.byWorker).sort((x,y)=>y[1]-x[1]).map(([w,ms])=>`${w} (${fmtDur(ms)})`).join(', ');
+      const statusBadge = a.working ? `<span class="badge started">▶ ${a.workingBy||'Working'}</span>` : (a.done?'<span class="badge stopped">Done</span>':'<span class="badge" style="background:var(--surface2);color:var(--ink3)">Not started</span>');
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openItem('${iid.replace(/'/g,"\\'")}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><span style="font-weight:700">${it.desc&&it.desc!==iid?it.desc:iid}</span> ${partBadge} ${it.desc&&it.desc!==iid?`<span style="color:var(--ink3);font-size:11px">${iid}</span>`:''}</div>
+          <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">
+            <span style="font-size:13px;font-weight:700;color:var(--gold2)">${fmtDur(a.ms)}</span>
+            ${statusBadge}
+          </div>
+        </div>
+        ${workerList?`<div style="font-size:11px;color:var(--ink3);margin-top:3px">👷 ${workerList}</div>`:''}
+      </div>`;
+    }).join('');
+    const pct=items.length?Math.round(doneCount/items.length*100):0;
+    // Order-level worker summary
+    const orderWorkerSummary=Object.entries(orderWorkers).sort((a,b)=>b[1]-a[1]).map(([w,ms])=>`${w} · ${fmtDur(ms)}`).join('  |  ');
+    const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div class="card" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--gold2)">${oid}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
+          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700" id="ord-cust-${safe}">${o.customer&&o.customer!=='undefined'?o.customer:'—'}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:12px;font-weight:700">${doneCount}/${items.length} items done</div>
+          <div style="font-size:12px;color:var(--gold2);font-weight:700">Total: ${fmtDur(totalMs)}</div>
+          <div style="width:140px;height:7px;background:var(--surface2);border-radius:4px;margin-top:5px;overflow:hidden;margin-left:auto"><div style="width:${pct}%;height:100%;background:${pct===100?'var(--green)':'var(--gold)'}"></div></div>
+        </div>
+      </div>
+      ${orderWorkerSummary?`<div style="font-size:11px;color:var(--ink3);background:var(--surface2);border-radius:6px;padding:6px 10px;margin-bottom:8px">⏱️ Time by worker: ${orderWorkerSummary}</div>`:''}
+      ${itemRows}
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" id="ord-btn-${safe}" onclick="loadOrderDetail('${oid}','${safe}')">📋 Show full order info + photos</button>
+      <div id="ord-detail-${safe}" style="display:none;margin-top:10px"></div>
+    </div>`;
   }).join('');
 }
 
-function toggleNewWorkerRole(role) {
-  const idx = newWorkerSelectedRoles.indexOf(role);
-  if (idx >= 0) newWorkerSelectedRoles.splice(idx,1);
-  else newWorkerSelectedRoles.push(role);
-  renderNewWorkerRoles();
-}
+// Fetch full RepairDesk detail for an order: customer info, service, notes, intake photos + worker photos
+async function loadOrderDetail(oid, safe){
+  const box=document.getElementById('ord-detail-'+safe);
+  const btn=document.getElementById('ord-btn-'+safe);
+  if(box.style.display==='block'){ box.style.display='none'; btn.textContent='📋 Show full order info + photos'; return; }
+  box.style.display='block'; btn.textContent='▲ Hide details';
+  box.innerHTML='<div style="text-align:center;color:var(--ink3);padding:16px">Loading order details…</div>';
+  // Fetch ticket from RepairDesk
+  let t=null;
+  try{
+    const tid=oid.replace(/\D/g,'');
+    const r=await fetch(proxied(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`));
+    const d=await r.json(); if(d&&d.data) t=d.data;
+  }catch(e){}
+  if(!t){ box.innerHTML='<div style="color:var(--red);padding:12px">Could not load RepairDesk details for this order.</div>'; return; }
 
-function addWorker() {
-  const name = document.getElementById('new-worker').value.trim();
-  if (!name) { showToast('Enter a worker name'); return; }
-  if (!newWorkerSelectedRoles.length) { showToast('Select at least one role'); return; }
-  workers.push({name, roles: [...newWorkerSelectedRoles]});
-  localStorage.setItem('st_workers', JSON.stringify(workers));
-  document.getElementById('new-worker').value = '';
-  newWorkerSelectedRoles = [];
-  renderNewWorkerRoles();
-  renderWorkerList();
-  renderDeviceWorkerSelect();
-  showToast('✅ ' + name + ' added');
-}
+  // Update customer name in header if it was blank
+  const cust=getCustomerName(t), phone=getCustomerPhone(t), city=getCustomerCity(t), group=getCustomerGroup(t), addr=getCustomerAddress(t), due=getDueDate(t);
+  const custEl=document.getElementById('ord-cust-'+safe);
+  if(custEl && (custEl.textContent==='—'||!custEl.textContent.trim())) custEl.textContent=cust;
 
-function removeWorker(i) {
-  workers.splice(i, 1);
-  localStorage.setItem('st_workers', JSON.stringify(workers));
-  renderWorkerList();
-  renderDeviceWorkerSelect();
-}
+  let html=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;line-height:1.7">
+    <strong>${cust}</strong>${phone?' · '+phone:''}<br>
+    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+'City: '+city:''}${addr?'<br>'+addr:''}${due?'<br>Due: '+due:''}
+  </div>`;
 
-function renderWorkerList() {
-  if(!document.getElementById('worker-list')) return;
-  document.getElementById('worker-list').innerHTML = workers.map((w,i) =>
-    `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <div>
-        <span style="font-weight:600;color:var(--ink)">${w.name}</span>
-        <span style="font-size:11px;color:var(--gold2);margin-left:8px;font-weight:600">${w.roles.join(', ')}</span>
-      </div>
-      <span onclick="removeWorker(${i})" style="color:var(--red);cursor:pointer;padding:4px 8px;font-weight:700">✕</span>
-    </div>`
-  ).join('');
-}
-
-// ===== ADMIN PIN =====
-function checkAdminPin() {
-  const entered = document.getElementById('admin-pin-input').value.trim();
-  if (entered === adminPin) {
-    document.getElementById('pin-lock-card').style.display = 'none';
-    document.getElementById('setup-content').style.display = 'block';
-    renderDeviceWorkerSelect();
-    loadLabelSizeInputs();
-  } else {
-    showToast('⚠️ Incorrect PIN');
-    document.getElementById('admin-pin-input').value = '';
+  // Each item/device: service needed, note, intake photos, worker photos
+  const devs=t.devices||[];
+  for(let i=0;i<devs.length;i++){
+    const device=devs[i];
+    const num=i+1, itemId=oid+'-'+num;
+    const name=device.device?device.device.name:'Item '+num;
+    const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
+    const note=getDeviceNote(device,t);
+    const pre=(device.PreConditions_images||[]).map(im=>im.medium||im.small);
+    html+=`<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-weight:700;font-size:15px">${name} <span style="color:var(--ink3);font-size:11px">${itemId}</span></div>
+      ${services?`<div style="font-size:12px;color:var(--gold2);margin-top:3px"><strong>Service needed:</strong> ${services}</div>`:''}
+      ${note?`<div style="font-size:12px;color:var(--red);margin-top:3px"><strong>⚠️ Note:</strong> ${note}</div>`:''}
+      <div id="ord-photos-${safe}-${num}" style="margin-top:8px"><div style="font-size:11px;color:var(--ink3)">Loading photos…</div></div>
+    </div>`;
   }
-}
+  box.innerHTML=html;
 
-function changeAdminPin() {
-  const newPin = document.getElementById('change-pin-input').value.trim();
-  if (newPin.length < 4) { showToast('PIN must be at least 4 digits'); return; }
-  adminPin = newPin;
-  localStorage.setItem('st_admin_pin', newPin);
-  document.getElementById('change-pin-input').value = '';
-  showToast('✅ PIN updated');
-}
-
-// ===== SCAN PROCESSING (toggle start/stop) =====
-async function processScan(itemId) {
-  if (!selectedWorker) { showToast('Select a worker first'); return; }
-  if (!selectedRole) { showToast('Select your role first'); return; }
-  itemId = itemId.toUpperCase().trim();
-
-  // Only accept our own printed labels: T-<ticket>-<item>, optionally -PART
-  if (!/^T-\d+-\d+/.test(itemId)) {
-    if (navigator.vibrate) navigator.vibrate([100,50,100]);
-    showToast('⚠️ Not a Glint label — scan the printed Glint barcode');
-    document.getElementById('scan-input').value = '';
-    setTimeout(() => document.getElementById('scan-input').focus(), 100);
-    return;
-  }
-
-  const task = selectedRole;
-  const stateKey = itemId + '::' + task;
-
-  // Check Supabase for the TRUE latest state of this item+role (source of truth)
-  // This handles admin force-stops and multi-device consistency
-  let isInProgress = itemTaskState[stateKey] === 'in_progress';
-  try {
-    const q = SUPABASE_URL + '/rest/v1/scans?item_id=eq.' + encodeURIComponent(itemId) +
-      '&role=eq.' + encodeURIComponent(task) + '&select=status,created_at&order=created_at.desc&limit=1';
-    const resp = await fetch(q, { headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
-    const rows = await resp.json();
-    if (Array.isArray(rows) && rows.length) {
-      isInProgress = (rows[0].status || '').includes('Started');
-    } else {
-      isInProgress = false; // no history for this item+role
+  // Load photos for each item (intake from RepairDesk + worker photos from Supabase)
+  for(let i=0;i<devs.length;i++){
+    const device=devs[i];
+    const num=i+1, itemId=oid+'-'+num;
+    const pre=(device.PreConditions_images||[]).map(im=>im.medium||im.small);
+    const pbox=document.getElementById('ord-photos-'+safe+'-'+num);
+    let phtml='';
+    // Worker photos (also include split parts of this item)
+    try{
+      const imgs=await sb('item_images?item_id=like.'+encodeURIComponent(itemId)+'*&select=*&order=created_at.desc');
+      if(imgs&&imgs.length){
+        phtml+='<div style="font-size:10px;font-weight:700;color:var(--gold2);text-transform:uppercase;margin-bottom:4px">Our Photos</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+imgs.map(im=>`<a href="${im.image_url}" target="_blank"><img src="${im.image_url}" style="width:70px;height:70px;border-radius:6px;object-fit:cover"></a>`).join('')+'</div>';
+      }
+    }catch(e){}
+    if(pre.length){
+      phtml+='<div style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Intake Photos</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+pre.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:70px;height:70px;border-radius:6px;object-fit:cover"></a>`).join('')+'</div>';
     }
-  } catch(e) { /* offline — fall back to local state */ }
-
-  const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
-
-  // If STOPPING and this role REQUIRES a photo, capture it first before completing
-  const rs = curRoleSetting();
-  if (isInProgress && rs.image_capture === 'required') {
-    const info0 = itemCache[itemId] || {};
-    pendingStop = { itemId, task, info: info0 };
-    openImgModal(itemId, info0.name || itemId, true);
-    return; // stop is completed inside imgSave() after photo
-  }
-
-  await completeScan(itemId, task, isInProgress);
-
-  // If STOPPING and photo is OPTIONAL, offer it (non-blocking)
-  if (isInProgress && rs.image_capture === 'optional') {
-    const info0 = itemCache[itemId] || {};
-    pendingStop = null;
-    setTimeout(()=>{ if(confirm('Add a photo of this finished item?')){ openImgModal(itemId, info0.name || itemId, false); } }, 300);
+    if(pbox) pbox.innerHTML=phtml||'<div style="font-size:11px;color:var(--ink3)">No photos</div>';
   }
 }
 
-let pendingStop = null;
+function computeReports(){
+  const {sessions, open}=pairSessions(inRange);
+  const itemAgg={};
+  sessions.forEach(s=>{
+    if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.end,active:false};
+    itemAgg[s.item_id].ms+=s.ms; itemAgg[s.item_id].sessions++;
+    if(new Date(s.end)>new Date(itemAgg[s.item_id].last)) itemAgg[s.item_id].last=s.end;
+  });
+  open.forEach(o=>{ if(itemAgg[o.item_id]) itemAgg[o.item_id].active=true; else if(inRange(o.created_at)) itemAgg[o.item_id]={ms:0,sessions:0,customer:o.customer,desc:o.item_desc,last:o.created_at,active:true}; });
 
-// ===== WORKER NOTES =====
-function openNoteBox(){
-  const box=document.getElementById('note-box');
-  box.style.display = box.style.display==='none'?'block':'none';
-  if(box.style.display==='block') document.getElementById('note-text').focus();
+  const partGroups={};
+  Object.keys(itemAgg).forEach(id=>{ const base=baseItemId(id); if(base!==id){ if(!partGroups[base]) partGroups[base]={ms:0,parts:0}; partGroups[base].ms+=itemAgg[id].ms; partGroups[base].parts++; } });
+
+  let rows=Object.entries(itemAgg).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last)).map(([id,d])=>{
+    const pm=id.match(/-(BASE|ARMS|CUPS|PLATES)$/i);
+    return `<tr class="clickable" onclick="openItem('${id.replace(/'/g,"\\'")}')">
+      <td><strong>${d.desc&&d.desc!==id?d.desc:''}</strong> ${pm?'<span class="badge part">'+pm[1].toUpperCase()+'</span>':''}${d.desc&&d.desc!==id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${id}</span></td>
+      <td>${d.customer||'—'}</td>
+      <td><strong>${fmtDur(d.ms)}</strong></td>
+      <td>${d.sessions}</td>
+      <td>${fmtDate(d.last)}</td>
+      <td>${d.active?'<span class="badge started">Working</span>':'<span class="badge stopped">Idle</span>'}</td>
+    </tr>`;
+  });
+  const groupRows=Object.entries(partGroups).map(([base,g])=>`
+    <tr style="background:var(--surface2)">
+      <td><strong>◆ ${base} — All parts</strong><br><span style="color:var(--gold2);font-size:11px">${g.parts} parts combined</span></td>
+      <td>—</td><td><strong>${fmtDur(g.ms)}</strong></td><td>—</td><td>—</td>
+      <td><span class="badge part">Candelabra</span></td>
+    </tr>`);
+  document.querySelector('#item-report tbody').innerHTML=(groupRows.join('')+rows.join(''))||'<tr><td colspan="6" class="empty">No sessions in this range</td></tr>';
+
+  const workerAgg={};
+  sessions.forEach(s=>{ if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0}; workerAgg[s.worker].ms+=s.ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++; });
+  const wr=Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([n,d])=>`<tr class="clickable" onclick="openWorker('${n.replace(/'/g,"\\'")}')"><td><strong>${n}</strong></td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.items.size}</td><td>${d.sessions}</td></tr>`).join('');
+  document.querySelector('#worker-report tbody').innerHTML=wr||'<tr><td colspan="4" class="empty">No sessions in this range</td></tr>';
 }
-async function saveNote(){
-  const txt=document.getElementById('note-text').value.trim();
-  if(!txt){ showToast('Type a note first'); return; }
-  if(!activeWork){ showToast('No active item'); return; }
+
+// ===== WORKER DETAIL =====
+function openWorker(name){
+  document.getElementById('item-modal-title').textContent=name;
+  document.getElementById('item-modal-sub').textContent='Work history';
+  const tl=document.getElementById('item-timeline');
+  const res=pairSessions(inRange);
+  const mine=res.sessions.filter(s=>s.worker===name).sort((a,b)=>new Date(b.end)-new Date(a.end));
+  const openNow=res.open.filter(o=>o.worker===name);
+  let totalMs=mine.reduce((a,s)=>a+s.ms,0);
+  const items=new Set(mine.map(s=>s.item_id));
+  let html=`<div style="display:flex;gap:8px;margin-bottom:16px">
+    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${fmtDur(totalMs)}</div></div>
+    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Items</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${items.size}</div></div>
+    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Sessions</div>
+      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${mine.length}</div></div>
+  </div>`;
+  if(openNow.length){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Working Now</div>';
+    html+=openNow.map(o=>`<div style="background:#eef7f2;border:1px solid var(--green);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer" onclick="openItem('${o.item_id.replace(/'/g,"\\'")}')">
+      <div style="font-weight:700">${o.item_desc&&o.item_desc!==o.item_id?o.item_desc:o.item_id} <span style="color:var(--ink3);font-size:11px">${o.item_id}</span></div>
+      <div style="font-size:12px;color:var(--green)">▶ ${o.role||'—'} · started ${fmtDateFull(o.created_at)}</div></div>`).join('');
+  }
+  html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Completed Sessions</div>';
+  html+=mine.length?mine.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:10px 0;cursor:pointer" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')">
+    <div style="display:flex;justify-content:space-between">
+      <div style="font-weight:700">${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}</div>
+      <div style="font-weight:700;color:var(--gold2)">${fmtDur(s.ms)}</div>
+    </div>
+    <div style="font-size:11px;color:var(--ink3)">${s.item_id} · ${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}</div>
+  </div>`).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No completed sessions in this range</div>';
+  tl.innerHTML=html;
+  document.getElementById('item-modal').classList.add('show');
+}
+
+async function openItem(itemId){
+  const evts=scans.filter(s=>s.item_id===itemId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  document.getElementById('item-modal-title').textContent=(evts[0]&&evts[0].item_desc)||itemId;
+  document.getElementById('item-modal-sub').textContent=itemId+((evts[0]&&evts[0].customer)?' · '+evts[0].customer:'');
+  const tl=document.getElementById('item-timeline');
+  // Total time
+  let totalMs=0, openEvt=null;
+  evts.forEach(e=>{ if((e.status||'').includes('Started'))openEvt=e; else if((e.status||'').includes('Stopped')&&openEvt){ totalMs+=new Date(e.created_at)-new Date(openEvt.created_at); openEvt=null; } });
+  let html=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;text-align:center">
+    <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time worked</div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700">${fmtDur(totalMs)}</div>
+  </div>`;
+  // Timeline
+  html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Timeline</div>';
+  html+=evts.length?evts.map(e=>{
+    const started=(e.status||'').includes('Started');
+    return `<div class="timeline-row"><div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
+      <div style="flex:1"><div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${e.role||'—'}</div>
+      <div style="font-size:12px;color:var(--ink3)">${e.worker} · ${fmtDateFull(e.created_at)}</div></div></div>`;
+  }).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No scans yet</div>';
+  tl.innerHTML=html;
+  document.getElementById('item-modal').classList.add('show');
+  // Load notes + photos async
   try{
-    await fetch(SUPABASE_URL+'/rest/v1/item_notes',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify({item_id:activeWork.itemId,item_desc:activeWork.name,note:txt,worker:selectedWorker.name,role:activeWork.task})});
-    document.getElementById('note-text').value='';
-    document.getElementById('note-box').style.display='none';
-    showToast('✅ Note saved');
-  }catch(e){ showToast('Could not save note'); }
-}
-
-// ===== IMAGE CAPTURE (Supabase Storage) =====
-let imgStream=null, imgBlob=null, imgTarget=null, imgRequired=false;
-function openImgModal(itemId, name, required){
-  imgTarget={itemId, name}; imgRequired=required;
-  document.getElementById('img-modal-title').textContent = required?'Photo Required':'Add Photo';
-  document.getElementById('img-modal-sub').textContent = name;
-  document.getElementById('img-cancel-btn').style.display = required?'none':'block';
-  document.getElementById('img-modal').style.display='flex';
-  document.getElementById('img-preview').style.display='none';
-  document.getElementById('img-confirm').style.display='none';
-  document.getElementById('img-buttons').style.display='flex';
-  const v=document.getElementById('img-video');
-  v.style.display='block';
-  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(s=>{ imgStream=s; v.srcObject=s; v.play(); }).catch(e=>{ showToast('⚠️ Camera error: '+e.message); });
-}
-function imgCapture(){
-  const v=document.getElementById('img-video'), c=document.getElementById('img-canvas');
-  c.width=v.videoWidth; c.height=v.videoHeight;
-  c.getContext('2d').drawImage(v,0,0);
-  c.toBlob(b=>{ imgBlob=b;
-    const url=URL.createObjectURL(b);
-    const p=document.getElementById('img-preview'); p.src=url; p.style.display='block';
-    v.style.display='none';
-    document.getElementById('img-buttons').style.display='none';
-    document.getElementById('img-confirm').style.display='flex';
-  },'image/jpeg',0.7);
-}
-function imgRetake(){
-  document.getElementById('img-preview').style.display='none';
-  document.getElementById('img-video').style.display='block';
-  document.getElementById('img-confirm').style.display='none';
-  document.getElementById('img-buttons').style.display='flex';
-}
-async function imgSave(){
-  if(!imgBlob){ showToast('Take a photo first'); return; }
-  document.getElementById('img-save-btn').textContent='Uploading…';
-  const fname=imgTarget.itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+'.jpg';
+    const nr=await sb('item_notes?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
+    if(nr&&nr.length){
+      tl.innerHTML+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Worker Notes</div>'+
+        nr.map(n=>`<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px"><div style="font-size:13px">${n.note}</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">${n.worker}${n.role?' · '+n.role:''} · ${fmtDateFull(n.created_at)}</div></div>`).join('');
+    }
+  }catch(e){}
   try{
-    const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'image/jpeg'},body:imgBlob});
-    if(!up.ok) throw new Error('upload failed');
-    const publicUrl=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
-    await fetch(SUPABASE_URL+'/rest/v1/item_images',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify({item_id:imgTarget.itemId,item_desc:imgTarget.name,image_url:publicUrl,worker:selectedWorker.name,role:selectedRole})});
-    stopImgCam();
-    document.getElementById('img-modal').style.display='none';
-    document.getElementById('img-save-btn').textContent='✓ Save & Finish';
-    showToast('✅ Photo saved');
-    // If this photo was gating a required stop, complete it now
-    if(pendingStop){ const ps=pendingStop; pendingStop=null; await completeScan(ps.itemId, ps.task, true); }
-  }catch(e){ showToast('⚠️ Upload failed'); document.getElementById('img-save-btn').textContent='✓ Save & Finish'; }
+    const ir=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
+    if(ir&&ir.length){
+      tl.innerHTML+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Photos ('+ir.length+')</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+ir.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
+    }
+  }catch(e){}
 }
-function imgCancel(){
-  if(imgRequired){ showToast('Photo is required to finish'); return; }
-  stopImgCam();
-  document.getElementById('img-modal').style.display='none';
-  pendingStop=null;
-}
-function stopImgCam(){ if(imgStream){ imgStream.getTracks().forEach(t=>t.stop()); imgStream=null; } imgBlob=null; }
+function closeItem(){ document.getElementById('item-modal').classList.remove('show'); }
 
-// ===== VIEW ITEM PHOTOS (pre-images from RepairDesk + worker photos) =====
-async function viewItemImages(){
-  if(!activeWork){ showToast('No active item'); return; }
-  openPreImg(activeWork.itemId, activeWork.name);
-}
-async function openPreImg(itemId, name){
-  document.getElementById('preimg-modal').style.display='flex';
-  const el=document.getElementById('preimg-content');
+async function viewTicketPhotos(itemId, name, preImages){
+  document.getElementById('photos-modal-title').textContent=name;
+  const el=document.getElementById('photos-modal-content');
   el.innerHTML='<div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div>';
+  document.getElementById('photos-modal').classList.add('show');
   let html='';
-  // Worker-captured photos from Supabase
   try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc',{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
-    const imgs=await r.json();
+    const imgs=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
     if(imgs&&imgs.length){
       html+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Our Photos ('+imgs.length+')</div>';
       html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'+imgs.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
     }
   }catch(e){}
-  // Pre-images from RepairDesk (need the ticket detail)
-  try{
-    const oid=itemId.split('-').slice(0,2).join('-'); // T-1054
-    const num=parseInt(itemId.split('-')[2])||1;
-    // find ticket in prTickets if loaded, else fetch
-    let t=(typeof prTickets!=='undefined')?prTickets.find(x=>prOid&&prOid(x)===oid):null;
-    if(!t){
-      const tid=oid.replace(/\D/g,'');
-      const rr=await fetch(prProxy(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`));
-      const dd=await rr.json(); if(dd&&dd.data) t=dd.data;
-    }
-    if(t&&t.devices){
-      const dev=t.devices[num-1];
-      const pre=(dev&&dev.PreConditions_images)||[];
-      if(pre.length){
-        html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Photos (RepairDesk)</div>';
-        html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+pre.map(i=>`<a href="${i.medium||i.small}" target="_blank"><img src="${i.small||i.medium}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
-      }
-    }
-  }catch(e){}
-  el.innerHTML = html || '<div style="text-align:center;color:var(--ink3);padding:20px">No photos for this item yet</div>';
-}
-function closePreImg(){ document.getElementById('preimg-modal').style.display='none'; }
-
-
-async function completeScan(itemId, task, isInProgress) {
-  const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
-  const stateKey = itemId + '::' + task;
-
-  // Sync local state
-  if (isInProgress) { delete itemTaskState[stateKey]; }
-  else { itemTaskState[stateKey] = 'in_progress'; }
-  localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
-
-  const info = itemCache[itemId] || {};
-
-  if (isInProgress) {
-    if (activeWork && activeWork.itemId === itemId && activeWork.task === task) {
-      activeWork = null;
-      localStorage.setItem('st_active_work', 'null');
-      stopActiveWorkTimer();
-    }
-  } else {
-    activeWork = { itemId, name: info.name || itemId, task, startedAt: Date.now() };
-    localStorage.setItem('st_active_work', JSON.stringify(activeWork));
-    startActiveWorkTimer();
+  if(preImages&&preImages.length){
+    html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Photos (RepairDesk)</div>';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+preImages.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
   }
-  renderActiveWork();
-
-  const entry = {
-    itemId, itemDesc: info.name||'', customer: info.customer||'',
-    status: newStatus, worker: selectedWorker.name, timestamp: new Date().toISOString()
-  };
-  sessionLog.unshift(entry);
-  renderHistory();
-  renderScanRecent();
-
-  try {
-    await fetch(SUPABASE_URL + '/rest/v1/scans', {
-      method: 'POST',
-      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ item_id: itemId, item_desc: info.name || '', customer: info.customer || '', city: info.city || '', status: newStatus, worker: selectedWorker.name, role: task })
-    });
-  } catch(e) {}
-
-  if (navigator.vibrate) navigator.vibrate(isInProgress ? [50,50,50] : 120);
-  showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
-
-  document.getElementById('scan-input').value = '';
-  hideSuggest();
-  setTimeout(() => { document.getElementById('scan-input').focus(); }, 100);
+  el.innerHTML=html||'<div style="text-align:center;color:var(--ink3);padding:20px">No photos for this item</div>';
 }
 
-function renderScanRecent() {
-  const el = document.getElementById('scan-recent-list');
-  if (!el) return;
-  const mine = selectedWorker ? sessionLog.filter(e => e.worker === selectedWorker.name).slice(0,8) : [];
-  if (!mine.length) { el.innerHTML = '<div style="font-size:11px;color:var(--ink3);text-align:center;padding:8px">No scans yet this session</div>'; return; }
-  el.innerHTML = mine.map(e => {
-    const d = new Date(e.timestamp);
-    const t = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    const started = e.status.includes('Started');
-    const color = started ? 'var(--green)' : 'var(--orange)';
-    const icon = started ? '▶️' : '⏹️';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:14px">${icon}</span>
-      <div style="flex:1">
-        <div style="font-size:12px;font-weight:700;color:var(--ink)">${e.itemDesc||e.itemId}</div>
-        <div style="font-size:10px;color:${color};font-weight:600">${e.status}</div>
+
+function renderHistory(){
+  const q=(document.getElementById('history-search').value||'').toLowerCase();
+  const fEl=document.getElementById('hist-from'), tEl=document.getElementById('hist-to');
+  const from=fEl&&fEl.value?new Date(fEl.value+'T00:00:00'):null;
+  const to=tEl&&tEl.value?new Date(tEl.value+'T23:59:59'):null;
+  const rows=scans.filter(s=>{
+    if(q&&!(s.item_id+s.worker+(s.customer||'')+(s.item_desc||'')).toLowerCase().includes(q)) return false;
+    const d=new Date(s.created_at);
+    if(from&&d<from) return false;
+    if(to&&d>to) return false;
+    return true;
+  }).slice(0,800).map(s=>`
+    <tr><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
+    <td><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:''}</strong>${s.item_desc&&s.item_desc!==s.item_id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
+    <td>${s.customer||'—'}</td><td>${s.worker}</td><td>${s.role||'—'}</td>
+    <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td></tr>`).join('');
+  document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No scans in this range</td></tr>';
+}
+
+async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); renderWorkers(); }
+function renderWorkers(){
+  document.querySelector('#workers-table tbody').innerHTML=workers.length?workers.map(w=>`
+    <tr><td><strong>${w.name}</strong></td><td><span style="font-variant-numeric:tabular-nums">${w.pin||'—'}</span></td>
+    <td>${(w.roles||[]).join(', ')||'—'}</td>
+    <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.can_print?'checked':''} onchange="togglePrint(${w.id},this.checked)"></td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">Edit</button>
+      <button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button>
+    </td></tr>`).join(''):'<tr><td colspan="5" class="empty">No workers yet</td></tr>';
+}
+async function togglePrint(id, on){
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({can_print:on})});
+  if(r.ok){ toast(on?'✅ Label access granted':'Label access removed'); const w=workers.find(x=>x.id===id); if(w)w.can_print=on; }
+  else toast('Could not update');
+}
+async function addWorker(){
+  const name=document.getElementById('nw-name').value.trim();
+  const pin=document.getElementById('nw-pin').value.trim();
+  if(!name){toast('Enter a name');return;}
+  if(pin.length<4){toast('PIN must be at least 4 digits');return;}
+  if(!nwSelectedRoles.length){toast('Pick at least one role');return;}
+  const r=await sb('workers',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:nwSelectedRoles})});
+  if(r.ok){ toast('✅ '+name+' added'); document.getElementById('nw-name').value=''; document.getElementById('nw-pin').value=''; nwSelectedRoles=[]; renderNwRoles(); loadWorkers(); }
+  else toast('Could not add worker');
+}
+async function deleteWorker(id,name){ if(!confirm('Remove '+name+'?'))return; const r=await sb('workers?id=eq.'+id,{method:'DELETE',headers:{'Prefer':'return=minimal'}}); if(r.ok){toast(name+' removed');loadWorkers();} }
+
+function openEdit(id){
+  const w=workers.find(x=>x.id===id); if(!w) return;
+  document.getElementById('edit-id').value=w.id;
+  document.getElementById('edit-name').value=w.name;
+  document.getElementById('edit-pin').value=w.pin||'';
+  editSelectedRoles=[...(w.roles||[])];
+  renderEditRoles();
+  document.getElementById('edit-modal').classList.add('show');
+}
+function closeEdit(){ document.getElementById('edit-modal').classList.remove('show'); }
+function renderEditRoles(){
+  document.getElementById('edit-roles').innerHTML=roles.map(r=>{
+    const on=editSelectedRoles.includes(r.name);
+    return `<span class="chip ${on?'on':''}" onclick="toggleEditRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;
+  }).join('')||'<span style="color:var(--ink3);font-size:12px">No roles yet</span>';
+}
+function toggleEditRole(name){ const i=editSelectedRoles.indexOf(name); if(i>=0)editSelectedRoles.splice(i,1);else editSelectedRoles.push(name); renderEditRoles(); }
+async function saveEdit(){
+  const id=document.getElementById('edit-id').value;
+  const name=document.getElementById('edit-name').value.trim();
+  const pin=document.getElementById('edit-pin').value.trim();
+  if(!name||pin.length<4){toast('Name and 4-digit PIN required');return;}
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:editSelectedRoles})});
+  if(r.ok){ toast('✅ Saved'); closeEdit(); loadWorkers(); } else toast('Could not save');
+}
+
+async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); renderRoles(); renderNwRoles(); }
+function renderRoles(){
+  document.getElementById('roles-list').innerHTML=roles.length?roles.map(r=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700;font-size:15px">${r.name}</span>
+        <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button>
       </div>
-      <div style="font-size:10px;color:var(--ink3)">${t}</div>
-    </div>`;
-  }).join('');
-}
-
-function renderActiveWork() {
-  const panel = document.getElementById('active-work-panel');
-  if (!panel) return;
-  if (activeWork) {
-    panel.style.display = 'block';
-    document.getElementById('active-work-name').textContent = activeWork.name;
-    document.getElementById('active-work-task').textContent = activeWork.task;
-    updateActiveWorkTimer();
-  } else {
-    panel.style.display = 'none';
-  }
-}
-
-function updateActiveWorkTimer() {
-  if (!activeWork) return;
-  const el = document.getElementById('active-work-timer');
-  if (!el) return;
-  const elapsed = Math.floor((Date.now() - activeWork.startedAt) / 1000);
-  const h = Math.floor(elapsed / 3600);
-  const m = Math.floor((elapsed % 3600) / 60);
-  const s = elapsed % 60;
-  const pad = n => String(n).padStart(2,'0');
-  el.textContent = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-}
-
-function startActiveWorkTimer() {
-  stopActiveWorkTimer();
-  activeWorkTimer = setInterval(updateActiveWorkTimer, 1000);
-}
-
-function stopActiveWorkTimer() {
-  if (activeWorkTimer) { clearInterval(activeWorkTimer); activeWorkTimer = null; }
-}
-
-function lookupItemInfo() {} // kept for compatibility, unused now
-
-// ===== HISTORY =====
-function renderHistory() {
-  const el = document.getElementById('history-list');
-  if (!sessionLog.length) { el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No entries yet</div>'; return; }
-  el.innerHTML = sessionLog.slice(0,40).map(e => {
-    const d=new Date(e.timestamp), color=getStatusColor(e.status);
-    return `<div class="log-entry">
-      <div class="log-dot" style="background:${color}"></div>
-      <div class="log-meta">
-        <div class="log-id">${e.itemId}</div>
-        ${e.itemDesc?`<div class="log-desc">${e.itemDesc}</div>`:''}
-        <div class="log-status" style="color:${color}">${e.status}</div>
-        <div class="log-who">👤 ${e.worker}${e.customer?' · '+e.customer:''}</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">
+          Photo after work:
+          <select onchange="updateRoleSetting(${r.id},'image_capture',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
+            <option value="off" ${(!r.image_capture||r.image_capture==='off')?'selected':''}>Off</option>
+            <option value="optional" ${r.image_capture==='optional'?'selected':''}>Optional</option>
+            <option value="required" ${r.image_capture==='required'?'selected':''}>Required</option>
+          </select>
+        </label>
       </div>
-      <div class="log-time">${d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}<br><span style="font-size:10px">${d.toLocaleDateString([],{month:'short',day:'numeric'})}</span></div>
-    </div>`;
-  }).join('');
+    </div>`).join(''):'<div class="empty" style="padding:16px">No roles yet</div>';
+}
+async function updateRoleSetting(id, field, value){
+  const body={}; body[field]=value;
+  const r=await sb('roles?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});
+  if(r.ok){ const role=roles.find(x=>x.id===id); if(role)role[field]=value; toast('✅ Updated'); }
+  else toast('Could not update');
+}
+function renderNwRoles(){
+  document.getElementById('nw-roles').innerHTML=roles.map(r=>{const on=nwSelectedRoles.includes(r.name);return `<span class="chip ${on?'on':''}" onclick="toggleNwRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;}).join('')||'<span style="color:var(--ink3);font-size:12px">Add a role first →</span>';
+}
+function toggleNwRole(name){ const i=nwSelectedRoles.indexOf(name); if(i>=0)nwSelectedRoles.splice(i,1);else nwSelectedRoles.push(name); renderNwRoles(); }
+async function addRole(){
+  const name=document.getElementById('new-role').value.trim(); if(!name)return;
+  const r=await sb('roles',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name})});
+  if(r.ok){toast('✅ Role added');document.getElementById('new-role').value='';loadRoles();}else toast('Role may already exist');
+}
+async function deleteRole(id){ const r=await sb('roles?id=eq.'+id,{method:'DELETE',headers:{'Prefer':'return=minimal'}}); if(r.ok)loadRoles(); }
+
+async function loadLabels(){ labels=await sb('labels?select=*&order=printed_at.desc&limit=3000'); renderLabels(); }
+function renderLabels(){
+  const q=(document.getElementById('labels-search').value||'').toLowerCase();
+  const rows=labels.filter(l=>!q||(l.item_id+(l.item_name||'')+(l.customer||'')+(l.city||'')).toLowerCase().includes(q)).map(l=>`
+    <tr><td style="white-space:nowrap">${fmtDate(l.printed_at)}</td>
+    <td><span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold2)">${l.item_id}</span></td>
+    <td>${l.item_name||'—'}</td><td>${l.customer||'—'}</td><td>${l.city||'—'}</td>
+    <td>${l.part?'<span class="badge part">'+l.part+'</span>':'—'}</td></tr>`).join('');
+  document.querySelector('#labels-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No labels printed yet</td></tr>';
 }
 
-// ===== REPAIRDESK API =====
-function updateRdStatus() {}
-
-async function loadTickets() {
-  if (!rdApiKey) return;
-  const el = document.getElementById('tickets-list');
-  el.innerHTML = '<div class="loading-row"><span class="spinner"></span>Loading tickets...</div>';
-  try {
-    // Fetch tickets newest first using default_order=1 (RepairDesk recommended param)
-    let allFetched = [];
-    let page = 1;
-    let totalPages = 1;
-    do {
-      const resp = await fetch(`${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=250&page=${page}&default_order=1`);
-      if (!resp.ok) throw new Error('HTTP '+resp.status);
-      const data = await resp.json();
-      const batch = (data.data && data.data.ticketData) || [];
-      allFetched = allFetched.concat(batch);
-      const pagination = data.data && data.data.pagination;
-      totalPages = pagination ? parseInt(pagination.total_pages) : 1;
-      page++;
-    } while (page <= totalPages && page <= 2); // 2 pages = 500 tickets, enough for recent ones
-    allTickets = allFetched;
-    // Sort newest first by ticket ID number
-    allTickets.sort(function(a, b) {
-      var idA = parseInt((getOrderId(a) || '').replace(/[^0-9]/g,'')) || 0;
-      var idB = parseInt((getOrderId(b) || '').replace(/[^0-9]/g,'')) || 0;
-      return idB - idA;
-    });
-    renderTickets(allTickets);
-  } catch(err) {
-    el.innerHTML = `<div class="loading-row" style="color:var(--red)">⚠️ Could not load tickets.<br><br>
-      <a href="${RD_BASE}/tickets?api_key=${rdApiKey}&per_page=5" target="_blank" style="color:var(--gold)">Test API directly ↗</a></div>`;
-  }
+function downloadCSV(filename, rows){
+  const csv=rows.map(r=>r.map(c=>{const v=(c==null?'':String(c)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+}
+function exportReports(){
+  const {sessions}=pairSessions(inRange);
+  const rows=[['Item ID','Item','Customer','Worker','Role','Start','End','Minutes']];
+  sessions.forEach(s=>rows.push([s.item_id,s.item_desc||'',s.customer||'',s.worker,s.role||'',fmtDateFull(s.start),fmtDateFull(s.end),(s.ms/60000).toFixed(1)]));
+  downloadCSV('glint-report-'+reportRange+'.csv',rows);
+}
+function exportHistory(){
+  const rows=[['Time','Item ID','Item','Customer','Worker','Role','Action']];
+  scans.forEach(s=>rows.push([fmtDateFull(s.created_at),s.item_id,s.item_desc||'',s.customer||'',s.worker,s.role||'',s.status]));
+  downloadCSV('glint-history.csv',rows);
+}
+function exportLabels(){
+  const rows=[['Printed','Item ID','Item','Customer','City','Note','Part']];
+  labels.forEach(l=>rows.push([fmtDateFull(l.printed_at),l.item_id,l.item_name||'',l.customer||'',l.city||'',l.note||'',l.part||'']));
+  downloadCSV('glint-labels.csv',rows);
 }
 
-function getCustomerName(t) {
-  const s = t.summary;
-  if (s && s.customer) return (s.customer.fullName || s.customer.firstName || 'Unknown').trim();
-  return 'Unknown Customer';
-}
-
-function getCustomerCity(t) {
-  const s = t.summary;
-  return (s && s.customer && s.customer.city) ? s.customer.city : '';
-}
-
-function getCustomerPhone(t) {
-  const s = t.summary;
-  if (s && s.customer) return s.customer.mobile || s.customer.phone || '';
-  return '';
-}
-
-function getTicketDates(t) {
-  const s = t.summary;
-  let created = '', due = '';
-  if (s) {
-    if (s.created_date) created = new Date(s.created_date*1000).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
-    if (s.due_date) due = new Date(s.due_date*1000).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
-  }
-  return { created, due };
-}
-
-function getDeviceNote(device, ticket) {
-  // Notes are in a separate ticket-level array, linked by deviceId
-  const notesArr = (ticket && ticket.notes) || [];
-  const devId = String(device.device ? device.device.id : (device.id || ''));
-  const devName = device.device_name || (device.device ? device.device.name : '');
-  // Collect all notes matching this device
-  const matching = notesArr.filter(n =>
-    String(n.deviceId) === devId ||
-    (n.devicename && devName && n.devicename.toLowerCase().includes(devName.toLowerCase()))
-  );
-  return matching.map(n => (n.msg_text || '').trim()).filter(Boolean).join(' · ');
-}
-
-function getOrderId(t) {
-  return (t.summary && t.summary.order_id) || t.id || '';
-}
-
-function getDevices(t) {
-  return t.devices || [];
-}
-
-function getStatusClass(s) {
-  if (!s) return 's-open';
-  const sl = s.toLowerCase();
-  if (sl.includes('deliver')||sl.includes('complete')) return 's-done';
-  if (sl.includes('progress')||sl.includes('repair')) return 's-progress';
-  return 's-open';
-}
-
-function renderTickets(tickets) {
-  const el = document.getElementById('tickets-list');
-  if (!tickets.length) { el.innerHTML='<div class="loading-row">No tickets found</div>'; return; }
-  el.innerHTML = tickets.map(t => {
-    const orderId = getOrderId(t);
-    const customer = getCustomerName(t);
-    const devices = getDevices(t);
-    const itemCount = devices.length;
-    const date = t.summary && t.summary.created_date
-      ? new Date(t.summary.created_date*1000).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})
-      : '';
-    // Get most recent status from first device
-    const status = devices[0] && devices[0].status ? devices[0].status.name : '';
-    const statusClass = getStatusClass(status);
-    const total = '';
-
-    return `<div class="ticket-card" id="tc-${orderId}">
-      <div class="ticket-header" onclick="toggleTicket('${orderId}')">
-        <div>
-          <div class="ticket-id">${orderId}</div>
-          <div class="ticket-title">${customer}</div>
-          <div class="ticket-sub">${date}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-          <span class="ticket-badge ${statusClass}" style="font-size:9px;max-width:90px;text-align:right;line-height:1.3">${status}</span>
-          <span style="font-size:10px;color:var(--ink3);font-weight:500;letter-spacing:.04em;margin-top:4px;display:block">${itemCount} item${itemCount!==1?'s':''} ↓</span>
-        </div>
-      </div>
-      <div class="ticket-items" id="ti-${orderId}"></div>
-    </div>`;
-  }).join('');
-}
-
-function toggleTicket(orderId) {
-  const itemsEl = document.getElementById('ti-'+orderId);
-  if (itemsEl.classList.contains('open')) { itemsEl.classList.remove('open'); return; }
-  itemsEl.classList.add('open');
-
-  // Find ticket in allTickets
-  const t = allTickets.find(t => getOrderId(t) === orderId);
-  if (!t) return;
-
-  const customer = getCustomerName(t);
-  const devices = getDevices(t);
-  renderTicketItems(orderId, customer, devices, itemsEl, t);
-}
-
-const CANDELABRA_PARTS = ['Base', 'Arms', 'Cups', 'Plates'];
-
-function isCandelabra(name) {
-  return /candelabra/i.test(name || '');
-}
-
-function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
-  const safeOrderId = orderId.replace(/[^a-zA-Z0-9]/g, '_');
-  // Ticket-level info for labels
-  const city = ticket ? getCustomerCity(ticket) : '';
-  const phone = ticket ? getCustomerPhone(ticket) : '';
-  const dates = ticket ? getTicketDates(ticket) : { created:'', due:'' };
-
-  itemsEl.innerHTML = devices.map((device, idx) => {
-    const itemNum = idx + 1;
-    const itemId = orderId + '-' + itemNum;
-    const deviceName = device.device ? device.device.name : 'Item '+itemNum;
-    const serial = device.serial ? ' #'+device.serial : '';
-    const services = device.repairProdItems ? device.repairProdItems.map(s => s.name.trim()).join(', ') : '';
-    const status = device.status ? device.status.name : '';
-    const statusClass = getStatusClass(status);
-    const note = getDeviceNote(device, ticket);
-
-    // Cache for scan lookup + labels
-    itemCache[itemId] = { name: deviceName + (serial||''), customer, ticketId: orderId, services, city, phone, note, created: dates.created, due: dates.due };
-
-    const esc = s => (s||'').replace(/"/g,'&quot;').replace(/'/g,"&#39;");
-    const safeDeviceName = esc(deviceName);
-    const safeCustomer = esc(customer);
-    const safeServices = esc(services);
-    const safeCity = esc(city);
-    const safePhone = esc(phone);
-    const safeNote = esc(note);
-    const cbId = 'cb-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
-
-    let html = `<div class="item-row">
-      <input type="checkbox" class="item-cb" id="${cbId}"
-        onchange="updateSelectedCount()"
-        data-item-id="${itemId}"
-        data-item-name="${safeDeviceName}${serial}"
-        data-services="${safeServices}"
-        data-customer="${safeCustomer}"
-        data-city="${safeCity}"
-        data-phone="${safePhone}"
-        data-note="${safeNote}"
-        data-created="${esc(dates.created)}"
-        data-due="${esc(dates.due)}"
-        data-ticket="${orderId}">
-      <div class="item-info">
-        <div class="item-name">${deviceName}${serial}</div>
-        ${services?`<div class="item-meta" style="color:var(--gold-dim)">${services}</div>`:''}
-        ${note?`<div class="item-meta" style="color:var(--red)">📝 ${note}</div>`:''}
-        <div class="item-meta">${itemId}${city?' · '+city:''}</div>`;
-
-    // Candelabra split option
-    if (isCandelabra(deviceName)) {
-      const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
-      html += `
-        <button onclick="toggleCandelabraParts('${itemId}','${safeOrderId}',${itemNum},'${safeDeviceName}','${safeCustomer}','${safeServices}','${safeCity}','${safePhone}','${safeNote}','${esc(dates.created)}','${esc(dates.due)}')"
-          style="margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase;width:100%">
-          ⚙️ Split into parts (Base · Arms · Cups · Plates)
-        </button>
-        <div id="${splitId}" style="display:none;margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border)"></div>`;
-    }
-
-    html += `</div></div>`;
-    return html;
-  }).join('') + `<div style="padding:8px 0;display:flex;gap:8px">
-    <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', true)"
-      style="flex:1;background:var(--ink);border:2px solid var(--ink);border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
-      ☑ Select All
-    </button>
-    <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', false)"
-      style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
-      ☐ Deselect All
-    </button>
-  </div>`;
-}
-
-function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, customer, services, city, phone, note, created, due) {
-  const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
-  const el = document.getElementById(splitId);
-  if (!el) return;
-
-  if (el.style.display === 'block') {
-    el.style.display = 'none';
-    el.innerHTML = '';
-    updateSelectedCount();
-    return;
-  }
-
-  const unesc = s => (s||'').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
-
-  el.style.display = 'block';
-  el.innerHTML = `<div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Candelabra Parts — each gets its own label</div>` +
-    CANDELABRA_PARTS.map(part => {
-      const partId = itemId + '-' + part.toUpperCase();
-      const partCbId = 'cb-' + partId.replace(/[^a-zA-Z0-9]/g,'_');
-      const partName = deviceName + ' — ' + part;
-      // Cache each part for scan lookup + labels
-      itemCache[partId] = { name: unesc(partName), customer: unesc(customer), ticketId: safeOrderId, services: unesc(services), city: unesc(city), phone: unesc(phone), note: unesc(note), created, due, part };
-      return `<div class="item-row" style="padding:8px 0">
-        <input type="checkbox" class="item-cb" id="${partCbId}"
-          onchange="updateSelectedCount()"
-          data-item-id="${partId}"
-          data-item-name="${deviceName} — ${part}"
-          data-services="${services}"
-          data-customer="${customer}"
-          data-city="${city||''}"
-          data-phone="${phone||''}"
-          data-note="${note||''}"
-          data-created="${created||''}"
-          data-due="${due||''}"
-          data-part="${part}"
-          data-ticket="${safeOrderId}">
-        <div class="item-info">
-          <div class="item-name" style="font-size:15px">${part}</div>
-          <div class="item-meta">${partId}</div>
-        </div>
-      </div>`;
-    }).join('') +
-    `<div style="display:flex;gap:6px;margin-top:8px">
-      <button onclick="selectCandelabraParts('${itemId}',true)" style="flex:1;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">All Parts</button>
-      <button onclick="selectCandelabraParts('${itemId}',false)" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:6px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">None</button>
-    </div>`;
-
-  updateSelectedCount();
-}
-
-function selectCandelabraParts(itemId, select) {
-  CANDELABRA_PARTS.forEach(part => {
-    const partId = itemId + '-' + part.toUpperCase();
-    const cb = document.getElementById('cb-' + partId.replace(/[^a-zA-Z0-9]/g,'_'));
-    if (cb) cb.checked = select;
-  });
-  updateSelectedCount();
-}
-
-function selectAllInTicket(safeOrderId, count, orderId, select=true) {
-  for (let i=1; i<=count; i++) {
-    const itemId = (orderId+'-'+i).replace(/[^a-zA-Z0-9]/g,'_');
-    const cb = document.getElementById('cb-'+itemId);
-    if (cb) cb.checked = select;
-  }
-  updateSelectedCount();
-}
-
-function selectAllItems(ticketId, count) {
-  for (let i=1; i<=count; i++) {
-    const cb = document.getElementById('cb-T'+ticketId+'-'+i);
-    if (cb) cb.checked = true;
-  }
-  updateSelectedCount();
-}
-
-function updateSelectedCount() {
-  const checked = document.querySelectorAll('.item-cb:checked').length;
-  document.getElementById('selected-count').textContent = checked;
-  document.getElementById('print-selected-btn').disabled = checked===0;
-}
-
-function filterTickets() {
-  const q = document.getElementById('ticket-search').value.toLowerCase().trim();
-  if (!q) { renderTickets(allTickets); return; }
-  const filtered = allTickets.filter(t => {
-    const id = (getOrderId(t) || '').toLowerCase();
-    const cust = getCustomerName(t).toLowerCase();
-    return id.includes(q) || cust.includes(q);
-  });
-  renderTickets(filtered);
-}
-
-// ===== PRINT LABELS =====
-function generateBarcodeSVG(text) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  try {
-    JsBarcode(svg, text, {
-      format: 'CODE128',
-      width: 3.5,
-      height: 110,
-      displayValue: true,
-      fontSize: 20,
-      fontOptions: 'bold',
-      margin: 8,
-      background: '#ffffff',
-      lineColor: '#000000'
-    });
-    const svgStr = new XMLSerializer().serializeToString(svg);
-    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
-  } catch(e) { return ''; }
-}
-
-function buildLabelHtml(items) {
-  return items.map(item => {
-    const isPart = !!item.part;
-    return `
-    <div class="label">
-      <div class="label-top">
-        ${item.due ? `<div class="l-due">DUE: ${item.due}</div>` : ''}
-        ${item.city ? `<div class="l-city">📍 ${item.city}</div>` : ''}
-        ${item.note ? `<div class="l-note">⚠️ ${item.note}</div>` : ''}
-      </div>
-      <div class="label-barcode">
-        <img src="${item.barcodeSrc}">
-      </div>
-      <div class="label-bottom">
-        ${isPart ? `<span class="l-part">◆ ${item.part.toUpperCase()}</span>` : `<span class="l-glint">GLINT LACQUER</span>`}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openPrintWindow(labelsHtml) {
-  const w = labelSize.width, h = labelSize.height;
-  const printHtml = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>GlintLabels</title>
-<style>
-  @page { size: ${w}mm ${h}mm; margin: 0mm; }
-  html, body { margin:0; padding:0; background:white; font-family:Arial,sans-serif; }
-  * { box-sizing: border-box; }
-  .label {
-    width: ${w}mm;
-    height: ${h}mm;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 3mm;
-    overflow: hidden;
-    page-break-after: always;
-    page-break-inside: avoid;
-  }
-  .label:last-child { page-break-after: auto; }
-
-  .label-top { text-align: center; }
-  .l-due { font-size: 11pt; font-weight: 700; color: #000; }
-  .l-city { font-size: 11pt; font-weight: 700; color: #000; margin-top: 1mm; }
-  .l-note { font-size: 10pt; font-weight: 700; color: #000; margin-top: 1.5mm; background: #f0f0f0; padding: 1mm 1.5mm; border-radius: 1mm; line-height: 1.2; }
-
-  .label-barcode { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
-  .label-barcode img { max-width: 98%; max-height: 30mm; height: auto; }
-
-  .label-bottom { text-align: center; border-top: 0.5mm dashed #999; padding-top: 1.5mm; }
-  .l-part { font-size: 13pt; font-weight: 700; color: #000; letter-spacing: 0.1em; }
-  .l-glint { font-size: 8pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.2em; }
-</style></head>
-<body>${labelsHtml}
-<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
-</body></html>`;
-
-  const printWin = window.open('', '_blank', 'width=900,height=700,left=100,top=50');
-  if (!printWin) { showToast('⚠️ Allow popups for this site to print'); return; }
-  printWin.document.write(printHtml);
-  printWin.document.close();
-}
-
-function printSelected() {
-  const checked = document.querySelectorAll('.item-cb:checked');
-  if (!checked.length) { showToast('Select items first'); return; }
-
-  const items = [];
-  checked.forEach(cb => {
-    items.push({
-      itemId: cb.dataset.itemId,
-      itemName: cb.dataset.itemName || '',
-      services: cb.dataset.services || '',
-      customer: cb.dataset.customer || '',
-      city: cb.dataset.city || '',
-      phone: cb.dataset.phone || '',
-      note: cb.dataset.note || '',
-      created: cb.dataset.created || '',
-      due: cb.dataset.due || '',
-      part: cb.dataset.part || ''
-    });
-  });
-
-  // Log to label history
-  items.forEach(item => {
-    labelHistory = labelHistory.filter(h => h.itemId !== item.itemId);
-    labelHistory.unshift({ ...item, printedAt: new Date().toISOString() });
-  });
-  localStorage.setItem('st_label_history', JSON.stringify(labelHistory));
-  renderLabelHistory();
-
-  // Send labels to Supabase
-  items.forEach(item => {
-    fetch(SUPABASE_URL + '/rest/v1/labels', {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': 'Bearer ' + SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({
-        item_id: item.itemId,
-        item_name: item.itemName || '',
-        customer: item.customer || '',
-        city: item.city || '',
-        note: item.note || '',
-        part: item.part || ''
-      })
-    }).catch(()=>{});
-  });
-
-  showToast('⏳ Preparing labels...');
-
-  const itemsWithBarcode = items.map(item => ({ ...item, barcodeSrc: generateBarcodeSVG(item.itemId) }));
-  setTimeout(() => openPrintWindow(buildLabelHtml(itemsWithBarcode)), 100);
-}
-
-// ===== SETUP =====
-function saveUrl() {
-  if(!document.getElementById('sheet-url')) return;
-  sheetUrl = document.getElementById('sheet-url').value.trim();
-  localStorage.setItem('st_url', sheetUrl);
-}
-function copyScript() {
-  if(!document.getElementById('script-box')) return;
-  navigator.clipboard.writeText(document.getElementById('script-box').textContent)
-    .then(()=>showToast('📋 Script copied!'))
-    .catch(()=>showToast('Select and copy the script manually'));
-}
-
-// ===== CAMERA SCANNER =====
-let cameraActive = false;
-let codeReader = null;
-
-async function toggleCamera() {
-  if (cameraActive) {
-    stopCamera();
-  } else {
-    startCamera();
-  }
-}
-
-async function startCamera() {
-  const container = document.getElementById('camera-container');
-  const btn = document.getElementById('camera-btn');
-  const video = document.getElementById('camera-video');
-
-  // Step 1: explicitly request camera permission via getUserMedia (this triggers the prompt)
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false
-    });
-  } catch(err) {
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showToast('⚠️ Camera blocked. Tap the lock icon near the URL → Permissions → Camera → Allow, then reload.');
-    } else if (err.name === 'NotFoundError') {
-      showToast('⚠️ No camera found on this device');
-    } else if (!window.isSecureContext) {
-      showToast('⚠️ Camera needs HTTPS — make sure you opened the https:// link');
-    } else {
-      showToast('⚠️ Camera error: ' + err.name);
-    }
-    container.style.display = 'none';
-    cameraActive = false;
-    return;
-  }
-
-  // Permission granted — show video
-  container.style.display = 'block';
-  btn.textContent = '📷 Camera Active — Point at Barcode';
-  btn.style.background = 'var(--ink)';
-  btn.style.color = '#fff';
-  cameraActive = true;
-
-  try {
-    video.setAttribute('playsinline', 'true');
-    video.setAttribute('autoplay', 'true');
-    video.setAttribute('muted', 'true');
-    video.muted = true;
-    video.srcObject = stream;
-
-    // Wait for video to actually be ready (critical for iOS)
-    await new Promise((resolve) => {
-      if (video.readyState >= 2) { resolve(); return; }
-      video.onloadedmetadata = () => resolve();
-      setTimeout(resolve, 1500); // fallback timeout
-    });
-
-    try { await video.play(); } catch(playErr) {
-      // iOS sometimes needs a user gesture retry
-      setTimeout(() => video.play().catch(()=>{}), 300);
-    }
-
-    // Method 1: Native BarcodeDetector (best on Android Chrome)
-    if ('BarcodeDetector' in window) {
-      let formats = ['code_128','code_39','ean_13','ean_8','upc_a','upc_e','qr_code'];
-      try {
-        const supported = await BarcodeDetector.getSupportedFormats();
-        formats = formats.filter(f => supported.includes(f));
-      } catch(e) {}
-      const detector = new BarcodeDetector({ formats });
-      window._cameraInterval = setInterval(async () => {
-        if (!cameraActive) return;
-        if (video.readyState < 2) return; // wait until frames available
-        try {
-          const barcodes = await detector.detect(video);
-          if (barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            if (navigator.vibrate) navigator.vibrate(100);
-            stopCamera();
-            document.getElementById('scan-input').value = code;
-            processScan(code);
-          }
-        } catch(e) {}
-      }, 200);
-    }
-    // Method 2: ZXing library fallback (iOS Safari)
-    else if (typeof ZXingBrowser !== 'undefined' || typeof ZXing !== 'undefined') {
-      const ZX = (typeof ZXingBrowser !== 'undefined') ? ZXingBrowser : ZXing;
-      try {
-        codeReader = new ZX.BrowserMultiFormatReader();
-        // decodeFromStream is more reliable on iOS than decodeFromVideoElement
-        if (codeReader.decodeFromStream) {
-          codeReader.decodeFromStream(stream, video, (result, err) => {
-            if (result) {
-              const code = result.getText ? result.getText() : result.text;
-              if (navigator.vibrate) navigator.vibrate(100);
-              stopCamera();
-              document.getElementById('scan-input').value = code;
-              processScan(code);
-            }
-          });
-        } else {
-          codeReader.decodeFromVideoElement(video, (result, err) => {
-            if (result) {
-              const code = result.getText ? result.getText() : result.text;
-              if (navigator.vibrate) navigator.vibrate(100);
-              stopCamera();
-              document.getElementById('scan-input').value = code;
-              processScan(code);
-            }
-          });
-        }
-      } catch(zerr) {
-        showToast('⚠️ Scanner init failed: ' + zerr.message);
-        stopCamera();
-      }
-    }
-    else {
-      showToast('⚠️ Barcode scanning not supported — type the code manually');
-      stopCamera();
-    }
-  } catch(err) {
-    showToast('⚠️ Scanner error: ' + err.message);
-    stopCamera();
-  }
-}
-
-function stopCamera() {
-  if (codeReader) {
-    try { codeReader.reset(); } catch(e) {}
-    codeReader = null;
-  }
-  const video = document.getElementById('camera-video');
-  if (video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
-    video.srcObject = null;
-  }
-  if (window._cameraInterval) {
-    clearInterval(window._cameraInterval);
-    window._cameraInterval = null;
-  }
-  document.getElementById('camera-container').style.display = 'none';
-  const btn = document.getElementById('camera-btn');
-  btn.textContent = '📷 Use Camera to Scan';
-  btn.style.background = '';
-  btn.style.color = '';
-  cameraActive = false;
-}
-
-// ===== LABEL HISTORY =====
-function renderLabelHistory(filter='') {
-  const el = document.getElementById('label-history-list');
-  if (!el) return;
-  const filtered = filter
-    ? labelHistory.filter(h =>
-        (h.itemId||'').toLowerCase().includes(filter) ||
-        (h.itemName||'').toLowerCase().includes(filter) ||
-        (h.customer||'').toLowerCase().includes(filter)
-      )
-    : labelHistory;
-
-  if (!filtered.length) {
-    el.innerHTML = '<div style="color:var(--ink3);font-size:12px;padding:12px 0;text-align:center">' + (filter ? 'No results' : 'No labels printed yet') + '</div>';
-    return;
-  }
-
-  el.innerHTML = filtered.map((h, i) => {
-    const d = new Date(h.printedAt);
-    const dateStr = d.toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'});
-    const timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
-      <div style="flex:1">
-        <div style="font-size:12px;font-weight:700;color:var(--gold2);letter-spacing:.06em">${h.itemId}</div>
-        <div style="font-size:15px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:600;margin-top:2px">${h.itemName||'—'}</div>
-        ${h.services?`<div style="font-size:10px;color:var(--ink3);margin-top:2px">${h.services}</div>`:''}
-        <div style="font-size:11px;color:var(--ink3);margin-top:2px;font-weight:500">${h.customer||'—'}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-size:10px;color:var(--ink3);font-weight:500">${dateStr}</div>
-        <div style="font-size:10px;color:var(--ink3)">${timeStr}</div>
-        <button onclick="reprintLabel(${i})" style="margin-top:6px;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;letter-spacing:.04em">↺ Reprint</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function filterLabelHistory() {
-  const q = document.getElementById('label-history-search').value.toLowerCase().trim();
-  renderLabelHistory(q);
-}
-
-function clearLabelHistory() {
-  if (!confirm('Clear all label history?')) return;
-  labelHistory = [];
-  localStorage.setItem('st_label_history', JSON.stringify(labelHistory));
-  renderLabelHistory();
-  showToast('Label history cleared');
-}
-
-function reprintLabel(idx) {
-  const h = labelHistory[idx];
-  if (!h) return;
-  const item = { ...h, barcodeSrc: generateBarcodeSVG(h.itemId) };
-  openPrintWindow(buildLabelHtml([item]));
-}
-
-// ===== LABEL SIZE =====
-function loadLabelSizeInputs() {
-  const wI = document.getElementById('label-width-input');
-  const hI = document.getElementById('label-height-input');
-  if (wI) wI.value = labelSize.width;
-  if (hI) hI.value = labelSize.height;
-}
-
-function saveLabelSize() {
-  const w = parseFloat(document.getElementById('label-width-input').value);
-  const h = parseFloat(document.getElementById('label-height-input').value);
-  if (!w || !h || w < 10 || h < 10) { showToast('Enter valid dimensions'); return; }
-  labelSize = { width: w, height: h };
-  localStorage.setItem('st_label_size', JSON.stringify(labelSize));
-  showToast('✅ Label size saved: ' + w + ' × ' + h + ' mm');
-}
-
-function setLabelPreset(w, h) {
-  labelSize = { width: w, height: h };
-  localStorage.setItem('st_label_size', JSON.stringify(labelSize));
-  loadLabelSizeInputs();
-  showToast('✅ Label size: ' + w + ' × ' + h + ' mm');
-}
-
-// ===== TOAST =====
-function showToast(msg) {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),3000);
-}
+function fmtDur(ms){ const sec=Math.floor(ms/1000),h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60); if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m'; return Math.floor(sec)+'s'; }
+function fmtDate(d){ const dt=new Date(d); return dt.toLocaleDateString([], {month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+function fmtDateFull(d){ return new Date(d).toLocaleString([], {month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2600); }
 </script>
 </body>
 </html>
