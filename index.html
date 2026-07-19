@@ -234,8 +234,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
     <div class="card-label" id="scan-card-label">Scan item</div>
     <div class="scan-input-wrap" style="margin-bottom:10px;display:flex;gap:8px">
       <div style="position:relative;flex:1">
-        <input id="scan-input" class="scan-input" type="text" placeholder="Ready to scan..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="none" style="width:100%">
+        <input id="scan-input" class="scan-input" type="text" placeholder="Ready to scan..." autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" inputmode="none" style="width:100%" oninput="onScanType()">
         <span class="scan-icon">▦</span>
+        <div id="scan-suggest" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:30;background:var(--surface);border:2px solid var(--border);border-top:none;border-radius:0 0 10px 10px;max-height:280px;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.1)"></div>
       </div>
       <button onclick="toggleKeyboard()" id="keyboard-btn" class="gen-btn" style="flex-shrink:0;background:var(--surface2);border:2px solid var(--border);color:var(--ink2)" title="Show keyboard">⌨️</button>
       <button onclick="submitScan()" class="gen-btn" style="flex-shrink:0">Enter</button>
@@ -419,6 +420,54 @@ function submitScan() {
   const input = document.getElementById('scan-input');
   const val = input.value.trim();
   if (val) processScan(val);
+}
+
+let scanSuggestTimer=null;
+let acTickets=[]; // cached tickets for autocomplete
+function onScanType(){
+  const val=document.getElementById('scan-input').value.trim();
+  clearTimeout(scanSuggestTimer);
+  if(!keyboardOn || val.length<2){ hideSuggest(); return; }
+  if(/^T-\d+-\d+/i.test(val)){ hideSuggest(); return; } // already a full ID
+  scanSuggestTimer=setTimeout(()=>runScanSuggest(val), 300);
+}
+function hideSuggest(){ const el=document.getElementById('scan-suggest'); if(el){ el.style.display='none'; el.innerHTML=''; } }
+async function runScanSuggest(q){
+  const el=document.getElementById('scan-suggest');
+  el.style.display='block';
+  el.innerHTML='<div style="padding:12px;color:var(--ink3);font-size:12px;text-align:center">Searching…</div>';
+  if(!acTickets.length){
+    try{
+      const r=await fetch('https://corsproxy.io/?url='+encodeURIComponent('https://api.repairdesk.co/api/web/v1/tickets?api_key=smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf&per_page=250&page=1&default_order=1'));
+      const d=await r.json();
+      acTickets=(d.data&&d.data.ticketData)||[];
+    }catch(e){ el.innerHTML='<div style="padding:12px;color:var(--red);font-size:12px;text-align:center">Search unavailable</div>'; return; }
+  }
+  const ql=q.toLowerCase();
+  const matches=acTickets.filter(t=>{
+    const oid=((t.summary&&t.summary.order_id)||'').toLowerCase();
+    const cust=((t.summary&&t.summary.customer&&t.summary.customer.fullName)||'').toLowerCase();
+    return oid.includes(ql)||cust.includes(ql);
+  }).slice(0,12);
+  if(!matches.length){ el.innerHTML='<div style="padding:12px;color:var(--ink3);font-size:12px;text-align:center">No matches — type the full ID</div>'; return; }
+  el.innerHTML=matches.map(t=>{
+    const oid=(t.summary&&t.summary.order_id)||'';
+    const cust=(t.summary&&t.summary.customer&&t.summary.customer.fullName)||'Unknown';
+    const devs=t.devices||[];
+    return `<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--gold2);font-weight:700">${oid} · ${cust}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        ${devs.map((d,i)=>{ const nm=d.device?d.device.name:'Item '+(i+1); const iid=oid+'-'+(i+1);
+          return `<button onclick="pickSuggest('${iid}')" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Jost',sans-serif;font-size:11px;font-weight:600;cursor:pointer">${nm} <span style="color:var(--ink3)">${iid}</span></button>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+function pickSuggest(itemId){
+  hideSuggest();
+  document.getElementById('scan-input').value=itemId;
+  processScan(itemId);
 }
 
 let keyboardOn = false;
@@ -873,7 +922,17 @@ function changeAdminPin() {
 async function processScan(itemId) {
   if (!selectedWorker) { showToast('Select a worker first'); return; }
   if (!selectedRole) { showToast('Select your role first'); return; }
-  itemId = itemId.toUpperCase();
+  itemId = itemId.toUpperCase().trim();
+
+  // Only accept our own printed labels: T-<ticket>-<item>, optionally -PART
+  if (!/^T-\d+-\d+/.test(itemId)) {
+    if (navigator.vibrate) navigator.vibrate([100,50,100]);
+    showToast('⚠️ Not a Glint label — scan the printed Glint barcode');
+    document.getElementById('scan-input').value = '';
+    setTimeout(() => document.getElementById('scan-input').focus(), 100);
+    return;
+  }
+
   const task = selectedRole;
   const stateKey = itemId + '::' + task;
 
@@ -1081,6 +1140,7 @@ async function completeScan(itemId, task, isInProgress) {
   showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
 
   document.getElementById('scan-input').value = '';
+  hideSuggest();
   setTimeout(() => { document.getElementById('scan-input').focus(); }, 100);
 }
 
