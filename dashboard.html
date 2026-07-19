@@ -318,6 +318,32 @@
       </div>
     </div>
 
+    <div class="page" id="page-empreport">
+      <div class="page-head">
+        <div>
+          <div class="page-title" id="emp-title">Employee Report</div>
+          <div class="page-sub" id="emp-sub">Full work history</div>
+        </div>
+        <div class="head-actions" style="flex-wrap:wrap">
+          <div class="seg" id="emp-range-seg">
+            <button class="on" onclick="empSetRange('today',this)">Today</button>
+            <button onclick="empSetRange('week',this)">Week</button>
+            <button onclick="empSetRange('month',this)">Month</button>
+            <button onclick="empSetRange('all',this)">All</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+            <input type="date" id="emp-from" onchange="empCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+            <span>→</span>
+            <input type="date" id="emp-to" onchange="empCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+          </div>
+          <input class="search" id="emp-search" placeholder="Search ticket, item..." oninput="renderEmployeeReport()">
+          <button class="btn btn-ghost btn-sm" onclick="exportEmployeeReport()">⬇ Export CSV</button>
+          <button class="btn btn-ghost btn-sm" onclick="showPage('workers')">← Back to Workers</button>
+        </div>
+      </div>
+      <div id="emp-content"></div>
+    </div>
+
     <div class="page" id="page-settings">
       <div class="page-head">
         <div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div>
@@ -556,11 +582,19 @@ function getDueDate(t){
   if(ts) return new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
   return '';
 }
+function isDriverNote(n){
+  // Exclude driver / delivery / pickup notes — keep only repair/diagnostic notes
+  const title=((n.tittle||n.title||'')+'').toLowerCase();
+  const txt=((n.msg_text||'')+'').toLowerCase();
+  if(/driver|delivery|deliver|pickup|pick up|pick-up|scanovator|not home|nobody home|no one home|left at|reschedul/.test(title)) return true;
+  if(/driver|nobody was home|no one was home|not home|nobody home|left at door|left with|reschedul|attempted delivery/.test(txt)) return true;
+  return false;
+}
 function getDeviceNote(device, ticket){
   const notesArr=(ticket&&ticket.notes)||[];
   const devId=String(device.device?device.device.id:(device.id||''));
   const devName=device.device_name||(device.device?device.device.name:'');
-  const matching=notesArr.filter(n=>String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase())));
+  const matching=notesArr.filter(n=>(String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase()))) && !isDriverNote(n));
   return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · ');
 }
 function isCandelabra(name){ return /candelabra/i.test(name||''); }
@@ -1101,6 +1135,110 @@ function computeReports(){
 }
 
 // ===== WORKER DETAIL =====
+// ===== FULL EMPLOYEE REPORT (page) =====
+let empName=null, empRange='today', empFrom=null, empTo=null;
+function openEmployeeReport(name){
+  empName=name; empRange='today'; empFrom=null; empTo=null;
+  document.getElementById('emp-title').textContent=name;
+  document.getElementById('emp-sub').textContent='Full work history — click any ticket to dig in';
+  document.getElementById('emp-search').value='';
+  document.querySelectorAll('#emp-range-seg button').forEach((b,i)=>b.classList.toggle('on',i===0));
+  const f=document.getElementById('emp-from'), t=document.getElementById('emp-to'); if(f)f.value=''; if(t)t.value='';
+  showPage('empreport');
+  renderEmployeeReport();
+}
+function empSetRange(r,el){ empRange=r; empFrom=null; empTo=null; document.getElementById('emp-from').value=''; document.getElementById('emp-to').value=''; document.querySelectorAll('#emp-range-seg button').forEach(b=>b.classList.remove('on')); el.classList.add('on'); renderEmployeeReport(); }
+function empCustomRange(){ const f=document.getElementById('emp-from').value,t=document.getElementById('emp-to').value; empFrom=f?new Date(f+'T00:00:00'):null; empTo=t?new Date(t+'T23:59:59'):null; if(empFrom||empTo){ empRange='custom'; document.querySelectorAll('#emp-range-seg button').forEach(b=>b.classList.remove('on')); } renderEmployeeReport(); }
+function empInRange(dateStr){
+  const d=new Date(dateStr);
+  if(empRange==='custom'){ if(empFrom&&d<empFrom)return false; if(empTo&&d>empTo)return false; return true; }
+  if(empRange==='all') return true;
+  const now=new Date();
+  if(empRange==='today') return d.toDateString()===now.toDateString();
+  if(empRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
+  if(empRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
+  return true;
+}
+function renderEmployeeReport(){
+  if(!empName) return;
+  const q=(document.getElementById('emp-search').value||'').toLowerCase().trim();
+  const res=pairSessions(empInRange);
+  let mine=res.sessions.filter(s=>s.worker===empName);
+  const openNow=res.open.filter(o=>o.worker===empName);
+  // Totals
+  const totalMs=mine.reduce((a,s)=>a+s.ms,0);
+  const items=new Set(mine.map(s=>s.item_id));
+  // Group by ticket/order
+  const byOrder={};
+  mine.forEach(s=>{ const oid=orderIdOf(s.item_id); if(!byOrder[oid])byOrder[oid]={ms:0,sessions:[],items:new Set()}; byOrder[oid].ms+=s.ms; byOrder[oid].sessions.push(s); byOrder[oid].items.add(s.item_id); });
+  // Role breakdown
+  const byRole={}; mine.forEach(s=>{ const r=s.role||'—'; byRole[r]=(byRole[r]||0)+s.ms; });
+  // Daily breakdown
+  const byDay={}; mine.forEach(s=>{ const d=new Date(s.end).toLocaleDateString(); byDay[d]=(byDay[d]||0)+s.ms; });
+
+  let orderList=Object.entries(byOrder).sort((a,b)=>b[1].ms-a[1].ms);
+  if(q) orderList=orderList.filter(([oid,o])=>oid.toLowerCase().includes(q)||o.sessions.some(s=>(s.item_desc||'').toLowerCase().includes(q)||s.item_id.toLowerCase().includes(q)));
+
+  let html=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total Time</div>
+      <div class="stat-num" style="font-size:28px">${fmtDur(totalMs)}</div></div>
+    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Items</div>
+      <div class="stat-num" style="font-size:28px">${items.size}</div></div>
+    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Sessions</div>
+      <div class="stat-num" style="font-size:28px">${mine.length}</div></div>
+    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Orders</div>
+      <div class="stat-num" style="font-size:28px">${Object.keys(byOrder).length}</div></div>
+  </div>`;
+
+  // Working now
+  if(openNow.length){
+    html+='<div class="card" style="margin-bottom:16px;background:#eef7f2;border:1px solid var(--green)"><div class="card-label" style="color:var(--green)">▶ Working Right Now</div>'+
+      openNow.map(o=>`<div class="clickable" style="padding:8px 0;cursor:pointer" onclick="openItem('${o.item_id.replace(/'/g,"\\'")}')"><strong>${o.item_desc&&o.item_desc!==o.item_id?o.item_desc:o.item_id}</strong> <span style="color:var(--ink3);font-size:11px">${o.item_id}</span> · ${o.role||'—'} · since ${fmtDateFull(o.created_at)}</div>`).join('')+'</div>';
+  }
+
+  // Two-column: role breakdown + daily
+  html+='<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">';
+  html+='<div class="card" style="flex:1;min-width:240px;margin:0"><div class="card-label">Time by Role</div>'+
+    (Object.entries(byRole).sort((a,b)=>b[1]-a[1]).map(([r,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${r}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
+  html+='<div class="card" style="flex:1;min-width:240px;margin:0"><div class="card-label">Time by Day</div>'+
+    (Object.entries(byDay).sort((a,b)=>new Date(b[0])-new Date(a[0])).map(([d,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${d}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
+  html+='</div>';
+
+  // Per-ticket breakdown
+  html+='<div class="card"><div class="card-label">Work by Order '+(q?`<span style="font-weight:600;text-transform:none;color:var(--ink3)">— filtered "${q}"</span>`:'')+'</div>';
+  html+=orderList.length?orderList.map(([oid,o])=>{
+    const safe='emp-'+oid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div style="border-bottom:1px solid var(--border);padding:12px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="document.getElementById('${safe}').style.display=document.getElementById('${safe}').style.display==='none'?'block':'none'">
+        <div><span style="font-weight:700;color:var(--gold2)">${oid}</span> <span style="color:var(--ink3);font-size:12px">${o.items.size} item(s), ${o.sessions.length} session(s)</span></div>
+        <div style="display:flex;gap:8px;align-items:center"><strong style="color:var(--gold2)">${fmtDur(o.ms)}</strong>
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();goToOrder('${oid.replace(/'/g,"\\'")}')">Open order →</button></div>
+      </div>
+      <div id="${safe}" style="display:none;margin-top:8px;padding-left:12px">
+        ${o.sessions.sort((a,b)=>new Date(b.end)-new Date(a.end)).map(s=>`<div class="clickable" style="padding:6px 0;cursor:pointer;font-size:13px" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')">
+          <div style="display:flex;justify-content:space-between"><span>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id} <span style="color:var(--ink3);font-size:11px">${s.item_id}</span></span><span style="color:${s.runaway?'var(--red)':'var(--gold2)'};font-weight:700">${fmtDur(s.ms)}${s.runaway?' ⚠️':''}</span></div>
+          <div style="font-size:11px;color:var(--ink3)">${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}${s.runaway?' · left running':''}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">No work in this range</div>';
+  html+='</div>';
+
+  document.getElementById('emp-content').innerHTML=html;
+}
+function exportEmployeeReport(){
+  const res=pairSessions(empInRange);
+  const mine=res.sessions.filter(s=>s.worker===empName).sort((a,b)=>new Date(b.end)-new Date(a.end));
+  let csv='Order,Item,Item ID,Role,Start,End,Minutes,Flag\n';
+  mine.forEach(s=>{ csv+=`"${orderIdOf(s.item_id)}","${(s.item_desc||'').replace(/"/g,'""')}","${s.item_id}","${s.role||''}","${fmtDateFull(s.start)}","${fmtDateFull(s.end)}",${Math.round(s.ms/60000)},"${s.runaway?'left running':''}"\n`; });
+  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=empName+'-report.csv'; a.click();
+}
+
 function openWorker(name){
   document.getElementById('item-modal-title').textContent=name;
   document.getElementById('item-modal-sub').textContent='Work history';
@@ -1227,6 +1365,7 @@ function renderWorkers(){
     <td>${(w.roles||[]).join(', ')||'—'}</td>
     <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.can_print?'checked':''} onchange="togglePrint(${w.id},this.checked)"></td>
     <td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-sm" style="background:var(--gold);color:#fff" onclick="openEmployeeReport('${w.name.replace(/'/g,"\\'")}')">📊 Report</button>
       <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">Edit</button>
       <button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button>
     </td></tr>`).join(''):'<tr><td colspan="5" class="empty">No workers yet</td></tr>';
