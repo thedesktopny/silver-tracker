@@ -887,6 +887,7 @@ async function forceStop(itemId, role, worker, desc){
   return doForceStop(itemId, role, worker, desc);
 }
 
+const MAX_SESSION_MS = 8*3600*1000; // 8h — sessions longer than this were likely left running
 function pairSessions(filterFn){
   const chron=[...scans].reverse();
   const open={}; const sessions=[];
@@ -894,7 +895,9 @@ function pairSessions(filterFn){
     const key=s.item_id+'::'+(s.role||'')+'::'+s.worker;
     if((s.status||'').includes('Started')) open[key]=s;
     else if((s.status||'').includes('Stopped') && open[key]){
-      sessions.push({ item_id:s.item_id, item_desc:s.item_desc, customer:s.customer, worker:s.worker, role:s.role, start:open[key].created_at, end:s.created_at, ms:Math.max(0,new Date(s.created_at)-new Date(open[key].created_at)) });
+      const rawMs=Math.max(0,new Date(s.created_at)-new Date(open[key].created_at));
+      const runaway=rawMs>MAX_SESSION_MS;
+      sessions.push({ item_id:s.item_id, item_desc:s.item_desc, customer:s.customer, worker:s.worker, role:s.role, start:open[key].created_at, end:s.created_at, ms:runaway?MAX_SESSION_MS:rawMs, rawMs:rawMs, runaway:runaway });
       delete open[key];
     }
   });
@@ -1128,9 +1131,9 @@ function openWorker(name){
   html+=mine.length?mine.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:10px 0;cursor:pointer" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')">
     <div style="display:flex;justify-content:space-between">
       <div style="font-weight:700">${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}</div>
-      <div style="font-weight:700;color:var(--gold2)">${fmtDur(s.ms)}</div>
+      <div style="font-weight:700;color:${s.runaway?'var(--red)':'var(--gold2)'}">${fmtDur(s.ms)}${s.runaway?' ⚠️':''}</div>
     </div>
-    <div style="font-size:11px;color:var(--ink3)">${s.item_id} · ${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}</div>
+    <div style="font-size:11px;color:var(--ink3)">${s.item_id} · ${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}${s.runaway?' · <span style="color:var(--red)">left running — capped at 8h</span>':''}</div>
   </div>`).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No completed sessions in this range</div>';
   tl.innerHTML=html;
   document.getElementById('item-modal').classList.add('show');
