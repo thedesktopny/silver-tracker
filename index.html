@@ -594,11 +594,9 @@ async function prToggle(oid){
     if(prIsCand(name)){
       const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
       h+=`<button class="gen-btn" style="font-size:10px;padding:5px 9px" onclick="prToggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split parts</button></div><div id="${sid}" style="display:none;margin-top:6px"></div>`;
-    } else if(curRoleSetting().can_split){
+    } else {
       const sid='prsplit-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
       h+=`<button class="gen-btn" style="font-size:10px;padding:5px 9px" onclick="prCustomSplit('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">✂️ Split item</button></div><div id="${sid}" style="display:none;margin-top:6px"></div>`;
-    } else {
-      h+=`</div>`;
     }
     h+=`</div></div>`;
     return h;
