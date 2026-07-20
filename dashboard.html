@@ -542,6 +542,26 @@ const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 // RepairDesk blocks browser (CORS) requests, so we route through a proxy.
 function proxied(url){ return 'https://corsproxy.io/?url=' + encodeURIComponent(url); }
+// Resilient fetch: try multiple CORS proxies until one works
+const PROXIES = [
+  u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+  u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  u => 'https://thingproxy.freeboard.io/fetch/' + u,
+  u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u)
+];
+async function fetchViaProxy(targetUrl){
+  let lastErr=null;
+  for(const make of PROXIES){
+    try{
+      const resp=await fetch(make(targetUrl));
+      if(!resp.ok){ lastErr=new Error('HTTP '+resp.status); continue; }
+      const txt=await resp.text();
+      // Some proxies wrap or return HTML on error — ensure it's JSON
+      try{ return JSON.parse(txt); }catch(e){ lastErr=new Error('bad response'); continue; }
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('All proxies failed');
+}
 const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
 let allTickets = [];
 let labelSize = JSON.parse(localStorage.getItem('glint_label_size') || '{"width":102,"height":59}');
@@ -552,9 +572,7 @@ async function loadTickets(){
   try{
     let fetched=[]; let page=1, totalPages=1;
     do{
-      const resp=await fetch(proxied(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`));
-      if(!resp.ok) throw new Error('HTTP '+resp.status);
-      const data=await resp.json();
+      const data=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
       const batch=(data.data&&data.data.ticketData)||[];
       fetched=fetched.concat(batch);
       const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
@@ -563,7 +581,7 @@ async function loadTickets(){
     allTickets=fetched;
     renderTickets(allTickets);
   }catch(err){
-    el.innerHTML='<div class="empty">Could not load tickets — '+err.message+'</div>';
+    el.innerHTML='<div class="empty">Could not load tickets — '+err.message+'. Tap Reload to try again.</div>';
   }
 }
 function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
@@ -632,8 +650,7 @@ async function toggleTicket(oid){
     box.innerHTML='<div class="empty" style="padding:16px">Loading details…</div>';
     try{
       const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
-      const r=await fetch(proxied(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`));
-      const d=await r.json();
+      const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
       if(d&&d.data){ d.data._full=true; allTickets[idx0]=d.data; t=d.data; }
     }catch(e){ /* fall back to list data */ }
   }
@@ -756,6 +773,18 @@ function makeBarcode(text){
   catch(e){ return ''; }
 }
 
+// Google Translate (free endpoint) — translate text to Spanish
+async function translateToSpanish(text){
+  if(!text||!text.trim()) return '';
+  try{
+    const url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q='+encodeURIComponent(text);
+    const r=await fetch(url);
+    const d=await r.json();
+    if(Array.isArray(d)&&Array.isArray(d[0])) return d[0].map(seg=>seg[0]).join('');
+  }catch(e){}
+  return '';
+}
+
 async function printSelected(){
   const checked=document.querySelectorAll('.item-cb:checked');
   if(!checked.length){ toast('Select items first'); return; }
@@ -766,18 +795,28 @@ async function printSelected(){
   // Log labels to Supabase (full info including city)
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
 
+  // Translate notes to Spanish (only for items that have a note)
+  toast('Preparing labels…');
+  for(const it of items){ it.noteEs = it.note ? await translateToSpanish(it.note) : ''; }
+
   const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
-  const labelsHtml=withBc.map(it=>`
+  const labelsHtml=withBc.map(it=>{
+    const orderId=(it.itemId.match(/^(T-\d+)/i)||[])[1]||it.itemId;
+    return `
     <div class="label">
       <div class="lt">
         <div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>
         ${it.services?`<div class="l-svc">${it.services}</div>`:''}
         <div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>
-        ${it.note?`<div class="l-note">⚠️ ${it.note}</div>`:''}
+        ${it.note?`<div class="l-note">⚠️ ${it.note}${it.noteEs?`<br><span style="font-style:italic">🇪🇸 ${it.noteEs}</span>`:''}</div>`:''}
       </div>
       <div class="lb"><img src="${it.bc}"></div>
-      <div class="lf">${it.part?`◆ ${it.part.toUpperCase()}`:'GLINT LACQUER'}</div>
-    </div>`).join('');
+      <div class="lf">
+        ${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}
+        <div class="l-oid">${orderId}</div>
+      </div>
+    </div>`;
+  }).join('');
   const W=labelSize.width, H=labelSize.height;
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title>
 <style>
@@ -789,10 +828,12 @@ body{background:#fff;font-family:Arial,sans-serif}
 .l-item{font-size:11pt;font-weight:700;line-height:1.1}
 .l-svc{font-size:8pt;color:#444;margin-top:.5mm}
 .l-row{display:flex;justify-content:center;gap:4mm;margin-top:1mm;font-size:9.5pt;font-weight:700}
-.l-note{font-size:9pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.15}
+.l-note{font-size:8.5pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.15}
 .lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}
-.lb img{max-width:98%;max-height:26mm;height:auto}
-.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm;font-size:11pt;font-weight:700;letter-spacing:.08em}
+.lb img{max-width:98%;max-height:24mm;height:auto}
+.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm}
+.l-part{font-size:9pt;font-weight:700;letter-spacing:.06em}
+.l-oid{font-size:15pt;font-weight:800;letter-spacing:.04em}
 </style></head><body>${labelsHtml}
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
 </body></html>`;
@@ -855,11 +896,12 @@ function computeLive(){
   const workingCount=Object.keys(active).length;
   const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
   const uniqueItems=new Set(scans.map(s=>s.item_id)).size;
+  window._staleList=stale;
   document.getElementById('live-stats').innerHTML=`
-    <div class="stat"><div class="stat-num">${workingCount}</div><div class="stat-label">Working now</div></div>
-    <div class="stat"><div class="stat-num">${workers.length}</div><div class="stat-label">Total workers</div></div>
-    <div class="stat"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans today</div></div>
-    <div class="stat ${stale.length?'alert':''}"><div class="stat-num">${stale.length}</div><div class="stat-label">Left running ${IDLE_ALERT_HOURS}h+</div></div>`;
+    <div class="stat" style="cursor:pointer" onclick="showStatDetail('working')"><div class="stat-num">${workingCount}</div><div class="stat-label">Working now ›</div></div>
+    <div class="stat" style="cursor:pointer" onclick="showPage('workers')"><div class="stat-num">${workers.length}</div><div class="stat-label">Total workers ›</div></div>
+    <div class="stat" style="cursor:pointer" onclick="showStatDetail('today')"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans today ›</div></div>
+    <div class="stat ${stale.length?'alert':''}" style="cursor:pointer" onclick="showStatDetail('stale')"><div class="stat-num">${stale.length}</div><div class="stat-label">Left running ${IDLE_ALERT_HOURS}h+ ›</div></div>`;
 
   const grid=document.getElementById('live-grid');
   if(!workers.length){ grid.innerHTML='<div class="empty">No workers yet — add them in the Workers tab</div>'; return; }
@@ -870,11 +912,13 @@ function computeLive(){
     if(s){
       const si=activeList.indexOf(s);
       const isStale=(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
+      const oidLive=orderIdOf(s.itemId);
       const descHtml = (s.itemDesc&&s.itemDesc!==s.itemId) ? (esc(s.itemDesc)+'<br><span style="color:var(--ink3);font-size:11px">'+esc(s.itemId)+'</span>') : esc(s.itemId);
       return `<div class="live-card working">
         <div class="live-worker">${esc(w.name)}</div>
         <div class="live-role">${esc(s.role||'Working')}${isStale?' · ⚠️ long':''}</div>
         <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItemBySession(${si})">${descHtml}</div>
+        <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="goToOrder('${oidLive.replace(/'/g,"\\'")}')">📋 View order ${esc(oidLive)}</button></div>
         <div class="live-timer" data-start="${s.startedAt}">--:--</div>
         <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStopBySession(${si})">■ Force Stop</button>
       </div>`;
@@ -894,6 +938,35 @@ function updateLiveTimers(){
 
 function escg(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function esc(s){ return escg(s); }
+
+function showStatDetail(kind){
+  document.getElementById('item-modal-title').textContent = kind==='stale'?'Left Running 12h+':(kind==='today'?'Scans Today':'Working Now');
+  document.getElementById('item-modal-sub').textContent='';
+  const tl=document.getElementById('item-timeline');
+  let html='';
+  if(kind==='stale'){
+    const list=window._staleList||[];
+    html=list.length?list.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:12px 0;cursor:pointer" onclick="closeItem();openItem('${s.itemId.replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between"><strong>${s.itemDesc&&s.itemDesc!==s.itemId?s.itemDesc:s.itemId}</strong><span style="color:var(--red);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</span></div>
+      <div style="font-size:12px;color:var(--ink3)">${s.itemId} · ${s.worker} · ${s.role||'—'} · started ${fmtDateFull(s.startedAt)}</div>
+      <button class="btn btn-danger btn-sm" style="margin-top:6px" onclick="event.stopPropagation();closeItem();doForceStop('${s.itemId.replace(/'/g,"\\'")}','${(s.role||'').replace(/'/g,"\\'")}','${s.worker.replace(/'/g,"\\'")}','${(s.itemDesc||'').replace(/'/g,"\\'")}')">■ Force Stop</button>
+    </div>`).join(''):'<div class="empty">Nothing left running</div>';
+  } else if(kind==='today'){
+    const today=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    html=today.length?today.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:10px 0;cursor:pointer" onclick="closeItem();openItem('${s.item_id.replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between"><span><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}</strong> <span style="color:var(--ink3);font-size:11px">${s.item_id}</span></span>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</div>
+      <div style="font-size:11px;color:var(--ink3)">${s.worker} · ${s.role||'—'} · ${fmtDate(s.created_at)}</div>
+    </div>`).join(''):'<div class="empty">No scans today</div>';
+  } else {
+    const list=window._activeSessions||[];
+    html=list.length?list.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:12px 0;cursor:pointer" onclick="closeItem();openItem('${s.itemId.replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between"><strong>${s.worker}</strong><span style="color:var(--green);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</span></div>
+      <div style="font-size:12px;color:var(--ink3)">${s.itemDesc&&s.itemDesc!==s.itemId?s.itemDesc:s.itemId} · ${s.itemId} · ${s.role||'—'}</div>
+    </div>`).join(''):'<div class="empty">Nobody working right now</div>';
+  }
+  tl.innerHTML=html;
+  document.getElementById('item-modal').classList.add('show');
+}
 
 function forceStopBySession(idx){
   const s=(window._activeSessions||[])[idx];
@@ -1042,8 +1115,8 @@ async function loadOrderDetail(oid, safe){
   let t=null;
   try{
     const tid=oid.replace(/\D/g,'');
-    const r=await fetch(proxied(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`));
-    const d=await r.json(); if(d&&d.data) t=d.data;
+    const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
+    if(d&&d.data) t=d.data;
   }catch(e){}
   if(!t){ box.innerHTML='<div style="color:var(--red);padding:12px">Could not load RepairDesk details for this order.</div>'; return; }
 
