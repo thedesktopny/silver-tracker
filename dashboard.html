@@ -253,7 +253,9 @@ const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
-const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
+const CANDELABRA_PARTS = ['Base','Arms','Cups and Plates','Non Silver Pieces'];
+// Part names become part of the barcode ID, so strip anything non-alphanumeric
+function partSlug(p){ return (p||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
 const IDLE_ALERT_HOURS = 12;
 const MAX_SESSION_MS = 8*3600*1000;
 
@@ -907,7 +909,7 @@ function toggleParts(itemId,name,cust,city,note,due,services,group){
   box.style.display='block';
   box.innerHTML='<div style="font-size:10px;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-bottom:8px">Each part prints its own label</div>'+
     CANDELABRA_PARTS.map(part=>{
-      const pid=itemId+'-'+part.toUpperCase(), cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+      const pid=itemId+'-'+partSlug(part), cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
       return `<div style="display:flex;gap:10px;padding:7px 0"><input type="checkbox" class="item-cb" id="${cbId}" onchange="updateSelCount()" style="width:18px;height:18px;accent-color:var(--ink)"
         data-item-id="${pid}" data-item-name="${esc(name)} — ${part}" data-services="${esc(services||'')}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group||'')}" data-note="${esc(note)}" data-due="${esc(due)}" data-part="${part}">
         <div style="font-weight:600;font-size:13.5px">${part}</div></div>`;
@@ -948,7 +950,7 @@ function addCustomPart(itemId){
   inp.value=''; inp.focus();
   updateSelCount();
 }
-function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateSelCount(); }
+function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+partSlug(p)).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateSelCount(); }
 function selectTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('cb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} updateSelCount(); }
 function updateSelCount(){
   const n=document.querySelectorAll('.item-cb:checked').length;
@@ -976,6 +978,9 @@ async function printSelected(){
     let noteCls='n-sm';
     if(noteLen>200) noteCls='n-xxs';
     else if(noteLen>120) noteCls='n-xs';
+    // Full item ID can be long (T-1102-1-PLATES) — shrink so it never overflows
+    const idLen=(it.itemId||'').length;
+    const idCls = idLen>18 ? 'o-sm' : (idLen>12 ? 'o-md' : 'o-lg');
     return `<div class="label">
       <div class="lt">
         <div class="l-item">${escLbl(it.itemName)}${it.part?' — '+escLbl(it.part):''}</div>
@@ -984,7 +989,7 @@ async function printSelected(){
         ${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${escLbl(it.note)}${it.noteEs?`<br><span class="nl">ES</span> ${escLbl(it.noteEs)}`:''}</div>`:''}
       </div>
       <div class="lb"><img src="${it.bc}"></div>
-      <div class="lf">${it.part?`<div class="l-part">◆ ${escLbl(it.part.toUpperCase())}</div>`:''}<div class="l-oid">${escLbl(oid)}</div></div>
+      <div class="lf">${it.part?`<div class="l-part">◆ ${escLbl(it.part.toUpperCase())}</div>`:''}<div class="l-oid ${idCls}">${escLbl(it.itemId)}</div></div>
     </div>`;
   }).join('');
   const W=labelSize.width, H=labelSize.height;
@@ -1007,7 +1012,10 @@ body{background:#fff;font-family:Arial,sans-serif}
 .lb img{max-width:98%;max-height:100%;height:auto;object-fit:contain}
 .lf{text-align:center;border-top:.4mm dashed #999;padding-top:.7mm;flex-shrink:0}
 .l-part{font-size:8.5pt;font-weight:700;letter-spacing:.06em}
-.l-oid{font-size:14pt;font-weight:800;letter-spacing:.04em;line-height:1.1}
+.l-oid{font-weight:800;letter-spacing:.03em;line-height:1.1;white-space:nowrap}
+.o-lg{font-size:14pt}
+.o-md{font-size:11.5pt}
+.o-sm{font-size:9.5pt}
 </style></head><body>${labelsHtml}
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
 </body></html>`;
