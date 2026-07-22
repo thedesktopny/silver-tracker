@@ -594,12 +594,15 @@ function computeActive(){
 }
 function analyzeItem(events){
   const evts=[...events].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  let ms=0, workingBy=null; const byWorker={}; const openByKey={};
+  let ms=0, workingBy=null, hadRunaway=false; const byWorker={}; const openByKey={};
   evts.forEach(e=>{
     const key=(e.role||'')+'::'+e.worker;
     if((e.status||'').includes('Started')){ openByKey[key]=e; }
     else if((e.status||'').includes('Stopped')&&openByKey[key]){
-      const dur=new Date(e.created_at)-new Date(openByKey[key].created_at);
+      const raw=new Date(e.created_at)-new Date(openByKey[key].created_at);
+      // Same cap as Reports: a session longer than this was left running, not worked
+      const dur=raw>MAX_SESSION_MS?MAX_SESSION_MS:raw;
+      if(raw>MAX_SESSION_MS) hadRunaway=true;
       ms+=dur; byWorker[e.worker]=(byWorker[e.worker]||0)+dur;
       delete openByKey[key];
     }
@@ -607,7 +610,7 @@ function analyzeItem(events){
   const stillOpen=Object.keys(openByKey).length>0;
   if(stillOpen) workingBy=Object.values(openByKey)[0].worker;
   const done=evts.length>0&&!stillOpen;
-  return { ms, working:stillOpen, workingBy, done, byWorker };
+  return { ms, working:stillOpen, workingBy, done, byWorker, hadRunaway };
 }
 
 // ========================================================================
@@ -1271,15 +1274,18 @@ function renderOrdersList(){
   if(!list.length){ el.innerHTML='<div class="empty">No orders match</div>'; return; }
   el.innerHTML=list.map(([oid,o])=>{
     const items=Object.entries(o.items);
-    let doneCount=0, totalMs=0, anyWorking=false;
-    items.forEach(([iid,it])=>{ const a=analyzeItem(it.events); totalMs+=a.ms; if(a.done)doneCount++; if(a.working)anyWorking=true; });
+    let doneCount=0, totalMs=0, anyWorking=false, anyRunaway=false;
+    items.forEach(([iid,it])=>{ const a=analyzeItem(it.events); totalMs+=a.ms; if(a.done)doneCount++; if(a.working)anyWorking=true; if(a.hadRunaway)anyRunaway=true; });
     const pct=items.length?Math.round(doneCount/items.length*100):0;
-    return `<div class="card clickable" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">
+    // Orders not matching our T-#### label format came from scanning a non-Glint barcode
+    const isJunk=!/^T-\d+$/i.test(oid);
+    const hasName=o.customer&&o.customer!=='undefined';
+    return `<div class="card clickable" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')"${isJunk?' style="border-color:var(--orange)"':''}>
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
-          <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700">${o.customer&&o.customer!=='undefined'?esc(o.customer):'—'}</div>
-          <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done</div>
+          <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${isJunk?' · <span style="color:var(--orange)">⚠️ NOT A GLINT LABEL</span>':''}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
+          <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700${hasName?'':';color:var(--ink3)'}">${hasName?esc(o.customer):'Name not recorded'}</div>
+          <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done${anyRunaway?' · <span style="color:var(--orange)">⚠️ includes capped time</span>':''}</div>
         </div>
         <div style="text-align:right">
           <div style="font-size:12px;font-weight:700">${doneCount}/${items.length} done</div>
