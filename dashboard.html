@@ -3,546 +3,289 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Glint Lacquer — Control</title>
+<title>Glint — Control Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.6/JsBarcode.all.min.js"></script>
 <style>
-  :root{
-    --bg:#f0ebe2; --surface:#faf7f1; --surface2:#f4efe6;
-    --ink:#1c1a17; --ink2:#4a4640; --ink3:#8a8378;
-    --gold:#b8960c; --gold2:#8a6a20;
-    --border:#ddd5c7; --green:#3f7d54; --orange:#b5701f; --red:#a4433a;
-    --radius:14px;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-  ::-webkit-scrollbar{width:10px;height:10px}
-  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:5px}
+:root{
+  --bg:#f0ebe2; --ink:#1c1a17; --ink2:#4a463f; --ink3:#8a8477;
+  --gold:#b8960c; --gold2:#8a6a20; --green:#3f7d54; --orange:#b5701f; --red:#a4433a;
+  --border:#ddd5c7; --surface:#faf7f1; --surface2:#f4efe6;
+  --sidebar-w:220px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px}
+h1,h2,h3{font-family:'Cormorant Garamond',serif;margin:0}
+a{color:inherit;text-decoration:none}
+input,select,textarea,button{font-family:'Jost',sans-serif;font-size:14px}
+input,select,textarea{background:var(--surface);border:2px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--ink);width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
 
-  #login-gate{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:100}
-  .login-box{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:40px;width:340px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)}
-  .login-logo{font-family:'Cormorant Garamond',serif;font-size:42px;font-weight:700;letter-spacing:-.02em}
-  .login-sub{font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink3);margin-top:-4px;margin-bottom:28px}
+/* ===== LOGIN ===== */
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)}
+.login-box .wordmark{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700}
+.login-box .subtitle{font-size:11px;letter-spacing:.15em;color:var(--ink3);text-transform:uppercase;margin-top:2px;margin-bottom:24px}
+.login-box input{margin-bottom:12px;text-align:center}
+.login-box button{width:100%;background:var(--ink);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;letter-spacing:.03em}
+.login-err{color:var(--red);font-size:12px;margin-top:8px;min-height:16px}
 
-  .shell{display:none;min-height:100vh}
-  .topbar{background:var(--surface);border-bottom:2px solid var(--border);padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:64px;position:sticky;top:0;z-index:20}
-  .brand{font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700;letter-spacing:-.01em}
-  .brand span{font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink3);display:block;margin-top:-6px;font-family:'Jost',sans-serif;font-weight:600}
-  .topbar-right{display:flex;align-items:center;gap:20px}
-  .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse 2s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-  .clock{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink2);font-size:13px}
+/* ===== APP SHELL ===== */
+#app{display:none;min-height:100vh}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:50}
+.sidebar-logo{padding:22px 22px 18px;border-bottom:1px solid var(--border)}
+.sidebar-logo .wordmark{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;line-height:1}
+.sidebar-logo .subtitle{font-size:10px;letter-spacing:.14em;color:var(--ink3);text-transform:uppercase;margin-top:2px}
+.sidebar-nav{flex:1;padding:14px 10px;overflow-y:auto}
+.snav-link{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--ink2);font-size:13.5px;font-weight:500;cursor:pointer;margin-bottom:2px}
+.snav-link:hover{background:var(--surface2)}
+.snav-link.active{background:var(--ink);color:#fff}
+.snav-icon{width:16px;text-align:center;opacity:.85}
+.sidebar-foot{padding:14px 16px;border-top:1px solid var(--border)}
+.sidebar-foot .clk{font-size:11px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.sidebar-foot .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px}
+.logout-btn{margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:7px;padding:8px;font-size:11px;color:var(--ink3);cursor:pointer}
 
-  .nav{display:flex;gap:2px;padding:0 20px;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:64px;z-index:19;overflow-x:auto}
-  .nav-tab{padding:16px 22px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .15s;white-space:nowrap}
-  .nav-tab:hover{color:var(--ink2)}
-  .nav-tab.active{color:var(--ink);border-bottom-color:var(--gold)}
+.main{margin-left:var(--sidebar-w);min-height:100vh;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:40}
+.breadcrumb{font-size:13px;color:var(--ink3);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.breadcrumb a{color:var(--ink3)}
+.breadcrumb a:hover{color:var(--ink);text-decoration:underline}
+.breadcrumb .cur{color:var(--ink);font-weight:600}
+.topbar-actions{display:flex;align-items:center;gap:14px}
+.bell-wrap{position:relative}
+.bell-btn{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;position:relative}
+.bell-badge{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.bell-panel{display:none;position:absolute;top:46px;right:0;width:340px;max-height:440px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.14);z-index:60}
+.bell-panel.show{display:block}
+.bell-panel-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em}
+.bell-item{padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
+.bell-item:hover{background:var(--surface2)}
+.bell-item .bt{color:var(--ink3);font-size:11px;margin-top:2px}
 
-  .content{max-width:1200px;margin:0 auto;padding:28px}
-  .page{display:none}
-  .page.active{display:block}
+.content{flex:1;padding:24px 28px 60px}
+.page-title{font-size:26px;font-weight:700}
+.page-sub{font-size:12.5px;color:var(--ink3);margin-top:2px}
+.page-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
-  .page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap}
-  .page-title{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700}
-  .page-sub{font-size:13px;color:var(--ink3);margin-top:2px}
-  .head-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.card-label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
+.empty{color:var(--ink3);font-style:italic;padding:14px 0;text-align:center}
+.clickable{cursor:pointer}
+.clickable:hover{background:var(--surface2)}
 
-  .grid{display:grid;gap:16px}
-  .card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
-  .card-label{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.btn{background:var(--surface);border:2px solid var(--ink);border-radius:8px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.btn:hover{background:var(--ink);color:#fff}
+.btn-gold{background:var(--gold);color:#fff;border-color:var(--gold)}
+.btn-gold:hover{background:var(--gold2);border-color:var(--gold2)}
+.btn-ghost{background:none;border:1px solid var(--border);color:var(--ink2)}
+.btn-ghost:hover{background:var(--surface2);color:var(--ink)}
+.btn-danger{background:none;border:1px solid var(--red);color:var(--red)}
+.btn-danger:hover{background:var(--red);color:#fff}
+.btn-sm{padding:6px 11px;font-size:12px}
+.btn-block{width:100%}
 
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
-  .stat{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:20px}
-  .stat-num{font-family:'Jost',sans-serif;font-size:38px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.01em}
-  .stat-label{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-top:6px}
-  .stat.alert{border-color:var(--red)}
-  .stat.alert .stat-num{color:var(--red)}
+.seg{display:flex;background:var(--surface2);border-radius:8px;padding:3px;gap:2px}
+.seg button{border:none;background:none;padding:7px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink3)}
+.seg button.on{background:var(--ink);color:#fff}
+.search{max-width:280px}
 
-  .live-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
-  .live-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden}
-  .live-card.working{border-color:var(--green)}
-  .live-card.working::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--green)}
-  .live-worker{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700}
-  .live-role{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold2);margin-top:2px}
-  .live-item{font-size:13px;color:var(--ink2);margin-top:10px;line-height:1.3}
-  .live-timer{font-variant-numeric:tabular-nums;font-size:26px;font-weight:700;margin-top:8px}
-  .live-idle{font-size:13px;color:var(--ink3);margin-top:10px;font-style:italic}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);padding:8px 10px;border-bottom:2px solid var(--border)}
+td{padding:11px 10px;border-bottom:1px solid var(--border);font-size:13px}
+tr.clickable:hover td{background:var(--surface2)}
 
-  table{width:100%;border-collapse:collapse}
-  th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);padding:10px 12px;border-bottom:2px solid var(--border)}
-  td{padding:12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
-  tr:hover td{background:var(--surface2)}
-  tr.clickable{cursor:pointer}
-  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.04em}
-  .badge.started{background:#e6f0e9;color:var(--green)}
-  .badge.stopped{background:#f5ebe0;color:var(--orange)}
-  .badge.part{background:#efe8d4;color:var(--gold2)}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.badge.started{background:#eaf4ee;color:var(--green)}
+.badge.stopped{background:#fbeee9;color:var(--orange)}
+.badge.part{background:var(--surface2);color:var(--ink3);margin-left:6px}
+.badge.muted{background:var(--surface2);color:var(--ink3)}
 
-  input,select{font-family:'Jost',sans-serif;font-size:14px;padding:11px 14px;border:2px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);width:100%;outline:none}
-  input:focus,select:focus{border-color:var(--gold)}
-  .btn{font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:11px 20px;border:none;border-radius:10px;cursor:pointer;background:var(--ink);color:#fff;transition:opacity .15s;white-space:nowrap}
-  .btn:active{opacity:.85}
-  .btn-ghost{background:var(--surface2);border:2px solid var(--border);color:var(--ink2)}
-  .btn-sm{padding:6px 12px;font-size:10px}
-  .btn-danger{background:none;border:2px solid var(--red);color:var(--red);padding:6px 12px;font-size:10px}
-  .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .field{flex:1;min-width:120px}
-  .field label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:6px}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;cursor:pointer}
+.stat-tile:hover{border-color:var(--gold)}
+.stat-tile.alert{border-color:var(--red)}
+.stat-num{font-family:'Jost',sans-serif;font-size:36px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.stat-tile.alert .stat-num{color:var(--red)}
+.stat-label{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
 
-  .chip{display:inline-block;padding:5px 12px;border:2px solid var(--border);border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;margin:0 6px 6px 0;user-select:none}
-  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.worker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
+.wcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
+.wcard.working{border-color:var(--green);background:#f5faf6}
+.wcard .wname{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700}
+.wcard .wrole{font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.wcard .witem{font-size:13px;margin-top:9px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)}
+.wcard .wtimer{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:8px}
+.wcard .widle{color:var(--ink3);font-style:italic;font-size:12.5px;margin-top:10px}
 
-  .seg{display:inline-flex;border:2px solid var(--border);border-radius:10px;overflow:hidden}
-  .seg button{background:var(--surface);border:none;padding:9px 14px;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);cursor:pointer}
-  .seg button.on{background:var(--ink);color:#fff}
+.timeline-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);align-items:flex-start}
+.timeline-row:last-child{border-bottom:none}
+.tl-dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.tl-actions{display:flex;gap:6px;margin-left:auto}
+.tl-actions button{background:none;border:none;color:var(--ink3);cursor:pointer;font-size:12px;padding:2px 6px}
+.tl-actions button:hover{color:var(--ink)}
 
-  .empty{text-align:center;padding:40px;color:var(--ink3);font-style:italic}
-  .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(100px);background:var(--ink);color:#fff;padding:14px 24px;border-radius:12px;font-weight:600;font-size:13px;z-index:200;transition:transform .3s;box-shadow:0 10px 30px rgba(0,0,0,.2)}
-  .toast.show{transform:translateX(-50%) translateY(0)}
-  .search{max-width:340px}
+.field label{display:block;font-size:11px;color:var(--ink3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.row{display:flex;gap:10px;align-items:flex-end}
+.row .field{flex:1}
 
-  .modal-bg{position:fixed;inset:0;background:rgba(28,26,23,.5);display:none;align-items:center;justify-content:center;z-index:80;padding:20px}
-  .modal-bg.show{display:flex}
-  .modal{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:26px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto}
-  .modal-title{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;margin-bottom:4px}
-  .modal-close{float:right;cursor:pointer;color:var(--ink3);font-size:22px;line-height:1;font-weight:700}
-  .timeline-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
-  .tl-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(28,26,23,.7);z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal-bg.show{display:flex}
+.modal{background:var(--bg);border-radius:16px;padding:26px;max-width:440px;width:100%;max-height:88vh;overflow-y:auto;position:relative}
+.modal-close{position:absolute;top:14px;right:16px;cursor:pointer;font-size:20px;color:var(--ink3)}
 
-  @media(max-width:900px){
-    .stats{grid-template-columns:repeat(2,1fr)}
-    .content{padding:16px}
-  }
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;opacity:0;transition:all .25s;z-index:200;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-  /* Tickets */
-  .ticket{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);margin-bottom:12px;overflow:hidden}
-  .ticket-head{padding:16px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
-  .ticket-head:hover{background:var(--surface2)}
-  .ticket-id{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--gold2)}
-  .ticket-cust{font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700;margin-top:2px}
-  .ticket-date{font-size:11px;color:var(--ink3);margin-top:2px}
-  .ticket-items{display:none;padding:0 18px 16px;border-top:1px solid var(--border)}
-  .ticket-items.open{display:block}
-  .item-row{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);align-items:flex-start}
-  .item-cb{width:20px;height:20px;accent-color:var(--ink);cursor:pointer;flex-shrink:0;margin-top:2px}
-  .item-name{font-weight:700;font-size:15px}
-  .item-meta{font-size:11px;color:var(--ink3);margin-top:2px}
-  .split-btn{margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase}
-  .parts-box{margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border);display:none}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px}
+.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer}
+
+.note-box{background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:10px 12px}
+.note-box .nb-label{font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.05em}
+.note-box .nb-en{font-size:13.5px;margin-top:3px}
+.note-box .nb-es{font-size:12.5px;font-style:italic;color:var(--ink2);margin-top:4px}
+
+.mobile-topbar{display:none}
+@media (max-width:880px){
+  .sidebar{transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.2)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0}
+  .mobile-topbar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .stat-grid{grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 <body>
 
-<div id="login-gate">
+<!-- ===== LOGIN ===== -->
+<div id="login-screen">
   <div class="login-box">
-    <div class="login-logo">glint</div>
-    <div class="login-sub">Control Room</div>
-    <div style="margin-bottom:14px;text-align:left">
-      <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:6px">Admin Password</label>
-      <input id="admin-pass" type="password" placeholder="Enter password" onkeydown="if(event.key==='Enter')adminLogin()">
-    </div>
-    <button class="btn" style="width:100%" onclick="adminLogin()">Enter</button>
+    <div class="wordmark">glint</div>
+    <div class="subtitle">Control Room</div>
+    <input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')adminLogin()">
+    <button onclick="adminLogin()">Enter</button>
+    <div class="login-err" id="login-err"></div>
   </div>
 </div>
 
-<div class="shell" id="shell">
-  <div class="topbar">
-    <div class="brand">glint<span>Control Room</span></div>
-    <div class="topbar-right">
-      <div><span class="live-dot"></span><span style="font-size:12px;font-weight:600;color:var(--ink2)">Live</span></div>
-      <div class="clock" id="clock"></div>
-      <button class="btn btn-ghost btn-sm" onclick="adminLogout()">Log Out</button>
+<!-- ===== APP ===== -->
+<div id="app">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="wordmark">glint</div>
+      <div class="subtitle">Control Room</div>
+    </div>
+    <div class="sidebar-nav" id="sidebar-nav"></div>
+    <div class="sidebar-foot">
+      <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
+      <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
 
-  <div class="nav">
-    <div class="nav-tab active" onclick="showPage('live',this)">Live</div>
-    <div class="nav-tab" onclick="showPage('tickets',this)">Print Labels</div>
-    <div class="nav-tab" onclick="showPage('reports',this)">Reports</div>
-    <div class="nav-tab" onclick="showPage('orders',this)">Orders</div>
-    <div class="nav-tab" onclick="showPage('history',this)">History</div>
-    <div class="nav-tab" onclick="showPage('workers',this)">Workers</div>
-    <div class="nav-tab" onclick="showPage('labels',this)">Labels</div>
-    <div class="nav-tab" onclick="showPage('settings',this)">Settings</div>
-  </div>
-
-  <div class="content">
-
-    <div class="page active" id="page-live">
-      <div class="page-head">
-        <div><div class="page-title">Right Now</div><div class="page-sub">Who's working on what, updating live</div></div>
-        <button class="btn btn-ghost" onclick="loadLive()">↻ Refresh</button>
-      </div>
-      <div class="stats" id="live-stats"></div>
-      <div class="live-grid" id="live-grid"></div>
+  <div class="main">
+    <div class="mobile-topbar">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <div class="wordmark" style="font-size:20px">glint</div>
     </div>
-
-    <div class="page" id="page-tickets">
-      <div class="page-head">
-        <div><div class="page-title">Print Labels</div><div class="page-sub">Load a ticket, pick items, print barcodes</div></div>
-        <div class="head-actions">
-          <input class="search" id="ticket-search" placeholder="Search ticket # or customer..." oninput="filterTickets()">
-          <button class="btn btn-ghost" onclick="loadTickets()">↻ Reload</button>
-        </div>
-      </div>
-      <div id="print-bar" style="position:sticky;top:120px;z-index:10;margin-bottom:16px;display:none">
-        <button class="btn" style="width:100%;padding:15px" onclick="printSelected()">🖨️ Print Selected Labels (<span id="selected-count">0</span>)</button>
-      </div>
-      <div id="tickets-list"><div class="empty">Loading tickets…</div></div>
-    </div>
-
-    <div class="page" id="page-reports">
-      <div class="page-head">
-        <div><div class="page-title">Reports</div><div class="page-sub">Time totals by item and by worker</div></div>
-        <div class="head-actions" style="flex-wrap:wrap">
-          <div class="seg" id="range-seg">
-            <button class="on" onclick="setRange('today',this)">Today</button>
-            <button onclick="setRange('week',this)">Week</button>
-            <button onclick="setRange('month',this)">Month</button>
-            <button onclick="setRange('all',this)">All</button>
+    <div class="topbar">
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div class="topbar-actions">
+        <div class="bell-wrap">
+          <button class="bell-btn" onclick="toggleBell()">🔔<span class="bell-badge" id="bell-badge" style="display:none">0</span></button>
+          <div class="bell-panel" id="bell-panel">
+            <div class="bell-panel-head"><span>Notifications</span><span style="cursor:pointer;text-transform:none;font-weight:400" onclick="clearNotifications()">Clear</span></div>
+            <div id="bell-list"></div>
           </div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
-            <input type="date" id="range-from" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
-            <span>→</span>
-            <input type="date" id="range-to" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="exportReports()">⬇ Export CSV</button>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">👆 tap any item to see its full timeline, notes & photos</span></div>
-        <div style="overflow-x:auto">
-          <table id="item-report">
-            <thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Time per Worker <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--ink3)">👆 tap any worker to see everything they worked on</span></div>
-        <div style="overflow-x:auto">
-          <table id="worker-report">
-            <thead><tr><th>Worker</th><th>Total Time</th><th>Items Worked</th><th>Sessions</th></tr></thead>
-            <tbody></tbody>
-          </table>
         </div>
       </div>
     </div>
-
-    <div class="page" id="page-orders">
-      <div class="page-head">
-        <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time — search anything</div></div>
-        <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrders()">
-      </div>
-      <div id="orders-list"></div>
-    </div>
-
-    <div class="page" id="page-history">
-      <div class="page-head">
-        <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first</div></div>
-        <div class="head-actions" style="flex-wrap:wrap">
-          <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistory()">
-          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
-            <input type="date" id="hist-from" onchange="renderHistory()" style="padding:6px 8px;font-size:12px;width:auto">
-            <span>→</span>
-            <input type="date" id="hist-to" onchange="renderHistory()" style="padding:6px 8px;font-size:12px;width:auto">
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="exportHistory()">⬇ Export CSV</button>
-        </div>
-      </div>
-      <div class="card">
-        <div style="overflow-x:auto">
-          <table id="history-table">
-            <thead><tr><th>Time</th><th>Item</th><th>Customer</th><th>Worker</th><th>Role</th><th>Action</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="page" id="page-workers">
-      <div class="page-head">
-        <div><div class="page-title">Workers</div><div class="page-sub">Add people and set their login PIN and roles</div></div>
-      </div>
-      <div class="grid" id="workers-grid" style="grid-template-columns:1fr 1fr;gap:16px">
-        <div class="card">
-          <div class="card-label">Add Worker</div>
-          <div class="field" style="margin-bottom:12px"><label>Name</label><input id="nw-name" placeholder="e.g. Aron"></div>
-          <div class="field" style="margin-bottom:12px"><label>Login PIN (4 digits)</label><input id="nw-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 1111"></div>
-          <div style="margin-bottom:14px">
-            <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
-            <div id="nw-roles"></div>
-          </div>
-          <button class="btn" style="width:100%" onclick="addWorker()">Add Worker</button>
-        </div>
-        <div class="card">
-          <div class="card-label">Manage Roles</div>
-          <div class="row" style="margin-bottom:14px">
-            <div class="field"><input id="new-role" placeholder="New role name"></div>
-            <button class="btn" onclick="addRole()">Add</button>
-          </div>
-          <div id="roles-list"></div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:16px">
-        <div class="card-label">All Workers</div>
-        <div style="overflow-x:auto">
-          <table id="workers-table">
-            <thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th style="text-align:center">Print Labels</th><th></th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="page" id="page-labels">
-      <div class="page-head">
-        <div><div class="page-title">Labels Printed</div><div class="page-sub">Every barcode printed, newest first</div></div>
-        <div class="head-actions">
-          <input class="search" id="labels-search" placeholder="Search item, customer..." oninput="renderLabels()">
-          <button class="btn btn-ghost btn-sm" onclick="exportLabels()">⬇ Export CSV</button>
-        </div>
-      </div>
-      <div class="card">
-        <div style="overflow-x:auto">
-          <table id="labels-table">
-            <thead><tr><th>Printed</th><th>Item ID</th><th>Item</th><th>Customer</th><th>City</th><th>Part</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="page" id="page-empreport">
-      <div class="page-head">
-        <div>
-          <div class="page-title" id="emp-title">Employee Report</div>
-          <div class="page-sub" id="emp-sub">Full work history</div>
-        </div>
-        <div class="head-actions" style="flex-wrap:wrap">
-          <div class="seg" id="emp-range-seg">
-            <button class="on" onclick="empSetRange('today',this)">Today</button>
-            <button onclick="empSetRange('week',this)">Week</button>
-            <button onclick="empSetRange('month',this)">Month</button>
-            <button onclick="empSetRange('all',this)">All</button>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
-            <input type="date" id="emp-from" onchange="empCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
-            <span>→</span>
-            <input type="date" id="emp-to" onchange="empCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
-          </div>
-          <input class="search" id="emp-search" placeholder="Search ticket, item..." oninput="renderEmployeeReport()">
-          <button class="btn btn-ghost btn-sm" onclick="exportEmployeeReport()">⬇ Export CSV</button>
-          <button class="btn btn-ghost btn-sm" onclick="showPage('workers')">← Back to Workers</button>
-        </div>
-      </div>
-      <div id="emp-content"></div>
-    </div>
-
-    <div class="page" id="page-settings">
-      <div class="page-head">
-        <div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div>
-      </div>
-      <div class="card" style="max-width:480px">
-        <div class="card-label">Change Admin Password</div>
-        <div class="field" style="margin-bottom:12px"><label>Current Password</label><input id="cur-pass" type="password" placeholder="Enter current password"></div>
-        <div class="field" style="margin-bottom:12px"><label>New Password</label><input id="new-pass" type="password" placeholder="At least 6 characters"></div>
-        <div class="field" style="margin-bottom:16px"><label>Confirm New Password</label><input id="new-pass2" type="password" placeholder="Repeat new password"></div>
-        <button class="btn" style="width:100%" onclick="changeAdminPassword()">Update Password</button>
-      </div>
-
-      <div class="card" style="max-width:480px;margin-top:16px">
-        <div class="card-label">Label Size</div>
-        <div class="page-sub" style="margin-bottom:14px">Set your Dymo label dimensions in millimeters</div>
-        <div class="row" style="margin-bottom:14px">
-          <div class="field"><label>Width (mm)</label><input id="ls-width" type="number" min="20" max="300"></div>
-          <div class="field"><label>Height (mm)</label><input id="ls-height" type="number" min="10" max="300"></div>
-          <button class="btn" onclick="saveLabelSize()">Save</button>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(102,59)">102 × 59</button>
-          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(89,36)">89 × 36</button>
-          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(57,32)">57 × 32</button>
-          <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(54,25)">54 × 25</button>
-        </div>
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<div class="modal-bg" id="edit-modal">
-  <div class="modal">
-    <span class="modal-close" onclick="closeEdit()">✕</span>
-    <div class="modal-title">Edit Worker</div>
-    <div class="page-sub" style="margin-bottom:20px">Update PIN or roles</div>
-    <input type="hidden" id="edit-id">
-    <div class="field" style="margin-bottom:14px"><label>Name</label><input id="edit-name"></div>
-    <div class="field" style="margin-bottom:14px"><label>Login PIN</label><input id="edit-pin" inputmode="numeric" maxlength="6"></div>
-    <div style="margin-bottom:20px">
-      <label style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);display:block;margin-bottom:8px">Roles</label>
-      <div id="edit-roles"></div>
-    </div>
-    <button class="btn" style="width:100%" onclick="saveEdit()">Save Changes</button>
-  </div>
-</div>
-
-<div class="modal-bg" id="item-modal">
-  <div class="modal">
-    <span class="modal-close" onclick="closeItem()">✕</span>
-    <div class="modal-title" id="item-modal-title">Item</div>
-    <div class="page-sub" id="item-modal-sub" style="margin-bottom:20px"></div>
-    <div id="item-timeline"></div>
-  </div>
-</div>
-
-<div class="modal-bg" id="photos-modal">
-  <div class="modal">
-    <span class="modal-close" onclick="document.getElementById('photos-modal').classList.remove('show')">✕</span>
-    <div class="modal-title" id="photos-modal-title">Photos</div>
-    <div id="photos-modal-content" style="margin-top:16px"></div>
+    <div class="content" id="content"></div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
+<!-- Generic modal for small forms (edit worker, etc.) -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" id="modal-inner"></div>
+</div>
+
 <script>
+// ========================================================================
+// CONSTANTS
+// ========================================================================
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
-const FALLBACK_PASS = 'glint2026'; // used only if no password is set in the database yet
+const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
+const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
+const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
 const IDLE_ALERT_HOURS = 12;
+const MAX_SESSION_MS = 8*3600*1000;
 
-let scans=[], workers=[], roles=[], labels=[];
-let nwSelectedRoles=[], editSelectedRoles=[];
-let liveTimers=null, reportRange='today';
-let currentAdminPass = null;
+const NAV_ITEMS = [
+  {route:'live', label:'Live', icon:'●'},
+  {route:'print', label:'Print Labels', icon:'🏷'},
+  {route:'reports', label:'Reports', icon:'▤'},
+  {route:'orders', label:'Orders', icon:'▦'},
+  {route:'history', label:'History', icon:'≡'},
+  {route:'workers', label:'Workers', icon:'◐'},
+  {route:'labels', label:'Labels', icon:'▭'},
+  {route:'settings', label:'Settings', icon:'⚙'},
+];
 
-async function fetchAdminPass(){
-  try{
-    const rows = await sb('settings?key=eq.admin_password&select=value');
-    if(rows && rows.length) return rows[0].value;
-  }catch(e){}
-  return FALLBACK_PASS;
-}
+// ========================================================================
+// STATE
+// ========================================================================
+let scans=[], workers=[], roles=[], allTickets=[];
+let labelSize = JSON.parse(localStorage.getItem('glint_label_size') || '{"width":102,"height":59}');
+let reportRange='today', customFrom=null, customTo=null;
+let empRange='today', empFrom=null, empTo=null;
+let notifications = JSON.parse(localStorage.getItem('glint_notifications')||'[]');
+let lastSeenTs = localStorage.getItem('glint_last_seen_ts') || null;
+let itemNameCache = JSON.parse(localStorage.getItem('glint_item_names')||'{}'); // itemId -> name (fallback resolution)
 
-async function adminLogin(){
-  const p=document.getElementById('admin-pass').value;
-  // Already logged in this session
-  if(sessionStorage.getItem('glint_admin')==='1'){
-    document.getElementById('login-gate').style.display='none';
-    document.getElementById('shell').style.display='block';
-    bootstrap();
-    return;
-  }
-  currentAdminPass = await fetchAdminPass();
-  if(p===currentAdminPass){
-    sessionStorage.setItem('glint_admin','1');
-    document.getElementById('login-gate').style.display='none';
-    document.getElementById('shell').style.display='block';
-    bootstrap();
-  } else toast('Wrong password');
-}
-function adminLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
-if(sessionStorage.getItem('glint_admin')==='1') adminLogin();
+// ========================================================================
+// HELPERS
+// ========================================================================
+function escg(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function esc(s){ return escg(s); }
+function jsstr(s){ return (s==null?'':String(s)).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function h(route,param){ return '#/'+route+(param!=null?'/'+encodeURIComponent(param):''); }
 
-function loadLabelSizeInputs(){
-  const w=document.getElementById('ls-width'), h=document.getElementById('ls-height');
-  if(w) w.value=labelSize.width;
-  if(h) h.value=labelSize.height;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer=setTimeout(()=>t.classList.remove('show'), 2600);
 }
-function saveLabelSize(){
-  const w=parseFloat(document.getElementById('ls-width').value), h=parseFloat(document.getElementById('ls-height').value);
-  if(!w||!h||w<10||h<10){ toast('Enter valid dimensions'); return; }
-  labelSize={width:w,height:h};
-  localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
-  toast('✅ Label size saved: '+w+' × '+h+' mm');
+function fmtDur(ms){
+  if(ms<0) ms=0;
+  const s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+  if(h>0) return h+'h '+m+'m';
+  if(m>0) return m+'m '+sec+'s';
+  return sec+'s';
 }
-function setLabelPreset(w,h){
-  labelSize={width:w,height:h};
-  localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
-  loadLabelSizeInputs();
-  toast('✅ Label size: '+w+' × '+h+' mm');
+function fmtDate(iso){ const d=new Date(iso); return d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+function fmtDateFull(iso){ const d=new Date(iso); return d.toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'})+', '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); }
+function relTime(iso){
+  const s=Math.floor((Date.now()-new Date(iso).getTime())/1000);
+  if(s<60) return 'just now';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
 }
-
-async function changeAdminPassword(){
-  const cur=document.getElementById('cur-pass').value;
-  const n1=document.getElementById('new-pass').value;
-  const n2=document.getElementById('new-pass2').value;
-  const existing = currentAdminPass || await fetchAdminPass();
-  if(cur!==existing){ toast('Current password is wrong'); return; }
-  if(n1.length<6){ toast('New password must be at least 6 characters'); return; }
-  if(n1!==n2){ toast('New passwords do not match'); return; }
-  // Upsert into settings
-  const r = await fetch(SUPABASE_URL+'/rest/v1/settings',{
-    method:'POST',
-    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
-    body:JSON.stringify({key:'admin_password', value:n1})
-  });
-  if(r.ok){
-    currentAdminPass=n1;
-    document.getElementById('cur-pass').value='';
-    document.getElementById('new-pass').value='';
-    document.getElementById('new-pass2').value='';
-    toast('✅ Password updated');
-  } else toast('Could not update password');
-}
+function orderIdOf(itemId){ const m=(itemId||'').match(/^(T-\d+)/i); return m?m[1]:(itemId||'').split('-').slice(0,2).join('-'); }
+function isCandelabra(name){ return /candelabra/i.test(name||''); }
 
 async function sb(path, opts={}){
-  const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',...(opts.headers||{})}});
+  const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{...opts,headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':opts.headers&&opts.headers['Prefer']?opts.headers['Prefer']:'return=representation',...(opts.headers||{})}});
   if(opts.method && opts.method!=='GET') return r;
   return r.json();
 }
 
-async function bootstrap(){
-  startClock();
-  await Promise.all([loadAllScans(), loadWorkers(), loadRoles()]);
-  computeLive();
-  setInterval(async ()=>{ await loadAllScans(); computeLive(); }, 15000);
-}
-async function loadAllScans(){ scans = await sb('scans?select=*&order=created_at.desc&limit=5000'); }
-
-function startClock(){ const el=document.getElementById('clock'); setInterval(()=>{el.textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000); }
-
-function showPage(name, el){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  // Highlight the matching nav tab (works even when called without a click)
-  if(el && el.classList){ el.classList.add('active'); }
-  else { document.querySelectorAll('.nav-tab').forEach(t=>{ if(t.textContent.trim().toLowerCase()===name.toLowerCase()) t.classList.add('active'); }); }
-  if(name==='reports') computeReports();
-  if(name==='orders') renderOrders();
-  if(name==='history') renderHistory();
-  if(name==='labels') loadLabels();
-  if(name==='workers'){ loadWorkers(); loadRoles(); }
-  if(name==='live') computeLive();
-  if(name==='tickets' && !allTickets.length) loadTickets();
-  if(name==='settings') loadLabelSizeInputs();
-}
-
-// Jump to an order's full details from anywhere
-function goToOrder(oid){
-  showPage('orders');
-  const box=document.getElementById('orders-search');
-  if(box){ box.value=oid; renderOrders(); }
-  const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
-  setTimeout(()=>{
-    const btn=document.getElementById('ord-btn-'+safe);
-    if(btn){ loadOrderDetail(oid, safe); btn.scrollIntoView({behavior:'smooth',block:'center'}); }
-  }, 200);
-}
-
-// ===== TICKETS + PRINTING =====
-const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
-const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
-// RepairDesk blocks browser (CORS) requests, so we route through a proxy.
-function proxied(url){ return 'https://corsproxy.io/?url=' + encodeURIComponent(url); }
-// Resilient fetch: try multiple CORS proxies until one works
+// Resilient multi-proxy fetch for RepairDesk API (browser CORS workaround)
 const PROXIES = [
   u => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
   u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
@@ -556,18 +299,417 @@ async function fetchViaProxy(targetUrl){
       const resp=await fetch(make(targetUrl));
       if(!resp.ok){ lastErr=new Error('HTTP '+resp.status); continue; }
       const txt=await resp.text();
-      // Some proxies wrap or return HTML on error — ensure it's JSON
       try{ return JSON.parse(txt); }catch(e){ lastErr=new Error('bad response'); continue; }
     }catch(e){ lastErr=e; }
   }
   throw lastErr||new Error('All proxies failed');
 }
-const CANDELABRA_PARTS = ['Base','Arms','Cups','Plates'];
-let allTickets = [];
-let labelSize = JSON.parse(localStorage.getItem('glint_label_size') || '{"width":102,"height":59}');
 
+async function translateToSpanish(text){
+  if(!text||!text.trim()) return '';
+  try{
+    const url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q='+encodeURIComponent(text);
+    const r=await fetch(url);
+    const d=await r.json();
+    if(Array.isArray(d)&&Array.isArray(d[0])) return d[0].map(seg=>seg[0]).join('');
+  }catch(e){}
+  return '';
+}
+let esCache={};
+async function translateCached(text){
+  if(!text) return '';
+  if(esCache[text]!==undefined) return esCache[text];
+  const t=await translateToSpanish(text);
+  esCache[text]=t;
+  return t;
+}
+
+// ===== RepairDesk field getters =====
+function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
+function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
+function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
+function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return (s.customer.customer_group_name||'').trim(); } return ''; }
+function getCustomerPhone(t){ const s=t.summary; if(s&&s.customer){ return s.customer.mobile||s.customer.phone||''; } return ''; }
+function getCustomerAddress(t){ const s=t.summary; if(s&&s.customer){ return [s.customer.address1,s.customer.address2].filter(Boolean).join(', '); } return ''; }
+function getDevices(t){ return t.devices||[]; }
+function getDueDate(t){
+  const s=t.summary; let ts=null;
+  if(s){ ts = s.due_date || s.due_on || null; }
+  if(!ts && t.devices && t.devices.length){ ts = t.devices[0].due_on || t.devices[0].due_date || null; }
+  if(ts) return new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
+  return '';
+}
+// Only include diagnostic/repair notes — excludes driver, delivery, and other note types
+function isRepairNote(n){
+  const title=((n.tittle||n.title||'')+'').toLowerCase();
+  return title.includes('diagnostic');
+}
+function getDeviceNote(device, ticket){
+  const notesArr=(ticket&&ticket.notes)||[];
+  const devId=String(device.device?device.device.id:(device.id||''));
+  const devName=device.device_name||(device.device?device.device.name:'');
+  const matching=notesArr.filter(n=>(String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase())))&&isRepairNote(n));
+  return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · ');
+}
+function makeBarcode(text){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
+  catch(e){ return ''; }
+}
+
+// ========================================================================
+// AUTH
+// ========================================================================
+async function fetchAdminPass(){
+  try{ const r=await sb('settings?key=eq.admin_password&select=value'); return (r&&r[0]&&r[0].value)||'glint2026'; }catch(e){ return 'glint2026'; }
+}
+async function adminLogin(){
+  const pass=document.getElementById('login-pass').value;
+  const real=await fetchAdminPass();
+  if(pass===real){
+    sessionStorage.setItem('glint_admin','1');
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    bootstrap();
+  } else {
+    document.getElementById('login-err').textContent='Incorrect password';
+  }
+}
+function doLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
+if(sessionStorage.getItem('glint_admin')==='1'){
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  window.addEventListener('DOMContentLoaded', bootstrap);
+}
+
+// ========================================================================
+// SIDEBAR + CLOCK
+// ========================================================================
+function renderSidebar(){
+  const route=currentRoute();
+  document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.map(n=>
+    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}"><span class="snav-icon">${n.icon}</span>${n.label}</a>`
+  ).join('');
+}
+function startClock(){
+  function tick(){ document.getElementById('live-clock').textContent=new Date().toLocaleTimeString(); }
+  tick(); setInterval(tick,1000);
+}
+
+// ========================================================================
+// NOTIFICATIONS
+// ========================================================================
+function pruneNotifications(){
+  const cutoff=Date.now()-24*3600*1000;
+  notifications=notifications.filter(n=>new Date(n.ts).getTime()>cutoff);
+  localStorage.setItem('glint_notifications', JSON.stringify(notifications));
+}
+function checkForNewScans(){
+  if(!scans.length) return;
+  const sorted=[...scans].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const newest=sorted[sorted.length-1];
+  if(!lastSeenTs){
+    lastSeenTs=newest.created_at;
+    localStorage.setItem('glint_last_seen_ts', lastSeenTs);
+    renderBell(); return;
+  }
+  const newOnes=sorted.filter(s=>new Date(s.created_at)>new Date(lastSeenTs));
+  if(newOnes.length){
+    newOnes.forEach(s=>{
+      const started=(s.status||'').includes('Started');
+      notifications.unshift({
+        itemId:s.item_id,
+        text:`${s.worker} ${started?'started':'stopped'} ${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}`,
+        ts:s.created_at
+      });
+    });
+    lastSeenTs=newest.created_at;
+    localStorage.setItem('glint_last_seen_ts', lastSeenTs);
+    notifications=notifications.slice(0,150);
+    localStorage.setItem('glint_notifications', JSON.stringify(notifications));
+  }
+  pruneNotifications();
+  renderBell();
+}
+function renderBell(){
+  const badge=document.getElementById('bell-badge');
+  if(notifications.length){ badge.style.display='flex'; badge.textContent=notifications.length>99?'99+':notifications.length; }
+  else badge.style.display='none';
+  document.getElementById('bell-list').innerHTML=notifications.length?notifications.map(n=>
+    `<div class="bell-item" onclick="toggleBell();navigate('${h('item',n.itemId).replace(/'/g,"\\'")}')">${esc(n.text)}<div class="bt">${relTime(n.ts)}</div></div>`
+  ).join(''):'<div class="empty" style="padding:16px">No notifications</div>';
+}
+function toggleBell(){ document.getElementById('bell-panel').classList.toggle('show'); }
+function clearNotifications(){ notifications=[]; localStorage.setItem('glint_notifications','[]'); renderBell(); }
+document.addEventListener('click', e=>{
+  const wrap=document.querySelector('.bell-wrap');
+  if(wrap && !wrap.contains(e.target)) document.getElementById('bell-panel').classList.remove('show');
+});
+
+// ========================================================================
+// ROUTER
+// ========================================================================
+function navigate(hash){ location.hash=hash; }
+function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
+function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
+
+const ROUTE_LABELS={live:'Live',print:'Print Labels',reports:'Reports',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+
+function renderBreadcrumb(){
+  const route=currentRoute(), param=currentParam();
+  let html=`<a href="${h('live')}">Control Room</a>`;
+  if(route==='item'){
+    html+=` <span>›</span> <a href="${h('orders')}">Orders</a> <span>›</span> <span class="cur">${esc(param||'')}</span>`;
+  } else if(route==='order'){
+    html+=` <span>›</span> <a href="${h('orders')}">Orders</a> <span>›</span> <span class="cur">${esc(param||'')}</span>`;
+  } else if(route==='worker'){
+    html+=` <span>›</span> <a href="${h('workers')}">Workers</a> <span>›</span> <span class="cur">${esc(param||'')}</span>`;
+  } else if(route==='stat'){
+    html+=` <span>›</span> <a href="${h('live')}">Live</a> <span>›</span> <span class="cur">${esc(param||'')}</span>`;
+  } else {
+    html+=` <span>›</span> <span class="cur">${ROUTE_LABELS[route]||route}</span>`;
+  }
+  document.getElementById('breadcrumb').innerHTML=html;
+}
+
+const ROUTE_RENDERERS={
+  live: renderLivePage,
+  print: renderPrintPage,
+  reports: renderReportsPage,
+  orders: renderOrdersListPage,
+  history: renderHistoryPage,
+  workers: renderWorkersPage,
+  labels: renderLabelsPage,
+  settings: renderSettingsPage,
+  item: renderItemDetailPage,
+  order: renderOrderDetailPage,
+  worker: renderWorkerDetailPage,
+  stat: renderStatDetailPage,
+};
+
+function router(){
+  const route=currentRoute(), param=currentParam();
+  renderSidebar();
+  renderBreadcrumb();
+  const fn=ROUTE_RENDERERS[route]||renderLivePage;
+  document.getElementById('content').innerHTML='<div class="empty">Loading…</div>';
+  fn(param);
+}
+window.addEventListener('hashchange', router);
+
+// ========================================================================
+// BOOTSTRAP
+// ========================================================================
+async function loadAllScans(){ scans=await sb('scans?select=*&order=created_at.desc&limit=5000'); }
+async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); }
+async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); }
+
+async function bootstrap(){
+  startClock();
+  if(!location.hash) location.hash='#/live';
+  await Promise.all([loadAllScans(), loadWorkers(), loadRoles()]);
+  checkForNewScans();
+  router();
+  setInterval(async ()=>{
+    await loadAllScans();
+    checkForNewScans();
+    if(currentRoute()==='live') renderLivePage();
+  }, 15000);
+  setInterval(()=>{ document.querySelectorAll('.live-timer[data-start]').forEach(updateOneTimer); }, 1000);
+}
+
+function updateOneTimer(el){
+  const sec=Math.floor((Date.now()-new Date(el.dataset.start).getTime())/1000);
+  const hh=Math.floor(sec/3600), mm=Math.floor((sec%3600)/60), ss=sec%60, pad=n=>String(n).padStart(2,'0');
+  el.textContent = hh>0?`${hh}:${pad(mm)}:${pad(ss)}`:`${pad(mm)}:${pad(ss)}`;
+}
+
+// ========================================================================
+// SESSIONS / TIME MATH
+// ========================================================================
+function pairSessions(filterFn){
+  const chron=[...scans].reverse();
+  const open={}; const sessions=[];
+  chron.forEach(s=>{
+    const key=s.item_id+'::'+(s.role||'')+'::'+s.worker;
+    if((s.status||'').includes('Started')) open[key]=s;
+    else if((s.status||'').includes('Stopped') && open[key]){
+      const rawMs=Math.max(0,new Date(s.created_at)-new Date(open[key].created_at));
+      const runaway=rawMs>MAX_SESSION_MS;
+      sessions.push({ id:s.id, item_id:s.item_id, item_desc:s.item_desc, customer:s.customer, worker:s.worker, role:s.role, start:open[key].created_at, end:s.created_at, ms:runaway?MAX_SESSION_MS:rawMs, rawMs, runaway, startId:open[key].id, endId:s.id });
+      delete open[key];
+    }
+  });
+  return { sessions: filterFn?sessions.filter(x=>filterFn(x.end)):sessions, open:Object.values(open) };
+}
+function computeActive(){
+  const chron=[...scans].reverse();
+  const itemRoleState={};
+  chron.forEach(s=>{
+    const key=s.item_id+'::'+(s.role||'');
+    if((s.status||'').includes('Started')) itemRoleState[key]={worker:s.worker,itemId:s.item_id,itemDesc:s.item_desc,role:s.role,startedAt:s.created_at};
+    else delete itemRoleState[key];
+  });
+  const active={}; Object.values(itemRoleState).forEach(s=>active[s.worker]=s);
+  const now=Date.now();
+  const stale=Object.values(itemRoleState).filter(s=>(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000);
+  return {active, all:Object.values(itemRoleState), stale};
+}
+function analyzeItem(events){
+  const evts=[...events].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  let ms=0, workingBy=null; const byWorker={}; const openByKey={};
+  evts.forEach(e=>{
+    const key=(e.role||'')+'::'+e.worker;
+    if((e.status||'').includes('Started')){ openByKey[key]=e; }
+    else if((e.status||'').includes('Stopped')&&openByKey[key]){
+      const dur=new Date(e.created_at)-new Date(openByKey[key].created_at);
+      ms+=dur; byWorker[e.worker]=(byWorker[e.worker]||0)+dur;
+      delete openByKey[key];
+    }
+  });
+  const stillOpen=Object.keys(openByKey).length>0;
+  if(stillOpen) workingBy=Object.values(openByKey)[0].worker;
+  const done=evts.length>0&&!stillOpen;
+  return { ms, working:stillOpen, workingBy, done, byWorker };
+}
+
+// ========================================================================
+// ADMIN: EDIT / DELETE SCAN ENTRIES
+// ========================================================================
+async function deleteScanEntry(id, refreshFn){
+  if(!id){ toast('Cannot delete — no ID on this entry'); return; }
+  if(!confirm('Delete this entry? This cannot be undone.')) return;
+  const r=await sb('scans?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Deleted'); await loadAllScans(); if(refreshFn) refreshFn(); }
+  else toast('Could not delete');
+}
+async function editScanEntry(id, refreshFn){
+  if(!id){ toast('Cannot edit — no ID on this entry'); return; }
+  const row=scans.find(s=>s.id===id);
+  if(!row){ toast('Entry not found'); return; }
+  const cur=new Date(row.created_at);
+  const pad=n=>String(n).padStart(2,'0');
+  const localVal=`${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}T${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
+  const nv=prompt('Edit date & time (YYYY-MM-DDTHH:MM):', localVal);
+  if(!nv) return;
+  const nd=new Date(nv);
+  if(isNaN(nd.getTime())){ toast('Invalid date/time'); return; }
+  const r=await sb('scans?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({created_at:nd.toISOString()})});
+  if(r.ok){ toast('Updated'); await loadAllScans(); if(refreshFn) refreshFn(); }
+  else toast('Could not update');
+}
+
+// ========================================================================
+// PAGE: LIVE
+// ========================================================================
+function renderLivePage(){
+  const {active, stale}=computeActive();
+  window._staleList=stale; window._activeList=Object.values(active);
+  const workingCount=Object.keys(active).length;
+  const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
+
+  let html=`
+  <div class="page-head"><div><div class="page-title">Right Now</div><div class="page-sub">Who's working on what, updating live</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="renderLivePage()">↻ Refresh</button></div>
+  <div class="stat-grid">
+    <div class="stat-tile" onclick="navigate('${h('stat','working')}')"><div class="stat-num">${workingCount}</div><div class="stat-label">Working Now ›</div></div>
+    <div class="stat-tile" onclick="navigate('${h('workers')}')"><div class="stat-num">${workers.length}</div><div class="stat-label">Total Workers ›</div></div>
+    <div class="stat-tile" onclick="navigate('${h('stat','today')}')"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans Today ›</div></div>
+    <div class="stat-tile ${stale.length?'alert':''}" onclick="navigate('${h('stat','stale')}')"><div class="stat-num">${stale.length}</div><div class="stat-label">Left Running ${IDLE_ALERT_HOURS}h+ ›</div></div>
+  </div>
+  <div class="worker-grid">`;
+  html+=workers.map(w=>{
+    const s=active[w.name];
+    if(s){
+      const oid=orderIdOf(s.itemId);
+      const desc=(s.itemDesc&&s.itemDesc!==s.itemId)?esc(s.itemDesc):esc(s.itemId);
+      const isStale=(Date.now()-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
+      return `<div class="wcard working">
+        <div class="wname">${esc(w.name)}</div>
+        <div class="wrole">${esc(s.role||'Working')}${isStale?' · ⚠️ long':''}</div>
+        <div class="witem" onclick="navigate('${h('item',s.itemId).replace(/'/g,"\\'")}')">${desc}<br><span style="color:var(--ink3);font-size:11px">${esc(s.itemId)}</span></div>
+        <div class="wtimer live-timer" data-start="${s.startedAt}">--:--</div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn btn-ghost btn-sm" style="flex:1" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 Order</button>
+          <button class="btn btn-danger btn-sm" style="flex:1" onclick="liveForceStop('${jsstr(s.itemId)}','${jsstr(s.role||'')}','${jsstr(w.name)}','${jsstr(s.itemDesc||'')}')">■ Stop</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="wcard"><div class="wname">${esc(w.name)}</div><div class="wrole" style="color:var(--ink3)">${esc((w.roles||[]).join(', ')||'—')}</div><div class="widle">Not working right now</div></div>`;
+  }).join('');
+  html+='</div>';
+  document.getElementById('content').innerHTML = workers.length?html:html.replace('<div class="worker-grid">','<div class="worker-grid"><div class="empty">No workers yet — add them in the Workers tab</div>');
+}
+async function liveForceStop(itemId, role, worker, desc){
+  if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
+  const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:itemId,item_desc:desc,status:role+' — Stopped (admin)',worker:worker,role:role})});
+  if(r.ok){ toast('■ Stopped '+worker); await loadAllScans(); renderLivePage(); }
+  else toast('Could not stop');
+}
+
+// ========================================================================
+// PAGE: STAT DETAIL (working / today / stale)
+// ========================================================================
+function renderStatDetailPage(kind){
+  const {active, stale}=computeActive();
+  window._staleList=stale; window._activeList=Object.values(active);
+  const titles={working:'Working Now', today:'Scans Today', stale:'Left Running '+IDLE_ALERT_HOURS+'h+'};
+  let html=`<div class="page-head"><div><div class="page-title">${titles[kind]||'Detail'}</div></div></div><div class="card">`;
+  if(kind==='stale'){
+    const list=window._staleList||[];
+    html+=list.length?list.map(s=>`<div class="timeline-row">
+      <div class="tl-dot" style="background:var(--red)"></div>
+      <div style="flex:1;cursor:pointer" onclick="navigate('${h('item',s.itemId).replace(/'/g,"\\'")}')">
+        <strong>${s.itemDesc&&s.itemDesc!==s.itemId?esc(s.itemDesc):esc(s.itemId)}</strong> <span style="color:var(--ink3);font-size:11px">${esc(s.itemId)}</span>
+        <div style="font-size:12px;color:var(--ink3)">${esc(s.worker)} · ${esc(s.role||'—')} · started ${fmtDateFull(s.startedAt)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="color:var(--red);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</div>
+        <button class="btn btn-danger btn-sm" style="margin-top:6px" onclick="liveForceStop('${jsstr(s.itemId)}','${jsstr(s.role||'')}','${jsstr(s.worker)}','${jsstr(s.itemDesc||'')}');setTimeout(()=>renderStatDetailPage('stale'),400)">■ Force Stop</button>
+      </div></div>`).join(''):'<div class="empty">Nothing left running</div>';
+  } else if(kind==='today'){
+    const today=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    html+=today.length?today.map(s=>`<div class="timeline-row clickable" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')">
+      <div class="tl-dot" style="background:${(s.status||'').includes('Started')?'var(--green)':'var(--orange)'}"></div>
+      <div style="flex:1"><strong>${s.item_desc&&s.item_desc!==s.item_id?esc(s.item_desc):esc(s.item_id)}</strong> <span style="color:var(--ink3);font-size:11px">${esc(s.item_id)}</span>
+      <div style="font-size:12px;color:var(--ink3)">${esc(s.worker)} · ${esc(s.role||'—')} · ${fmtDate(s.created_at)}</div></div>
+      ${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}
+    </div>`).join(''):'<div class="empty">No scans today</div>';
+  } else {
+    const list=window._activeList||[];
+    html+=list.length?list.map(s=>`<div class="timeline-row clickable" onclick="navigate('${h('item',s.itemId).replace(/'/g,"\\'")}')">
+      <div class="tl-dot" style="background:var(--green)"></div>
+      <div style="flex:1"><strong>${esc(s.worker)}</strong> — ${s.itemDesc&&s.itemDesc!==s.itemId?esc(s.itemDesc):esc(s.itemId)} <span style="color:var(--ink3);font-size:11px">${esc(s.itemId)}</span>
+      <div style="font-size:12px;color:var(--ink3)">${esc(s.role||'—')}</div></div>
+      <div style="color:var(--green);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</div>
+    </div>`).join(''):'<div class="empty">Nobody working right now</div>';
+  }
+  html+='</div>';
+  document.getElementById('content').innerHTML=html;
+}
+
+// ========================================================================
+// PAGE: PRINT LABELS
+// ========================================================================
+function renderPrintPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Print Labels</div><div class="page-sub">Load a ticket, pick items, print barcodes</div></div>
+      <div class="head-actions">
+        <input class="search" id="tickets-search" placeholder="Search ticket # or customer..." oninput="filterTickets()">
+        <button class="btn btn-ghost btn-sm" onclick="loadTickets()">↻ Reload</button>
+      </div>
+    </div>
+    <div id="print-bar" style="display:none;position:sticky;top:0;z-index:5;margin-bottom:12px">
+      <button class="btn btn-gold btn-block" onclick="printSelected()">🖨️ Print Selected (<span id="sel-count">0</span>)</button>
+    </div>
+    <div id="tickets-list"><div class="empty">Loading tickets…</div></div>
+  `;
+  if(!allTickets.length) loadTickets(); else renderTickets(allTickets);
+}
 async function loadTickets(){
   const el=document.getElementById('tickets-list');
+  if(!el) return;
   el.innerHTML='<div class="empty">Loading tickets…</div>';
   try{
     let fetched=[]; let page=1, totalPages=1;
@@ -581,159 +723,117 @@ async function loadTickets(){
     allTickets=fetched;
     renderTickets(allTickets);
   }catch(err){
-    el.innerHTML='<div class="empty">Could not load tickets — '+err.message+'. Tap Reload to try again.</div>';
+    el.innerHTML='<div class="empty">Could not load tickets — '+esc(err.message)+'. Tap Reload to try again.</div>';
   }
 }
-function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
-function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
-function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
-function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return s.customer.customer_group_name||''; } return ''; }
-function getCustomerPhone(t){ const s=t.summary; if(s&&s.customer){ return s.customer.mobile||s.customer.phone||''; } return ''; }
-function getCustomerAddress(t){ const s=t.summary; if(s&&s.customer){ return [s.customer.address1,s.customer.address2].filter(Boolean).join(', '); } return ''; }
-function getDevices(t){ return t.devices||[]; }
-function getDueDate(t){
-  const s=t.summary;
-  let ts = null;
-  if(s){ ts = s.due_date || s.due_on || null; }
-  // Fall back to first device's due date
-  if(!ts && t.devices && t.devices.length){ ts = t.devices[0].due_on || t.devices[0].due_date || null; }
-  if(ts) return new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
-  return '';
+function filterTickets(){
+  const q=(document.getElementById('tickets-search').value||'').toLowerCase();
+  if(!q){ renderTickets(allTickets); return; }
+  renderTickets(allTickets.filter(t=>getOrderId(t).toLowerCase().includes(q)||getCustomerName(t).toLowerCase().includes(q)));
 }
-function isDriverNote(n){
-  // Exclude driver / delivery / pickup notes — keep only repair/diagnostic notes
-  const title=((n.tittle||n.title||'')+'').toLowerCase();
-  const txt=((n.msg_text||'')+'').toLowerCase();
-  if(/driver|delivery|deliver|pickup|pick up|pick-up|scanovator|not home|nobody home|no one home|left at|reschedul/.test(title)) return true;
-  if(/driver|nobody was home|no one was home|not home|nobody home|left at door|left with|reschedul|attempted delivery/.test(txt)) return true;
-  return false;
-}
-function getDeviceNote(device, ticket){
-  const notesArr=(ticket&&ticket.notes)||[];
-  const devId=String(device.device?device.device.id:(device.id||''));
-  const devName=device.device_name||(device.device?device.device.name:'');
-  const matching=notesArr.filter(n=>(String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase()))) && !isDriverNote(n));
-  return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · ');
-}
-function isCandelabra(name){ return /candelabra/i.test(name||''); }
-
 function renderTickets(list){
   const el=document.getElementById('tickets-list');
+  if(!el) return;
   if(!list.length){ el.innerHTML='<div class="empty">No tickets found</div>'; return; }
   el.innerHTML=list.map(t=>{
     const oid=getOrderId(t), cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
     const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div class="ticket">
-      <div class="ticket-head" onclick="toggleTicket('${oid}')">
-        <div>
-          <div class="ticket-id">${oid}</div>
-          <div class="ticket-cust">${cust}</div>
-          <div class="ticket-date">${city?'📍 '+city+'  ·  ':''}${due?'Due '+due:''}</div>
+    return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
+      <div style="padding:14px 18px;cursor:pointer" onclick="toggleTicket('${jsstr(oid)}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:10.5px;font-weight:700;color:var(--gold2);letter-spacing:.05em">${esc(oid)}</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700">${esc(cust)}</div>
+            <div style="font-size:11.5px;color:var(--ink3)">${city?'📍 '+esc(city)+'  ·  ':''}${due?'Due '+esc(due):''}</div>
+          </div>
+          <div style="font-size:11px;color:var(--ink3)">${getDevices(t).length} item${getDevices(t).length!==1?'s':''} ▾</div>
         </div>
-        <div style="font-size:11px;color:var(--ink3)">${getDevices(t).length} item${getDevices(t).length!==1?'s':''} ▾</div>
       </div>
-      <div class="ticket-items" id="ti-${safe}"></div>
+      <div id="ti-${safe}" style="display:none;padding:0 18px 16px;border-top:1px solid var(--border)"></div>
     </div>`;
   }).join('');
 }
-
 async function toggleTicket(oid){
   const idx0=allTickets.findIndex(x=>getOrderId(x)===oid); if(idx0<0) return;
   const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
   const box=document.getElementById('ti-'+safe);
-  if(box.classList.contains('open')){ box.classList.remove('open'); return; }
-  box.classList.add('open');
-
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  box.style.display='block';
   let t=allTickets[idx0];
-  // The list endpoint lacks city + notes — fetch full detail once
   if(!t._full){
     box.innerHTML='<div class="empty" style="padding:16px">Loading details…</div>';
     try{
       const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
       const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
       if(d&&d.data){ d.data._full=true; allTickets[idx0]=d.data; t=d.data; }
-    }catch(e){ /* fall back to list data */ }
+    }catch(e){}
   }
-
-  const cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t);
-  const group=getCustomerGroup(t), phone=getCustomerPhone(t), addr=getCustomerAddress(t);
+  const cust=getCustomerName(t), city=getCustomerCity(t), due=getDueDate(t), group=getCustomerGroup(t), phone=getCustomerPhone(t), addr=getCustomerAddress(t);
   const devices=getDevices(t);
-  // On-screen info banner: show ALL customer details
-  const infoBanner=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin:10px 0;font-size:12px;line-height:1.7">
-    <strong>${cust}</strong>${phone?' · '+phone:''}<br>
-    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+'City: '+city:''}${addr?'<br>'+addr:''}
+  const infoBanner=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin:12px 0;font-size:12.5px;line-height:1.7">
+    <strong>${esc(cust)}</strong>${phone?' · '+esc(phone):''}<br>
+    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+esc(group)+'</span>':''}${city?(group?' · ':'')+'City: '+esc(city):''}${addr?'<br>'+esc(addr):''}
   </div>`;
   box.innerHTML=infoBanner+devices.map((device,idx)=>{
     const num=idx+1, itemId=oid+'-'+num;
     const name=device.device?device.device.name:'Item '+num;
     const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
     const note=getDeviceNote(device,t);
-    const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     const cbId='cb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-    let h=`<div class="item-row">
-      <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
-        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}"
-        data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}">
+    const preImgs=(device.PreConditions_images||[]).map(im=>im.medium||im.small);
+    let row=`<div style="display:flex;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)">
+      <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateSelCount()" style="width:20px;height:20px;accent-color:var(--ink);margin-top:2px;flex-shrink:0"
+        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}">
       <div style="flex:1">
-        <div class="item-name">${name}</div>
-        ${services?`<div class="item-meta" style="color:var(--gold2)">${services}</div>`:''}
-        ${note?`<div class="item-meta" style="color:var(--red)">⚠️ ${note}</div>`:''}
-        <div class="item-meta">${itemId}</div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick='viewTicketPhotos("${itemId}","${esc(name)}",${JSON.stringify((device.PreConditions_images||[]).map(i=>i.medium||i.small))})'>🖼️ Photos</button>`;
+        <div style="font-weight:700;font-size:14.5px">${esc(name)}</div>
+        ${services?`<div style="font-size:11.5px;color:var(--gold2)">${esc(services)}</div>`:''}
+        ${note?`<div style="font-size:11.5px;color:var(--red)">⚠️ ${esc(note)}</div>`:''}
+        <div style="font-size:10.5px;color:var(--ink3)">${itemId}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="openPhotosModalByIndex(${registerPhotoData(itemId,name,preImgs)})">🖼️ Photos</button>`;
     const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
     if(isCandelabra(name)){
-      h+=`<button class="split-btn" onclick="toggleParts('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">⚙️ Split into parts (Base·Arms·Cups·Plates)</button>`;
+      row+=`<button class="btn btn-ghost btn-sm" onclick="toggleParts('${itemId}','${jsstr(name)}','${jsstr(cust)}','${jsstr(city)}','${jsstr(note)}','${jsstr(due)}','${jsstr(services)}','${jsstr(group)}')">⚙️ Split into parts</button>`;
     } else {
-      h+=`<button class="split-btn" onclick="customSplit('${itemId}','${esc(name)}','${esc(cust)}','${esc(city)}','${esc(note)}','${esc(due)}','${esc(services)}','${esc(group)}')">✂️ Split item</button>`;
+      row+=`<button class="btn btn-ghost btn-sm" onclick="customSplit('${itemId}','${jsstr(name)}','${jsstr(cust)}','${jsstr(city)}','${jsstr(note)}','${jsstr(due)}','${jsstr(services)}','${jsstr(group)}')">✂️ Split item</button>`;
     }
-    h+=`<div class="parts-box" id="${sid}"></div>`;
-    h+=`</div></div>`;
-    return h;
+    row+=`</div><div class="parts-box" id="${sid}" style="margin-top:8px"></div>
+      </div>
+    </div>`;
+    return row;
   }).join('')+`<div style="display:flex;gap:8px;padding:12px 0">
-    <button class="btn btn-sm" onclick="selectTicket('${oid}',${devices.length},true)">Select All</button>
-    <button class="btn btn-ghost btn-sm" onclick="selectTicket('${oid}',${devices.length},false)">Clear</button>
+    <button class="btn btn-sm" onclick="selectTicket('${jsstr(oid)}',${devices.length},true)">Select All</button>
+    <button class="btn btn-ghost btn-sm" onclick="selectTicket('${jsstr(oid)}',${devices.length},false)">Clear</button>
   </div>`;
 }
-
 function toggleParts(itemId,name,cust,city,note,due,services,group){
-  const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
-  const box=document.getElementById(sid);
-  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
+  const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById(sid);
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateSelCount(); return; }
   box.style.display='block';
-  box.innerHTML='<div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Each part prints its own label</div>'+
+  box.innerHTML='<div style="font-size:10px;color:var(--ink3);font-weight:700;text-transform:uppercase;margin-bottom:8px">Each part prints its own label</div>'+
     CANDELABRA_PARTS.map(part=>{
-      const pid=itemId+'-'+part.toUpperCase();
-      const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
-      return `<div class="item-row" style="padding:8px 0">
-        <input type="checkbox" class="item-cb" id="${cbId}" onchange="updateCount()"
-          data-item-id="${pid}" data-item-name="${name} — ${part}" data-services="${services||''}" data-customer="${cust}"
-          data-city="${city}" data-group="${group||''}" data-note="${note}" data-due="${due}" data-part="${part}">
-        <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>
-      </div>`;
-    }).join('')+
-    `<div style="display:flex;gap:6px;margin-top:8px">
-      <button class="btn btn-sm" onclick="selectParts('${itemId}',true)">All Parts</button>
-      <button class="btn btn-ghost btn-sm" onclick="selectParts('${itemId}',false)">None</button>
-    </div>`;
-  updateCount();
+      const pid=itemId+'-'+part.toUpperCase(), cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+      return `<div style="display:flex;gap:10px;padding:7px 0"><input type="checkbox" class="item-cb" id="${cbId}" onchange="updateSelCount()" style="width:18px;height:18px;accent-color:var(--ink)"
+        data-item-id="${pid}" data-item-name="${esc(name)} — ${part}" data-services="${esc(services||'')}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group||'')}" data-note="${esc(note)}" data-due="${esc(due)}" data-part="${part}">
+        <div style="font-weight:600;font-size:13.5px">${part}</div></div>`;
+    }).join('')+`<div style="display:flex;gap:6px;margin-top:6px">
+    <button class="btn btn-sm" onclick="selectParts('${jsstr(itemId)}',true)">All parts</button>
+    <button class="btn btn-ghost btn-sm" onclick="selectParts('${jsstr(itemId)}',false)">None</button></div>`;
+  updateSelCount();
 }
-function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateCount(); }
-function selectTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('cb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} updateCount(); }
-
-// Custom split — admin types their own part names for any item
 function customSplit(itemId,name,cust,city,note,due,services,group){
   const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById(sid);
-  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateCount(); return; }
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateSelCount(); return; }
   box.style.display='block';
   box.dataset.meta=JSON.stringify({itemId,name,cust,city,note,due,services,group});
   const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
   box.innerHTML=`<div style="font-size:11px;color:var(--ink3);margin-bottom:8px">Type a part name and add it — each makes its own label</div>
     <div style="display:flex;gap:8px;margin-bottom:10px">
-      <input type="text" id="cs-input-${key}" placeholder="e.g. Lid, Handle, Left side..." style="flex:1" onkeydown="if(event.key==='Enter')addCustomPart('${itemId}')">
-      <button class="btn btn-sm" onclick="addCustomPart('${itemId}')">+ Add</button>
+      <input type="text" id="cs-input-${key}" placeholder="e.g. Lid, Handle..." style="flex:1" onkeydown="if(event.key==='Enter')addCustomPart('${jsstr(itemId)}')">
+      <button class="btn btn-sm" onclick="addCustomPart('${jsstr(itemId)}')">+ Add</button>
     </div>
     <div id="cs-list-${key}"></div>`;
-  updateCount();
+  updateSelCount();
 }
 function addCustomPart(itemId){
   const key=itemId.replace(/[^a-zA-Z0-9]/g,'_');
@@ -745,46 +845,22 @@ function addCustomPart(itemId){
   const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
   const div=document.createElement('div');
-  div.className='item-row'; div.style.padding='8px 0';
-  div.innerHTML=`<input type="checkbox" class="item-cb" id="${cbId}" checked onchange="updateCount()"
-    data-item-id="${pid}" data-item-name="${meta.name} — ${part}" data-services="${meta.services||''}" data-customer="${meta.cust}" data-city="${meta.city}" data-group="${meta.group||''}" data-note="${meta.note}" data-due="${meta.due}" data-part="${part}">
-    <div style="flex:1"><div class="item-name" style="font-size:14px">${part}</div><div class="item-meta">${pid}</div></div>`;
+  div.style.cssText='display:flex;gap:10px;padding:7px 0';
+  div.innerHTML=`<input type="checkbox" class="item-cb" id="${cbId}" checked onchange="updateSelCount()" style="width:18px;height:18px;accent-color:var(--ink)"
+    data-item-id="${pid}" data-item-name="${esc(meta.name)} — ${esc(part)}" data-services="${esc(meta.services||'')}" data-customer="${esc(meta.cust)}" data-city="${esc(meta.city)}" data-group="${esc(meta.group||'')}" data-note="${esc(meta.note)}" data-due="${esc(meta.due)}" data-part="${esc(part)}">
+    <div style="font-weight:600;font-size:13.5px">${esc(part)}</div>`;
   list.appendChild(div);
   inp.value=''; inp.focus();
-  updateCount();
+  updateSelCount();
 }
-
-function updateCount(){
+function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateSelCount(); }
+function selectTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('cb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} updateSelCount(); }
+function updateSelCount(){
   const n=document.querySelectorAll('.item-cb:checked').length;
-  document.getElementById('selected-count').textContent=n;
-  document.getElementById('print-bar').style.display=n>0?'block':'none';
+  const cEl=document.getElementById('sel-count'), bar=document.getElementById('print-bar');
+  if(cEl) cEl.textContent=n;
+  if(bar) bar.style.display=n>0?'block':'none';
 }
-
-function filterTickets(){
-  const q=(document.getElementById('ticket-search').value||'').toLowerCase().trim();
-  if(!q){ renderTickets(allTickets); return; }
-  renderTickets(allTickets.filter(t=>(getOrderId(t).toLowerCase().includes(q)||getCustomerName(t).toLowerCase().includes(q))));
-}
-
-function makeBarcode(text){
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#ffffff',lineColor:'#000000'});
-    return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
-  catch(e){ return ''; }
-}
-
-// Google Translate (free endpoint) — translate text to Spanish
-async function translateToSpanish(text){
-  if(!text||!text.trim()) return '';
-  try{
-    const url='https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q='+encodeURIComponent(text);
-    const r=await fetch(url);
-    const d=await r.json();
-    if(Array.isArray(d)&&Array.isArray(d[0])) return d[0].map(seg=>seg[0]).join('');
-  }catch(e){}
-  return '';
-}
-
 async function printSelected(){
   const checked=document.querySelectorAll('.item-cb:checked');
   if(!checked.length){ toast('Select items first'); return; }
@@ -792,29 +868,23 @@ async function printSelected(){
     itemId:cb.dataset.itemId, itemName:cb.dataset.itemName||'', services:cb.dataset.services||'', customer:cb.dataset.customer||'',
     city:cb.dataset.city||'', group:cb.dataset.group||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
   }));
-  // Log labels to Supabase (full info including city)
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
 
-  // Translate notes to Spanish (only for items that have a note)
   toast('Preparing labels…');
-  for(const it of items){ it.noteEs = it.note ? await translateToSpanish(it.note) : ''; }
+  for(const it of items){ it.noteEs = it.note ? await translateCached(it.note) : ''; }
 
   const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
   const labelsHtml=withBc.map(it=>{
-    const orderId=(it.itemId.match(/^(T-\d+)/i)||[])[1]||it.itemId;
-    return `
-    <div class="label">
+    const oid=orderIdOf(it.itemId);
+    return `<div class="label">
       <div class="lt">
-        <div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>
-        ${it.services?`<div class="l-svc">${it.services}</div>`:''}
-        <div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>
-        ${it.note?`<div class="l-note">⚠️ ${it.note}${it.noteEs?`<br><span style="font-style:italic">🇪🇸 ${it.noteEs}</span>`:''}</div>`:''}
+        <div class="l-item">${escLbl(it.itemName)}${it.part?' — '+escLbl(it.part):''}</div>
+        ${it.services?`<div class="l-svc">${escLbl(it.services)}</div>`:''}
+        <div class="l-row">${it.due?`<span>DUE: ${escLbl(it.due)}</span>`:''}${it.group?`<span>${escLbl(it.group)}</span>`:''}</div>
+        ${it.note?`<div class="l-note">⚠️ EN: ${escLbl(it.note)}${it.noteEs?`<br>🇪🇸 ES: ${escLbl(it.noteEs)}`:''}</div>`:''}
       </div>
       <div class="lb"><img src="${it.bc}"></div>
-      <div class="lf">
-        ${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}
-        <div class="l-oid">${orderId}</div>
-      </div>
+      <div class="lf">${it.part?`<div class="l-part">◆ ${escLbl(it.part.toUpperCase())}</div>`:''}<div class="l-oid">${escLbl(oid)}</div></div>
     </div>`;
   }).join('');
   const W=labelSize.width, H=labelSize.height;
@@ -828,9 +898,9 @@ body{background:#fff;font-family:Arial,sans-serif}
 .l-item{font-size:11pt;font-weight:700;line-height:1.1}
 .l-svc{font-size:8pt;color:#444;margin-top:.5mm}
 .l-row{display:flex;justify-content:center;gap:4mm;margin-top:1mm;font-size:9.5pt;font-weight:700}
-.l-note{font-size:8.5pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.15}
+.l-note{font-size:7.5pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.25}
 .lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}
-.lb img{max-width:98%;max-height:24mm;height:auto}
+.lb img{max-width:98%;max-height:22mm;height:auto}
 .lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm}
 .l-part{font-size:9pt;font-weight:700;letter-spacing:.06em}
 .l-oid{font-size:15pt;font-weight:800;letter-spacing:.04em}
@@ -842,36 +912,14 @@ body{background:#fff;font-family:Arial,sans-serif}
   w.document.write(html); w.document.close();
   toast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
 }
+function escLbl(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-
-
-function setRange(r, el){
-  reportRange=r;
-  customFrom=null; customTo=null;
-  document.getElementById('range-from').value='';
-  document.getElementById('range-to').value='';
-  document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
-  el.classList.add('on');
-  computeReports();
-}
-let customFrom=null, customTo=null;
-function setCustomRange(){
-  const f=document.getElementById('range-from').value, t=document.getElementById('range-to').value;
-  customFrom=f?new Date(f+'T00:00:00'):null;
-  customTo=t?new Date(t+'T23:59:59'):null;
-  if(customFrom||customTo){
-    reportRange='custom';
-    document.querySelectorAll('#range-seg button').forEach(b=>b.classList.remove('on'));
-  }
-  computeReports();
-}
+// ========================================================================
+// PAGE: REPORTS
+// ========================================================================
 function inRange(dateStr){
   const d=new Date(dateStr);
-  if(reportRange==='custom'){
-    if(customFrom && d<customFrom) return false;
-    if(customTo && d>customTo) return false;
-    return true;
-  }
+  if(reportRange==='custom'){ if(customFrom&&d<customFrom)return false; if(customTo&&d>customTo)return false; return true; }
   if(reportRange==='all') return true;
   const now=new Date();
   if(reportRange==='today') return d.toDateString()===now.toDateString();
@@ -879,162 +927,100 @@ function inRange(dateStr){
   if(reportRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
   return true;
 }
-
-function loadLive(){ loadAllScans().then(computeLive); }
-function computeLive(){
-  const chron=[...scans].reverse();
-  const itemRoleState={};
-  chron.forEach(s=>{
-    const key=s.item_id+'::'+(s.role||'');
-    if((s.status||'').includes('Started')) itemRoleState[key]={worker:s.worker,itemId:s.item_id,itemDesc:s.item_desc,role:s.role,startedAt:s.created_at};
-    else delete itemRoleState[key];
+function setRange(r){
+  reportRange=r; customFrom=null; customTo=null;
+  document.getElementById('rep-from').value=''; document.getElementById('rep-to').value='';
+  document.querySelectorAll('#rep-range-seg button').forEach(b=>b.classList.toggle('on', b.dataset.r===r));
+  renderReportTables();
+}
+function setCustomRange(){
+  const f=document.getElementById('rep-from').value, t=document.getElementById('rep-to').value;
+  customFrom=f?new Date(f+'T00:00:00'):null; customTo=t?new Date(t+'T23:59:59'):null;
+  if(customFrom||customTo){ reportRange='custom'; document.querySelectorAll('#rep-range-seg button').forEach(b=>b.classList.remove('on')); }
+  renderReportTables();
+}
+function renderReportsPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Reports</div><div class="page-sub">Time totals by item and by worker</div></div>
+      <div class="head-actions">
+        <div class="seg" id="rep-range-seg">
+          <button class="on" data-r="today" onclick="setRange('today')">Today</button>
+          <button data-r="week" onclick="setRange('week')">Week</button>
+          <button data-r="month" onclick="setRange('month')">Month</button>
+          <button data-r="all" onclick="setRange('all')">All</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+          <input type="date" id="rep-from" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+          <span>→</span>
+          <input type="date" id="rep-to" onchange="setCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="exportReports()">⬇ Export CSV</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;color:var(--ink3)">👆 tap any item for its full timeline, notes & photos</span></div>
+      <div style="overflow-x:auto"><table id="item-report"><thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Time per Worker <span style="font-weight:600;text-transform:none;color:var(--ink3)">👆 tap any worker to see everything they worked on</span></div>
+      <div style="overflow-x:auto"><table id="worker-report"><thead><tr><th>Worker</th><th>Total Time</th><th>Items Worked</th><th>Sessions</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  `;
+  renderReportTables();
+}
+function renderReportTables(){
+  if(!document.getElementById('item-report')) return;
+  const {sessions, open}=pairSessions(inRange);
+  const itemAgg={};
+  sessions.forEach(s=>{
+    if(!itemAgg[s.item_id]) itemAgg[s.item_id]={desc:s.item_desc,customer:s.customer,ms:0,sessions:0,last:s.end};
+    itemAgg[s.item_id].ms+=s.ms; itemAgg[s.item_id].sessions++;
+    if(new Date(s.end)>new Date(itemAgg[s.item_id].last)) itemAgg[s.item_id].last=s.end;
   });
-  const active={}; Object.values(itemRoleState).forEach(s=>active[s.worker]=s);
-  const now=Date.now();
-  const stale=Object.values(itemRoleState).filter(s=>(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000);
+  const openIds=new Set(open.map(o=>o.item_id));
+  const ir=Object.entries(itemAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([id,d])=>
+    `<tr class="clickable" onclick="navigate('${h('item',id).replace(/'/g,"\\'")}')">
+      <td><strong>${d.desc&&d.desc!==id?esc(d.desc):''}</strong>${d.desc&&d.desc!==id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${esc(id)}</span></td>
+      <td>${esc(d.customer||'—')}</td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.sessions}</td><td>${fmtDate(d.last)}</td>
+      <td>${openIds.has(id)?'<span class="badge started">▶ Working</span>':'<span class="badge stopped">Done</span>'}</td>
+    </tr>`).join('');
+  document.querySelector('#item-report tbody').innerHTML=ir||'<tr><td colspan="6" class="empty">No sessions in this range</td></tr>';
 
-  const workingCount=Object.keys(active).length;
-  const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
-  const uniqueItems=new Set(scans.map(s=>s.item_id)).size;
-  window._staleList=stale;
-  document.getElementById('live-stats').innerHTML=`
-    <div class="stat" style="cursor:pointer" onclick="showStatDetail('working')"><div class="stat-num">${workingCount}</div><div class="stat-label">Working now ›</div></div>
-    <div class="stat" style="cursor:pointer" onclick="showPage('workers')"><div class="stat-num">${workers.length}</div><div class="stat-label">Total workers ›</div></div>
-    <div class="stat" style="cursor:pointer" onclick="showStatDetail('today')"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans today ›</div></div>
-    <div class="stat ${stale.length?'alert':''}" style="cursor:pointer" onclick="showStatDetail('stale')"><div class="stat-num">${stale.length}</div><div class="stat-label">Left running ${IDLE_ALERT_HOURS}h+ ›</div></div>`;
-
-  const grid=document.getElementById('live-grid');
-  if(!workers.length){ grid.innerHTML='<div class="empty">No workers yet — add them in the Workers tab</div>'; return; }
-  const activeList=Object.values(active);
-  window._activeSessions=activeList; // for safe lookup by index
-  grid.innerHTML=workers.map(w=>{
-    const s=active[w.name];
-    if(s){
-      const si=activeList.indexOf(s);
-      const isStale=(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
-      const oidLive=orderIdOf(s.itemId);
-      const descHtml = (s.itemDesc&&s.itemDesc!==s.itemId) ? (esc(s.itemDesc)+'<br><span style="color:var(--ink3);font-size:11px">'+esc(s.itemId)+'</span>') : esc(s.itemId);
-      return `<div class="live-card working">
-        <div class="live-worker">${esc(w.name)}</div>
-        <div class="live-role">${esc(s.role||'Working')}${isStale?' · ⚠️ long':''}</div>
-        <div class="live-item" style="cursor:pointer;text-decoration:underline" onclick="openItemBySession(${si})">${descHtml}</div>
-        <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" onclick="goToOrder('${oidLive.replace(/'/g,"\\'")}')">📋 View order ${esc(oidLive)}</button></div>
-        <div class="live-timer" data-start="${s.startedAt}">--:--</div>
-        <button class="btn btn-danger" style="margin-top:12px;width:100%;padding:9px" onclick="forceStopBySession(${si})">■ Force Stop</button>
-      </div>`;
-    }
-    return `<div class="live-card"><div class="live-worker">${esc(w.name)}</div><div class="live-role" style="color:var(--ink3)">${esc((w.roles||[]).join(', ')||'—')}</div><div class="live-idle">Not working right now</div></div>`;
-  }).join('');
-  if(liveTimers) clearInterval(liveTimers);
-  liveTimers=setInterval(updateLiveTimers,1000); updateLiveTimers();
-}
-function updateLiveTimers(){
-  document.querySelectorAll('.live-timer').forEach(el=>{
-    const sec=Math.floor((Date.now()-new Date(el.dataset.start).getTime())/1000);
-    const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60,pad=n=>String(n).padStart(2,'0');
-    el.textContent=h>0?`${h}:${pad(m)}:${pad(s)}`:`${pad(m)}:${pad(s)}`;
+  const workerAgg={};
+  sessions.forEach(s=>{
+    if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0};
+    workerAgg[s.worker].ms+=s.ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++;
   });
+  const wr=Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([n,d])=>
+    `<tr class="clickable" onclick="navigate('${h('worker',n).replace(/'/g,"\\'")}')"><td><strong>${esc(n)}</strong></td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.items.size}</td><td>${d.sessions}</td></tr>`).join('');
+  document.querySelector('#worker-report tbody').innerHTML=wr||'<tr><td colspan="4" class="empty">No sessions in this range</td></tr>';
+}
+function exportReports(){
+  const {sessions}=pairSessions(inRange);
+  let csv='Item ID,Item,Customer,Worker,Role,Start,End,Minutes,Flag\n';
+  sessions.forEach(s=>{ csv+=`"${s.item_id}","${(s.item_desc||'').replace(/"/g,'""')}","${(s.customer||'').replace(/"/g,'""')}","${s.worker}","${s.role||''}","${fmtDateFull(s.start)}","${fmtDateFull(s.end)}",${Math.round(s.ms/60000)},"${s.runaway?'left running':''}"\n`; });
+  downloadCsv(csv,'glint-report.csv');
+}
+function downloadCsv(csv,name){
+  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name; a.click();
 }
 
-function escg(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function esc(s){ return escg(s); }
-
-function showStatDetail(kind){
-  document.getElementById('item-modal-title').textContent = kind==='stale'?'Left Running 12h+':(kind==='today'?'Scans Today':'Working Now');
-  document.getElementById('item-modal-sub').textContent='';
-  const tl=document.getElementById('item-timeline');
-  let html='';
-  if(kind==='stale'){
-    const list=window._staleList||[];
-    html=list.length?list.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:12px 0;cursor:pointer" onclick="closeItem();openItem('${s.itemId.replace(/'/g,"\\'")}')">
-      <div style="display:flex;justify-content:space-between"><strong>${s.itemDesc&&s.itemDesc!==s.itemId?s.itemDesc:s.itemId}</strong><span style="color:var(--red);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</span></div>
-      <div style="font-size:12px;color:var(--ink3)">${s.itemId} · ${s.worker} · ${s.role||'—'} · started ${fmtDateFull(s.startedAt)}</div>
-      <button class="btn btn-danger btn-sm" style="margin-top:6px" onclick="event.stopPropagation();closeItem();doForceStop('${s.itemId.replace(/'/g,"\\'")}','${(s.role||'').replace(/'/g,"\\'")}','${s.worker.replace(/'/g,"\\'")}','${(s.itemDesc||'').replace(/'/g,"\\'")}')">■ Force Stop</button>
-    </div>`).join(''):'<div class="empty">Nothing left running</div>';
-  } else if(kind==='today'){
-    const today=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
-    html=today.length?today.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:10px 0;cursor:pointer" onclick="closeItem();openItem('${s.item_id.replace(/'/g,"\\'")}')">
-      <div style="display:flex;justify-content:space-between"><span><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}</strong> <span style="color:var(--ink3);font-size:11px">${s.item_id}</span></span>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</div>
-      <div style="font-size:11px;color:var(--ink3)">${s.worker} · ${s.role||'—'} · ${fmtDate(s.created_at)}</div>
-    </div>`).join(''):'<div class="empty">No scans today</div>';
-  } else {
-    const list=window._activeSessions||[];
-    html=list.length?list.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:12px 0;cursor:pointer" onclick="closeItem();openItem('${s.itemId.replace(/'/g,"\\'")}')">
-      <div style="display:flex;justify-content:space-between"><strong>${s.worker}</strong><span style="color:var(--green);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</span></div>
-      <div style="font-size:12px;color:var(--ink3)">${s.itemDesc&&s.itemDesc!==s.itemId?s.itemDesc:s.itemId} · ${s.itemId} · ${s.role||'—'}</div>
-    </div>`).join(''):'<div class="empty">Nobody working right now</div>';
-  }
-  tl.innerHTML=html;
-  document.getElementById('item-modal').classList.add('show');
+// ========================================================================
+// PAGE: ORDERS (list)
+// ========================================================================
+function renderOrdersListPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time</div></div>
+      <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()">
+    </div>
+    <div id="orders-list"></div>
+  `;
+  renderOrdersList();
 }
-
-function forceStopBySession(idx){
-  const s=(window._activeSessions||[])[idx];
-  if(!s){ toast('Session not found — refresh'); return; }
-  // find the worker for this session
-  const worker=s.worker;
-  doForceStop(s.itemId, s.role||'', worker, s.itemDesc||'');
-}
-function openItemBySession(idx){
-  const s=(window._activeSessions||[])[idx];
-  if(s) openItem(s.itemId);
-}
-async function doForceStop(itemId, role, worker, desc){
-  if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
-  const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{
-    method:'POST',
-    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-    body:JSON.stringify({ item_id:itemId, item_desc:desc, status:role+' — Stopped (admin)', worker:worker, role:role })
-  });
-  if(r.ok){ toast('■ Stopped '+worker); await loadAllScans(); computeLive(); }
-  else toast('Could not stop');
-}
-
-async function forceStop(itemId, role, worker, desc){
-  return doForceStop(itemId, role, worker, desc);
-}
-
-const MAX_SESSION_MS = 8*3600*1000; // 8h — sessions longer than this were likely left running
-function pairSessions(filterFn){
-  const chron=[...scans].reverse();
-  const open={}; const sessions=[];
-  chron.forEach(s=>{
-    const key=s.item_id+'::'+(s.role||'')+'::'+s.worker;
-    if((s.status||'').includes('Started')) open[key]=s;
-    else if((s.status||'').includes('Stopped') && open[key]){
-      const rawMs=Math.max(0,new Date(s.created_at)-new Date(open[key].created_at));
-      const runaway=rawMs>MAX_SESSION_MS;
-      sessions.push({ item_id:s.item_id, item_desc:s.item_desc, customer:s.customer, worker:s.worker, role:s.role, start:open[key].created_at, end:s.created_at, ms:runaway?MAX_SESSION_MS:rawMs, rawMs:rawMs, runaway:runaway });
-      delete open[key];
-    }
-  });
-  return { sessions: filterFn?sessions.filter(x=>filterFn(x.end)):sessions, open:Object.values(open) };
-}
-function baseItemId(id){ return id.replace(/-(BASE|ARMS|CUPS|PLATES)$/i,''); }
-
-// ===== ORDERS VIEW =====
-function orderIdOf(itemId){ const m=itemId.match(/^(T-\d+)/i); return m?m[1]:itemId.split('-').slice(0,2).join('-'); }
-function analyzeItem(events){
-  // Returns {ms, working, workingBy, done, byWorker:{name:ms}, lastEnd}
-  const evts=[...events].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  let ms=0, working=false, workingBy=null, lastEnd=null;
-  const byWorker={}; const openByKey={};
-  evts.forEach(e=>{
-    const key=(e.role||'')+'::'+e.worker;
-    if((e.status||'').includes('Started')){ openByKey[key]=e; working=true; workingBy=e.worker; }
-    else if((e.status||'').includes('Stopped')&&openByKey[key]){
-      const dur=new Date(e.created_at)-new Date(openByKey[key].created_at);
-      ms+=dur; byWorker[e.worker]=(byWorker[e.worker]||0)+dur;
-      delete openByKey[key]; lastEnd=e.created_at;
-    }
-  });
-  // if any key still open, it's still working
-  const stillOpen=Object.keys(openByKey).length>0;
-  working=stillOpen; if(!stillOpen) workingBy=null; else workingBy=Object.values(openByKey)[0].worker;
-  const done=evts.length>0&&!stillOpen;
-  return {ms, working, workingBy, done, byWorker, lastEnd, openByKey};
-}
-function renderOrders(){
+function renderOrdersList(){
   const q=(document.getElementById('orders-search').value||'').toLowerCase().trim();
   const orders={};
   scans.forEach(s=>{
@@ -1055,364 +1041,209 @@ function renderOrders(){
   el.innerHTML=list.map(([oid,o])=>{
     const items=Object.entries(o.items);
     let doneCount=0, totalMs=0, anyWorking=false;
-    const orderWorkers={};
-    const itemRows=items.map(([iid,it])=>{
-      const a=analyzeItem(it.events);
-      totalMs+=a.ms;
-      if(a.done)doneCount++;
-      if(a.working)anyWorking=true;
-      Object.entries(a.byWorker).forEach(([w,ms])=>{ orderWorkers[w]=(orderWorkers[w]||0)+ms; });
-      if(a.workingBy) orderWorkers[a.workingBy]=orderWorkers[a.workingBy]||0;
-      // Part label
-      const pm=iid.match(/-(BASE|ARMS|CUPS|PLATES|[A-Z0-9]+)$/i);
-      const partBadge = (pm && /^(BASE|ARMS|CUPS|PLATES)$/i.test(pm[1])) ? `<span class="badge part">${pm[1].toUpperCase()}</span>` : '';
-      // Who worked list
-      const workerList=Object.entries(a.byWorker).sort((x,y)=>y[1]-x[1]).map(([w,ms])=>`${w} (${fmtDur(ms)})`).join(', ');
-      const statusBadge = a.working ? `<span class="badge started">▶ ${a.workingBy||'Working'}</span>` : (a.done?'<span class="badge stopped">Done</span>':'<span class="badge" style="background:var(--surface2);color:var(--ink3)">Not started</span>');
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openItem('${iid.replace(/'/g,"\\'")}')">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div><span style="font-weight:700">${it.desc&&it.desc!==iid?it.desc:iid}</span> ${partBadge} ${it.desc&&it.desc!==iid?`<span style="color:var(--ink3);font-size:11px">${iid}</span>`:''}</div>
-          <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">
-            <span style="font-size:13px;font-weight:700;color:var(--gold2)">${fmtDur(a.ms)}</span>
-            ${statusBadge}
-          </div>
-        </div>
-        ${workerList?`<div style="font-size:11px;color:var(--ink3);margin-top:3px">👷 ${workerList}</div>`:''}
-      </div>`;
-    }).join('');
+    items.forEach(([iid,it])=>{ const a=analyzeItem(it.events); totalMs+=a.ms; if(a.done)doneCount++; if(a.working)anyWorking=true; });
     const pct=items.length?Math.round(doneCount/items.length*100):0;
-    // Order-level worker summary
-    const orderWorkerSummary=Object.entries(orderWorkers).sort((a,b)=>b[1]-a[1]).map(([w,ms])=>`${w} · ${fmtDur(ms)}`).join('  |  ');
-    const safe=oid.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div class="card" style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+    return `<div class="card clickable" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-size:11px;font-weight:700;color:var(--gold2)">${oid}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
-          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700" id="ord-cust-${safe}">${o.customer&&o.customer!=='undefined'?o.customer:'—'}</div>
+          <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
+          <div style="font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:700">${o.customer&&o.customer!=='undefined'?esc(o.customer):'—'}</div>
+          <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done</div>
         </div>
         <div style="text-align:right">
-          <div style="font-size:12px;font-weight:700">${doneCount}/${items.length} items done</div>
-          <div style="font-size:12px;color:var(--gold2);font-weight:700">Total: ${fmtDur(totalMs)}</div>
-          <div style="width:140px;height:7px;background:var(--surface2);border-radius:4px;margin-top:5px;overflow:hidden;margin-left:auto"><div style="width:${pct}%;height:100%;background:${pct===100?'var(--green)':'var(--gold)'}"></div></div>
+          <div style="font-size:12px;font-weight:700">${doneCount}/${items.length} done</div>
+          <div style="font-size:12px;color:var(--gold2);font-weight:700">${fmtDur(totalMs)}</div>
+          <div style="width:130px;height:7px;background:var(--surface2);border-radius:4px;margin-top:5px;overflow:hidden;margin-left:auto"><div style="width:${pct}%;height:100%;background:${pct===100?'var(--green)':'var(--gold)'}"></div></div>
         </div>
       </div>
-      ${orderWorkerSummary?`<div style="font-size:11px;color:var(--ink3);background:var(--surface2);border-radius:6px;padding:6px 10px;margin-bottom:8px">⏱️ Time by worker: ${orderWorkerSummary}</div>`:''}
-      ${itemRows}
-      <button class="btn btn-sm" style="margin-top:12px;width:100%;background:var(--gold);color:#fff;font-weight:700" id="ord-btn-${safe}" onclick="loadOrderDetail('${oid}','${safe}')">📋 Show full order info + photos</button>
-      <div id="ord-detail-${safe}" style="display:none;margin-top:10px"></div>
     </div>`;
   }).join('');
 }
 
-// Fetch full RepairDesk detail for an order: customer info, service, notes, intake photos + worker photos
-async function loadOrderDetail(oid, safe){
-  const box=document.getElementById('ord-detail-'+safe);
-  const btn=document.getElementById('ord-btn-'+safe);
-  if(box.style.display==='block'){ box.style.display='none'; btn.textContent='📋 Show full order info + photos'; return; }
-  box.style.display='block'; btn.textContent='▲ Hide details';
-  box.innerHTML='<div style="text-align:center;color:var(--ink3);padding:16px">Loading order details…</div>';
-  // Fetch ticket from RepairDesk
+// ========================================================================
+// PAGE: ORDER DETAIL
+// ========================================================================
+async function renderOrderDetailPage(oid){
+  const el=document.getElementById('content');
+  el.innerHTML='<div class="empty">Loading order…</div>';
+  // Gather scan data for this order
+  const orderScans=scans.filter(s=>orderIdOf(s.item_id)===oid);
+  const itemsMap={};
+  orderScans.forEach(s=>{ if(!itemsMap[s.item_id]) itemsMap[s.item_id]={desc:s.item_desc, events:[]}; itemsMap[s.item_id].events.push(s); });
+  let customer=orderScans.find(s=>s.customer&&s.customer!=='undefined')?.customer || '';
+
+  let totalMs=0, doneCount=0; const items=Object.entries(itemsMap);
+  const orderWorkers={};
+  items.forEach(([iid,it])=>{
+    const a=analyzeItem(it.events); totalMs+=a.ms; if(a.done)doneCount++;
+    Object.entries(a.byWorker).forEach(([w,ms])=>{ orderWorkers[w]=(orderWorkers[w]||0)+ms; });
+  });
+  const pct=items.length?Math.round(doneCount/items.length*100):0;
+
+  // Fetch RepairDesk detail (customer info, service, notes, intake photos)
   let t=null;
-  try{
-    const tid=oid.replace(/\D/g,'');
-    const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
-    if(d&&d.data) t=d.data;
-  }catch(e){}
-  if(!t){ box.innerHTML='<div style="color:var(--red);padding:12px">Could not load RepairDesk details for this order.</div>'; return; }
+  try{ const tid=oid.replace(/\D/g,''); const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`); if(d&&d.data) t=d.data; }catch(e){}
 
-  // Update customer name in header if it was blank
-  const cust=getCustomerName(t), phone=getCustomerPhone(t), city=getCustomerCity(t), group=getCustomerGroup(t), addr=getCustomerAddress(t), due=getDueDate(t);
-  const custEl=document.getElementById('ord-cust-'+safe);
-  if(custEl && (custEl.textContent==='—'||!custEl.textContent.trim())) custEl.textContent=cust;
+  let html=`<div class="page-head"><div><div class="page-title">${esc(oid)}</div><div class="page-sub">${esc(customer||(t?getCustomerName(t):'—'))}</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="navigate('${h('orders')}')">← Back to Orders</button></div>`;
 
-  let html=`<div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;line-height:1.7">
-    <strong>${cust}</strong>${phone?' · '+phone:''}<br>
-    ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+'City: '+city:''}${addr?'<br>'+addr:''}${due?'<br>Due: '+due:''}
-  </div>`;
-
-  // Each item/device: service needed, note, intake photos, worker photos
-  const devs=t.devices||[];
-  for(let i=0;i<devs.length;i++){
-    const device=devs[i];
-    const num=i+1, itemId=oid+'-'+num;
-    const name=device.device?device.device.name:'Item '+num;
-    const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
-    const note=getDeviceNote(device,t);
-    const pre=(device.PreConditions_images||[]).map(im=>im.medium||im.small);
-    html+=`<div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:10px">
-      <div style="font-weight:700;font-size:15px">${name} <span style="color:var(--ink3);font-size:11px">${itemId}</span></div>
-      ${services?`<div style="font-size:12px;color:var(--gold2);margin-top:3px"><strong>Service needed:</strong> ${services}</div>`:''}
-      ${note?`<div style="font-size:12px;color:var(--red);margin-top:3px"><strong>⚠️ Note:</strong> ${note}</div>`:''}
-      <div id="ord-photos-${safe}-${num}" style="margin-top:8px"><div style="font-size:11px;color:var(--ink3)">Loading photos…</div></div>
-    </div>`;
-  }
-  box.innerHTML=html;
-
-  // Load photos for each item (intake from RepairDesk + worker photos from Supabase)
-  for(let i=0;i<devs.length;i++){
-    const device=devs[i];
-    const num=i+1, itemId=oid+'-'+num;
-    const pre=(device.PreConditions_images||[]).map(im=>im.medium||im.small);
-    const pbox=document.getElementById('ord-photos-'+safe+'-'+num);
-    let phtml='';
-    // Worker photos (also include split parts of this item)
-    try{
-      const imgs=await sb('item_images?item_id=like.'+encodeURIComponent(itemId)+'*&select=*&order=created_at.desc');
-      if(imgs&&imgs.length){
-        phtml+='<div style="font-size:10px;font-weight:700;color:var(--gold2);text-transform:uppercase;margin-bottom:4px">Our Photos</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">'+imgs.map(im=>`<a href="${im.image_url}" target="_blank"><img src="${im.image_url}" style="width:70px;height:70px;border-radius:6px;object-fit:cover"></a>`).join('')+'</div>';
-      }
-    }catch(e){}
-    if(pre.length){
-      phtml+='<div style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;margin-bottom:4px">Intake Photos</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+pre.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:70px;height:70px;border-radius:6px;object-fit:cover"></a>`).join('')+'</div>';
-    }
-    if(pbox) pbox.innerHTML=phtml||'<div style="font-size:11px;color:var(--ink3)">No photos</div>';
-  }
-}
-
-function computeReports(){
-  const {sessions, open}=pairSessions(inRange);
-  const itemAgg={};
-  sessions.forEach(s=>{
-    if(!itemAgg[s.item_id]) itemAgg[s.item_id]={ms:0,sessions:0,customer:s.customer,desc:s.item_desc,last:s.end,active:false};
-    itemAgg[s.item_id].ms+=s.ms; itemAgg[s.item_id].sessions++;
-    if(new Date(s.end)>new Date(itemAgg[s.item_id].last)) itemAgg[s.item_id].last=s.end;
-  });
-  open.forEach(o=>{ if(itemAgg[o.item_id]) itemAgg[o.item_id].active=true; else if(inRange(o.created_at)) itemAgg[o.item_id]={ms:0,sessions:0,customer:o.customer,desc:o.item_desc,last:o.created_at,active:true}; });
-
-  const partGroups={};
-  Object.keys(itemAgg).forEach(id=>{ const base=baseItemId(id); if(base!==id){ if(!partGroups[base]) partGroups[base]={ms:0,parts:0}; partGroups[base].ms+=itemAgg[id].ms; partGroups[base].parts++; } });
-
-  let rows=Object.entries(itemAgg).sort((a,b)=>new Date(b[1].last)-new Date(a[1].last)).map(([id,d])=>{
-    const pm=id.match(/-(BASE|ARMS|CUPS|PLATES)$/i);
-    return `<tr class="clickable" onclick="openItem('${id.replace(/'/g,"\\'")}')">
-      <td><strong>${d.desc&&d.desc!==id?d.desc:''}</strong> ${pm?'<span class="badge part">'+pm[1].toUpperCase()+'</span>':''}${d.desc&&d.desc!==id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${id}</span></td>
-      <td>${d.customer||'—'}</td>
-      <td><strong>${fmtDur(d.ms)}</strong></td>
-      <td>${d.sessions}</td>
-      <td>${fmtDate(d.last)}</td>
-      <td>${d.active?'<span class="badge started">Working</span>':'<span class="badge stopped">Idle</span>'}</td>
-    </tr>`;
-  });
-  const groupRows=Object.entries(partGroups).map(([base,g])=>`
-    <tr style="background:var(--surface2)">
-      <td><strong>◆ ${base} — All parts</strong><br><span style="color:var(--gold2);font-size:11px">${g.parts} parts combined</span></td>
-      <td>—</td><td><strong>${fmtDur(g.ms)}</strong></td><td>—</td><td>—</td>
-      <td><span class="badge part">Candelabra</span></td>
-    </tr>`);
-  document.querySelector('#item-report tbody').innerHTML=(groupRows.join('')+rows.join(''))||'<tr><td colspan="6" class="empty">No sessions in this range</td></tr>';
-
-  const workerAgg={};
-  sessions.forEach(s=>{ if(!workerAgg[s.worker]) workerAgg[s.worker]={ms:0,items:new Set(),sessions:0}; workerAgg[s.worker].ms+=s.ms; workerAgg[s.worker].items.add(s.item_id); workerAgg[s.worker].sessions++; });
-  const wr=Object.entries(workerAgg).sort((a,b)=>b[1].ms-a[1].ms).map(([n,d])=>`<tr class="clickable" onclick="openWorker('${n.replace(/'/g,"\\'")}')"><td><strong>${n}</strong></td><td><strong>${fmtDur(d.ms)}</strong></td><td>${d.items.size}</td><td>${d.sessions}</td></tr>`).join('');
-  document.querySelector('#worker-report tbody').innerHTML=wr||'<tr><td colspan="4" class="empty">No sessions in this range</td></tr>';
-}
-
-// ===== WORKER DETAIL =====
-// ===== FULL EMPLOYEE REPORT (page) =====
-let empName=null, empRange='today', empFrom=null, empTo=null;
-function openEmployeeReport(name){
-  empName=name; empRange='today'; empFrom=null; empTo=null;
-  document.getElementById('emp-title').textContent=name;
-  document.getElementById('emp-sub').textContent='Full work history — click any ticket to dig in';
-  document.getElementById('emp-search').value='';
-  document.querySelectorAll('#emp-range-seg button').forEach((b,i)=>b.classList.toggle('on',i===0));
-  const f=document.getElementById('emp-from'), t=document.getElementById('emp-to'); if(f)f.value=''; if(t)t.value='';
-  showPage('empreport');
-  renderEmployeeReport();
-}
-function empSetRange(r,el){ empRange=r; empFrom=null; empTo=null; document.getElementById('emp-from').value=''; document.getElementById('emp-to').value=''; document.querySelectorAll('#emp-range-seg button').forEach(b=>b.classList.remove('on')); el.classList.add('on'); renderEmployeeReport(); }
-function empCustomRange(){ const f=document.getElementById('emp-from').value,t=document.getElementById('emp-to').value; empFrom=f?new Date(f+'T00:00:00'):null; empTo=t?new Date(t+'T23:59:59'):null; if(empFrom||empTo){ empRange='custom'; document.querySelectorAll('#emp-range-seg button').forEach(b=>b.classList.remove('on')); } renderEmployeeReport(); }
-function empInRange(dateStr){
-  const d=new Date(dateStr);
-  if(empRange==='custom'){ if(empFrom&&d<empFrom)return false; if(empTo&&d>empTo)return false; return true; }
-  if(empRange==='all') return true;
-  const now=new Date();
-  if(empRange==='today') return d.toDateString()===now.toDateString();
-  if(empRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
-  if(empRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
-  return true;
-}
-function renderEmployeeReport(){
-  if(!empName) return;
-  const q=(document.getElementById('emp-search').value||'').toLowerCase().trim();
-  const res=pairSessions(empInRange);
-  let mine=res.sessions.filter(s=>s.worker===empName);
-  const openNow=res.open.filter(o=>o.worker===empName);
-  // Totals
-  const totalMs=mine.reduce((a,s)=>a+s.ms,0);
-  const items=new Set(mine.map(s=>s.item_id));
-  // Group by ticket/order
-  const byOrder={};
-  mine.forEach(s=>{ const oid=orderIdOf(s.item_id); if(!byOrder[oid])byOrder[oid]={ms:0,sessions:[],items:new Set()}; byOrder[oid].ms+=s.ms; byOrder[oid].sessions.push(s); byOrder[oid].items.add(s.item_id); });
-  // Role breakdown
-  const byRole={}; mine.forEach(s=>{ const r=s.role||'—'; byRole[r]=(byRole[r]||0)+s.ms; });
-  // Daily breakdown
-  const byDay={}; mine.forEach(s=>{ const d=new Date(s.end).toLocaleDateString(); byDay[d]=(byDay[d]||0)+s.ms; });
-
-  let orderList=Object.entries(byOrder).sort((a,b)=>b[1].ms-a[1].ms);
-  if(q) orderList=orderList.filter(([oid,o])=>oid.toLowerCase().includes(q)||o.sessions.some(s=>(s.item_desc||'').toLowerCase().includes(q)||s.item_id.toLowerCase().includes(q)));
-
-  let html=`<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total Time</div>
-      <div class="stat-num" style="font-size:28px">${fmtDur(totalMs)}</div></div>
-    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Items</div>
-      <div class="stat-num" style="font-size:28px">${items.size}</div></div>
-    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Sessions</div>
-      <div class="stat-num" style="font-size:28px">${mine.length}</div></div>
-    <div class="card" style="flex:1;min-width:120px;text-align:center;margin:0">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Orders</div>
-      <div class="stat-num" style="font-size:28px">${Object.keys(byOrder).length}</div></div>
-  </div>`;
-
-  // Working now
-  if(openNow.length){
-    html+='<div class="card" style="margin-bottom:16px;background:#eef7f2;border:1px solid var(--green)"><div class="card-label" style="color:var(--green)">▶ Working Right Now</div>'+
-      openNow.map(o=>`<div class="clickable" style="padding:8px 0;cursor:pointer" onclick="openItem('${o.item_id.replace(/'/g,"\\'")}')"><strong>${o.item_desc&&o.item_desc!==o.item_id?o.item_desc:o.item_id}</strong> <span style="color:var(--ink3);font-size:11px">${o.item_id}</span> · ${o.role||'—'} · since ${fmtDateFull(o.created_at)}</div>`).join('')+'</div>';
+  if(t){
+    const cust=getCustomerName(t), phone=getCustomerPhone(t), city=getCustomerCity(t), group=getCustomerGroup(t), addr=getCustomerAddress(t), due=getDueDate(t);
+    html+=`<div class="card"><div class="card-label">Customer</div>
+      <div style="font-size:14px;line-height:1.8"><strong>${esc(cust)}</strong>${phone?' · '+esc(phone):''}<br>
+      ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+esc(group)+'</span>':''}${city?(group?' · ':'')+'City: '+esc(city):''}${addr?'<br>'+esc(addr):''}${due?'<br>Due: '+esc(due):''}</div></div>`;
   }
 
-  // Two-column: role breakdown + daily
-  html+='<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">';
-  html+='<div class="card" style="flex:1;min-width:240px;margin:0"><div class="card-label">Time by Role</div>'+
-    (Object.entries(byRole).sort((a,b)=>b[1]-a[1]).map(([r,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${r}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
-  html+='<div class="card" style="flex:1;min-width:240px;margin:0"><div class="card-label">Time by Day</div>'+
-    (Object.entries(byDay).sort((a,b)=>new Date(b[0])-new Date(a[0])).map(([d,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${d}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
-  html+='</div>';
-
-  // Per-ticket breakdown
-  html+='<div class="card"><div class="card-label">Work by Order '+(q?`<span style="font-weight:600;text-transform:none;color:var(--ink3)">— filtered "${q}"</span>`:'')+'</div>';
-  html+=orderList.length?orderList.map(([oid,o])=>{
-    const safe='emp-'+oid.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div style="border-bottom:1px solid var(--border);padding:12px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="document.getElementById('${safe}').style.display=document.getElementById('${safe}').style.display==='none'?'block':'none'">
-        <div><span style="font-weight:700;color:var(--gold2)">${oid}</span> <span style="color:var(--ink3);font-size:12px">${o.items.size} item(s), ${o.sessions.length} session(s)</span></div>
-        <div style="display:flex;gap:8px;align-items:center"><strong style="color:var(--gold2)">${fmtDur(o.ms)}</strong>
-          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();goToOrder('${oid.replace(/'/g,"\\'")}')">Open order →</button></div>
-      </div>
-      <div id="${safe}" style="display:none;margin-top:8px;padding-left:12px">
-        ${o.sessions.sort((a,b)=>new Date(b.end)-new Date(a.end)).map(s=>`<div class="clickable" style="padding:6px 0;cursor:pointer;font-size:13px" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')">
-          <div style="display:flex;justify-content:space-between"><span>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id} <span style="color:var(--ink3);font-size:11px">${s.item_id}</span></span><span style="color:${s.runaway?'var(--red)':'var(--gold2)'};font-weight:700">${fmtDur(s.ms)}${s.runaway?' ⚠️':''}</span></div>
-          <div style="font-size:11px;color:var(--ink3)">${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}${s.runaway?' · left running':''}</div>
-        </div>`).join('')}
-      </div>
-    </div>`;
-  }).join(''):'<div class="empty">No work in this range</div>';
-  html+='</div>';
-
-  document.getElementById('emp-content').innerHTML=html;
-}
-function exportEmployeeReport(){
-  const res=pairSessions(empInRange);
-  const mine=res.sessions.filter(s=>s.worker===empName).sort((a,b)=>new Date(b.end)-new Date(a.end));
-  let csv='Order,Item,Item ID,Role,Start,End,Minutes,Flag\n';
-  mine.forEach(s=>{ csv+=`"${orderIdOf(s.item_id)}","${(s.item_desc||'').replace(/"/g,'""')}","${s.item_id}","${s.role||''}","${fmtDateFull(s.start)}","${fmtDateFull(s.end)}",${Math.round(s.ms/60000)},"${s.runaway?'left running':''}"\n`; });
-  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=empName+'-report.csv'; a.click();
-}
-
-function openWorker(name){
-  document.getElementById('item-modal-title').textContent=name;
-  document.getElementById('item-modal-sub').textContent='Work history';
-  const tl=document.getElementById('item-timeline');
-  const res=pairSessions(inRange);
-  const mine=res.sessions.filter(s=>s.worker===name).sort((a,b)=>new Date(b.end)-new Date(a.end));
-  const openNow=res.open.filter(o=>o.worker===name);
-  let totalMs=mine.reduce((a,s)=>a+s.ms,0);
-  const items=new Set(mine.map(s=>s.item_id));
-  let html=`<div style="display:flex;gap:8px;margin-bottom:16px">
-    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time</div>
-      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${fmtDur(totalMs)}</div></div>
-    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Items</div>
-      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${items.size}</div></div>
-    <div style="flex:1;background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
-      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Sessions</div>
-      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700">${mine.length}</div></div>
-  </div>`;
-  if(openNow.length){
-    html+='<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Working Now</div>';
-    html+=openNow.map(o=>`<div style="background:#eef7f2;border:1px solid var(--green);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer" onclick="openItem('${o.item_id.replace(/'/g,"\\'")}')">
-      <div style="font-weight:700">${o.item_desc&&o.item_desc!==o.item_id?o.item_desc:o.item_id} <span style="color:var(--ink3);font-size:11px">${o.item_id}</span></div>
-      <div style="font-size:12px;color:var(--green)">▶ ${o.role||'—'} · started ${fmtDateFull(o.created_at)}</div></div>`).join('');
-  }
-  html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Completed Sessions</div>';
-  html+=mine.length?mine.map(s=>`<div class="clickable" style="border-bottom:1px solid var(--border);padding:10px 0;cursor:pointer" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')">
-    <div style="display:flex;justify-content:space-between">
-      <div style="font-weight:700">${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}</div>
-      <div style="font-weight:700;color:${s.runaway?'var(--red)':'var(--gold2)'}">${fmtDur(s.ms)}${s.runaway?' ⚠️':''}</div>
+  html+=`<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div class="card-label" style="margin-bottom:0">Progress</div>
+      <div style="font-size:13px;font-weight:700">${doneCount}/${items.length} done · <span style="color:var(--gold2)">${fmtDur(totalMs)} total</span></div>
     </div>
-    <div style="font-size:11px;color:var(--ink3)">${s.item_id} · ${s.role||'—'} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}${s.runaway?' · <span style="color:var(--red)">left running — capped at 8h</span>':''}</div>
-  </div>`).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No completed sessions in this range</div>';
-  tl.innerHTML=html;
-  document.getElementById('item-modal').classList.add('show');
+    <div style="height:8px;background:var(--surface2);border-radius:5px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${pct===100?'var(--green)':'var(--gold)'}"></div></div>
+    ${Object.keys(orderWorkers).length?`<div style="font-size:12px;color:var(--ink3);margin-top:10px">⏱️ ${Object.entries(orderWorkers).sort((a,b)=>b[1]-a[1]).map(([w,ms])=>esc(w)+' · '+fmtDur(ms)).join('  |  ')}</div>`:''}
+  </div>`;
+
+  // Items
+  html+='<div class="card"><div class="card-label">Items</div>';
+  if(t&&t.devices&&t.devices.length){
+    for(let i=0;i<t.devices.length;i++){
+      const device=t.devices[i], num=i+1, itemId=oid+'-'+num;
+      const name=device.device?device.device.name:'Item '+num;
+      const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
+      const note=getDeviceNote(device,t);
+      const pre=(device.PreConditions_images||[]).map(im=>im.medium||im.small);
+      const evs=itemsMap[itemId]?itemsMap[itemId].events:[];
+      const a=analyzeItem(evs);
+      const workerList=Object.entries(a.byWorker).sort((x,y)=>y[1]-x[1]).map(([w,ms])=>`${esc(w)} (${fmtDur(ms)})`).join(', ');
+      const statusBadge=a.working?`<span class="badge started">▶ ${esc(a.workingBy||'Working')}</span>`:(a.done?'<span class="badge stopped">Done</span>':'<span class="badge muted">Not started</span>');
+      html+=`<div class="clickable" style="padding:12px 0;border-bottom:1px solid var(--border)" onclick="navigate('${h('item',itemId).replace(/'/g,"\\'")}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><strong>${esc(name)}</strong> <span style="color:var(--ink3);font-size:11px">${itemId}</span></div>
+          <div style="display:flex;gap:8px;align-items:center"><span style="font-weight:700;color:var(--gold2)">${fmtDur(a.ms)}</span>${statusBadge}</div>
+        </div>
+        ${services?`<div style="font-size:11.5px;color:var(--gold2);margin-top:2px">${esc(services)}</div>`:''}
+        ${note?`<div style="font-size:11.5px;color:var(--red);margin-top:2px">⚠️ ${esc(note)}</div>`:''}
+        ${workerList?`<div style="font-size:11px;color:var(--ink3);margin-top:2px">👷 ${workerList}</div>`:''}
+        ${pre.length?`<div class="photo-grid" style="margin-top:8px;max-width:340px" onclick="event.stopPropagation()">${pre.map(u=>`<img src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')}</div>`:''}
+      </div>`;
+    }
+  } else {
+    items.forEach(([iid,it])=>{
+      const a=analyzeItem(it.events);
+      const statusBadge=a.working?`<span class="badge started">▶ ${esc(a.workingBy||'Working')}</span>`:(a.done?'<span class="badge stopped">Done</span>':'<span class="badge muted">—</span>');
+      html+=`<div class="clickable" style="padding:12px 0;border-bottom:1px solid var(--border)" onclick="navigate('${h('item',iid).replace(/'/g,"\\'")}')">
+        <div style="display:flex;justify-content:space-between"><strong>${it.desc&&it.desc!==iid?esc(it.desc):iid}</strong><span style="font-weight:700;color:var(--gold2)">${fmtDur(a.ms)}</span></div>
+        <div style="font-size:11px;color:var(--ink3)">${iid} ${statusBadge}</div>
+      </div>`;
+    });
+  }
+  html+='</div>';
+  el.innerHTML=html;
 }
 
-async function openItem(itemId){
+// ========================================================================
+// PAGE: ITEM DETAIL
+// ========================================================================
+async function renderItemDetailPage(itemId){
+  const el=document.getElementById('content');
+  const oid=orderIdOf(itemId);
   const evts=scans.filter(s=>s.item_id===itemId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  document.getElementById('item-modal-title').textContent=(evts[0]&&evts[0].item_desc)||itemId;
-  document.getElementById('item-modal-sub').textContent=itemId+((evts[0]&&evts[0].customer)?' · '+evts[0].customer:'');
-  const tl=document.getElementById('item-timeline');
-  // Total time
+  const name=(evts[0]&&evts[0].item_desc&&evts[0].item_desc!==itemId)?evts[0].item_desc:'';
+
   let totalMs=0, openEvt=null;
   evts.forEach(e=>{ if((e.status||'').includes('Started'))openEvt=e; else if((e.status||'').includes('Stopped')&&openEvt){ totalMs+=new Date(e.created_at)-new Date(openEvt.created_at); openEvt=null; } });
-  let html=`<button class="btn btn-sm" style="width:100%;margin-bottom:14px;background:var(--gold);color:#fff;font-weight:700" onclick="closeItem();goToOrder('${orderIdOf(itemId).replace(/'/g,"\\'")}')">📋 View full order (${orderIdOf(itemId)})</button>
-  <div style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;text-align:center">
-    <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em">Total time worked</div>
-    <div style="font-family:'Cormorant Garamond',serif;font-size:28px;font-weight:700">${fmtDur(totalMs)}</div>
+
+  let html=`<div class="page-head"><div><div class="page-title">${esc(name||itemId)}</div><div class="page-sub">${itemId}${evts[0]&&evts[0].customer?' · '+esc(evts[0].customer):''}</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 View full order (${esc(oid)})</button></div>`;
+
+  html+=`<div class="card" style="text-align:center">
+    <div class="card-label" style="margin-bottom:4px">Total Time Worked</div>
+    <div style="font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:700">${fmtDur(totalMs)}</div>
   </div>`;
-  // Timeline
-  html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Timeline</div>';
+
+  html+='<div class="card"><div class="card-label">Timeline <span style="font-weight:600;text-transform:none;color:var(--ink3)">— admins can edit or delete entries</span></div>';
   html+=evts.length?evts.map(e=>{
     const started=(e.status||'').includes('Started');
-    return `<div class="timeline-row"><div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
-      <div style="flex:1"><div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${e.role||'—'}</div>
-      <div style="font-size:12px;color:var(--ink3)">${e.worker} · ${fmtDateFull(e.created_at)}</div></div></div>`;
-  }).join(''):'<div style="color:var(--ink3);font-style:italic;padding:8px 0">No scans yet</div>';
-  tl.innerHTML=html;
-  document.getElementById('item-modal').classList.add('show');
-  // Load notes + photos async
+    return `<div class="timeline-row">
+      <div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
+      <div style="flex:1"><div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${esc(e.role||'—')}</div>
+      <div style="font-size:12px;color:var(--ink3)">${esc(e.worker)} · ${fmtDateFull(e.created_at)}</div></div>
+      <div class="tl-actions">
+        <button onclick="editScanEntry(${e.id||'null'},()=>renderItemDetailPage('${jsstr(itemId)}'))" title="Edit time">✏️</button>
+        <button onclick="deleteScanEntry(${e.id||'null'},()=>renderItemDetailPage('${jsstr(itemId)}'))" title="Delete">🗑️</button>
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">No scans yet</div>';
+  html+='</div>';
+
+  html+='<div id="item-notes-photos"><div class="empty">Loading notes & photos…</div></div>';
+  el.innerHTML=html;
+
+  // Async: repair note (from RepairDesk), worker notes, photos
+  let repairNoteBlock='';
+  try{
+    const tid=oid.replace(/\D/g,'');
+    const num=parseInt(itemId.split('-')[2])||1;
+    const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
+    if(d&&d.data&&d.data.devices){
+      const dev=d.data.devices[num-1];
+      if(dev){
+        const note=getDeviceNote(dev,d.data);
+        const services=dev.repairProdItems?dev.repairProdItems.map(s=>s.name.trim()).join(', '):'';
+        const pre=(dev.PreConditions_images||[]).map(im=>im.medium||im.small);
+        if(note){
+          const noteEs=await translateCached(note);
+          repairNoteBlock+=`<div class="note-box" style="margin-bottom:14px"><div class="nb-label">⚠️ Repair Note</div><div class="nb-en">${esc(note)}</div>${noteEs?`<div class="nb-es">🇪🇸 ${esc(noteEs)}</div>`:''}</div>`;
+        }
+        if(services) repairNoteBlock+=`<div style="font-size:12.5px;color:var(--gold2);margin-bottom:10px"><strong>Service:</strong> ${esc(services)}</div>`;
+        window._itemPreImgs=pre;
+      }
+    }
+  }catch(e){}
+
+  let notesHtml='', photosHtml='';
   try{
     const nr=await sb('item_notes?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
-    if(nr&&nr.length){
-      tl.innerHTML+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Worker Notes</div>'+
-        nr.map(n=>`<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px"><div style="font-size:13px">${n.note}</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">${n.worker}${n.role?' · '+n.role:''} · ${fmtDateFull(n.created_at)}</div></div>`).join('');
-    }
+    if(nr&&nr.length) notesHtml='<div class="card-label" style="margin-top:14px">Worker Notes</div>'+nr.map(n=>`<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px"><div style="font-size:13px">${esc(n.note)}</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">${esc(n.worker)}${n.role?' · '+esc(n.role):''} · ${fmtDateFull(n.created_at)}</div></div>`).join('');
   }catch(e){}
   try{
     const ir=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
-    if(ir&&ir.length){
-      tl.innerHTML+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px">Photos ('+ir.length+')</div>'+
-        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+ir.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
-    }
+    const workerImgs=(ir||[]).map(i=>i.image_url);
+    const pre=window._itemPreImgs||[];
+    if(workerImgs.length) photosHtml+='<div class="card-label" style="margin-top:14px">Our Photos ('+workerImgs.length+')</div><div class="photo-grid">'+workerImgs.map(u=>`<img src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')+'</div>';
+    if(pre.length) photosHtml+='<div class="card-label" style="margin-top:14px">Intake Photos (RepairDesk)</div><div class="photo-grid">'+pre.map(u=>`<img src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')+'</div>';
   }catch(e){}
+
+  const box=document.getElementById('item-notes-photos');
+  if(box) box.innerHTML = (repairNoteBlock||notesHtml||photosHtml) ? `<div class="card">${repairNoteBlock}${notesHtml}${photosHtml}</div>` : '';
 }
-function closeItem(){ document.getElementById('item-modal').classList.remove('show'); }
+function lightbox(url){ window.open(url,'_blank'); }
 
-async function viewTicketPhotos(itemId, name, preImages){
-  document.getElementById('photos-modal-title').textContent=name;
-  const el=document.getElementById('photos-modal-content');
-  el.innerHTML='<div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div>';
-  document.getElementById('photos-modal').classList.add('show');
-  let html='';
-  try{
-    const imgs=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
-    if(imgs&&imgs.length){
-      html+='<div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Our Photos ('+imgs.length+')</div>';
-      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">'+imgs.map(i=>`<a href="${i.image_url}" target="_blank"><img src="${i.image_url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
-    }
-  }catch(e){}
-  if(preImages&&preImages.length){
-    html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Photos (RepairDesk)</div>';
-    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+preImages.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
-  }
-  el.innerHTML=html||'<div style="text-align:center;color:var(--ink3);padding:20px">No photos for this item</div>';
+// ========================================================================
+// PAGE: HISTORY
+// ========================================================================
+function renderHistoryPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first — admins can edit or delete entries</div></div>
+      <div class="head-actions">
+        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistoryTable()">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+          <input type="date" id="hist-from" onchange="renderHistoryTable()" style="padding:6px 8px;font-size:12px;width:auto">
+          <span>→</span>
+          <input type="date" id="hist-to" onchange="renderHistoryTable()" style="padding:6px 8px;font-size:12px;width:auto">
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="exportHistory()">⬇ Export CSV</button>
+      </div>
+    </div>
+    <div class="card"><div style="overflow-x:auto">
+      <table id="history-table"><thead><tr><th>Time</th><th>Item</th><th>Customer</th><th>Worker</th><th>Role</th><th>Action</th><th></th></tr></thead><tbody></tbody></table>
+    </div></div>
+  `;
+  renderHistoryTable();
 }
-
-
-function renderHistory(){
+function renderHistoryTable(){
+  if(!document.getElementById('history-table')) return;
   const q=(document.getElementById('history-search').value||'').toLowerCase();
   const fEl=document.getElementById('hist-from'), tEl=document.getElementById('hist-to');
   const from=fEl&&fEl.value?new Date(fEl.value+'T00:00:00'):null;
@@ -1424,23 +1255,113 @@ function renderHistory(){
     if(to&&d>to) return false;
     return true;
   }).slice(0,800).map(s=>`
-    <tr class="clickable" onclick="openItem('${s.item_id.replace(/'/g,"\\'")}')"><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
-    <td><strong>${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:''}</strong>${s.item_desc&&s.item_desc!==s.item_id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${s.item_id}</span></td>
-    <td>${s.customer||'—'}</td><td>${s.worker}</td><td>${s.role||'—'}</td>
-    <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td></tr>`).join('');
-  document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No scans in this range</td></tr>';
+    <tr><td style="white-space:nowrap">${fmtDate(s.created_at)}</td>
+    <td class="clickable" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')"><strong>${s.item_desc&&s.item_desc!==s.item_id?esc(s.item_desc):''}</strong>${s.item_desc&&s.item_desc!==s.item_id?'<br>':''}<span style="color:var(--ink3);font-size:11px">${esc(s.item_id)}</span></td>
+    <td>${esc(s.customer||'—')}</td><td>${esc(s.worker)}</td><td>${esc(s.role||'—')}</td>
+    <td>${(s.status||'').includes('Started')?'<span class="badge started">▶ Start</span>':'<span class="badge stopped">■ Stop</span>'}</td>
+    <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editScanEntry(${s.id||'null'},renderHistoryTable)">✏️</button> <button class="btn btn-ghost btn-sm" onclick="deleteScanEntry(${s.id||'null'},renderHistoryTable)">🗑️</button></td>
+    </tr>`).join('');
+  document.querySelector('#history-table tbody').innerHTML=rows||'<tr><td colspan="7" class="empty">No scans in this range</td></tr>';
+}
+function exportHistory(){
+  let csv='Time,Item ID,Item,Customer,Worker,Role,Action\n';
+  scans.forEach(s=>{ csv+=`"${fmtDateFull(s.created_at)}","${s.item_id}","${(s.item_desc||'').replace(/"/g,'""')}","${(s.customer||'').replace(/"/g,'""')}","${s.worker}","${s.role||''}","${(s.status||'').includes('Started')?'Start':'Stop'}"\n`; });
+  downloadCsv(csv,'glint-history.csv');
 }
 
-async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); renderWorkers(); }
-function renderWorkers(){
-  document.querySelector('#workers-table tbody').innerHTML=workers.length?workers.map(w=>`
-    <tr><td><strong>${w.name}</strong></td><td><span style="font-variant-numeric:tabular-nums">${w.pin||'—'}</span></td>
-    <td>${(w.roles||[]).join(', ')||'—'}</td>
+// ========================================================================
+// PAGE: WORKERS
+// ========================================================================
+function renderWorkersPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><div><div class="page-title">Workers</div><div class="page-sub">Manage your team, roles, and access</div></div></div>
+    <div class="card">
+      <div class="card-label">Add Worker</div>
+      <div class="row" style="margin-bottom:12px">
+        <div class="field"><label>Name</label><input id="nw-name" placeholder="Full name"></div>
+        <div class="field"><label>4-digit PIN</label><input id="nw-pin" maxlength="4" placeholder="1234"></div>
+      </div>
+      <div class="field" style="margin-bottom:12px"><label>Roles</label><div id="nw-roles" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
+      <button class="btn btn-gold btn-block" onclick="addWorker()">Add Worker</button>
+    </div>
+    <div class="card">
+      <div class="card-label">Roles & Settings</div>
+      <div id="roles-list"></div>
+      <div class="row" style="margin-top:12px">
+        <div class="field"><input id="new-role-name" placeholder="New role name (e.g. Polish)"></div>
+        <button class="btn btn-sm" onclick="addRole()">+ Add Role</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">All Workers</div>
+      <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th style="text-align:center">Print Labels</th><th></th></tr></thead><tbody></tbody></table></div>
+    </div>
+  `;
+  loadWorkersAndRoles();
+}
+async function loadWorkersAndRoles(){
+  await Promise.all([loadWorkers(), loadRoles()]);
+  renderNwRoles(); renderRolesList(); renderWorkersTable();
+}
+function renderNwRoles(){
+  const el=document.getElementById('nw-roles'); if(!el) return;
+  el.innerHTML=roles.map(r=>`<label style="display:flex;align-items:center;gap:5px;background:var(--surface2);padding:6px 10px;border-radius:20px;font-size:12.5px;cursor:pointer"><input type="checkbox" value="${esc(r.name)}" style="width:14px;height:14px"> ${esc(r.name)}</label>`).join('')||'<div class="empty">Add a role below first</div>';
+}
+async function addWorker(){
+  const name=document.getElementById('nw-name').value.trim();
+  const pin=document.getElementById('nw-pin').value.trim();
+  const checked=[...document.querySelectorAll('#nw-roles input:checked')].map(c=>c.value);
+  if(!name||!pin){ toast('Name and PIN required'); return; }
+  const r=await sb('workers',{method:'POST',body:JSON.stringify({name,pin,roles:checked})});
+  if(r.ok){ toast('✅ Worker added'); document.getElementById('nw-name').value=''; document.getElementById('nw-pin').value=''; document.querySelectorAll('#nw-roles input').forEach(c=>c.checked=false); await loadWorkersAndRoles(); }
+  else toast('Could not add worker');
+}
+function renderRolesList(){
+  const el=document.getElementById('roles-list'); if(!el) return;
+  el.innerHTML=roles.length?roles.map(r=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-weight:700;font-size:15px">${esc(r.name)}</span>
+        <button class="btn btn-danger btn-sm" onclick="deleteRole(${r.id})">✕ Remove</button>
+      </div>
+      <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">
+        Photo after work:
+        <select onchange="updateRoleSetting(${r.id},'image_capture',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
+          <option value="off" ${(!r.image_capture||r.image_capture==='off')?'selected':''}>Off</option>
+          <option value="optional" ${r.image_capture==='optional'?'selected':''}>Optional</option>
+          <option value="required" ${r.image_capture==='required'?'selected':''}>Required</option>
+        </select>
+      </label>
+    </div>`).join(''):'<div class="empty">No roles yet</div>';
+}
+async function addRole(){
+  const name=document.getElementById('new-role-name').value.trim();
+  if(!name){ toast('Enter a role name'); return; }
+  const r=await sb('roles',{method:'POST',body:JSON.stringify({name})});
+  if(r.ok){ toast('✅ Role added'); document.getElementById('new-role-name').value=''; await loadWorkersAndRoles(); }
+  else toast('Could not add role — maybe it exists already');
+}
+async function deleteRole(id){
+  if(!confirm('Remove this role?')) return;
+  const r=await sb('roles?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Removed'); await loadWorkersAndRoles(); }
+}
+async function updateRoleSetting(id, field, value){
+  const body={}; body[field]=value;
+  const r=await sb('roles?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});
+  if(r.ok){ toast('✅ Updated'); const role=roles.find(x=>x.id===id); if(role)role[field]=value; }
+  else toast('Could not update');
+}
+function renderWorkersTable(){
+  const el=document.querySelector('#workers-table tbody'); if(!el) return;
+  el.innerHTML=workers.length?workers.map(w=>`
+    <tr><td><strong>${esc(w.name)}</strong></td><td><span style="font-variant-numeric:tabular-nums">${esc(w.pin||'—')}</span></td>
+    <td>${esc((w.roles||[]).join(', ')||'—')}</td>
     <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.can_print?'checked':''} onchange="togglePrint(${w.id},this.checked)"></td>
     <td style="text-align:right;white-space:nowrap">
-      <button class="btn btn-sm" style="background:var(--gold);color:#fff" onclick="openEmployeeReport('${w.name.replace(/'/g,"\\'")}')">📊 Report</button>
-      <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">Edit</button>
-      <button class="btn btn-danger" onclick="deleteWorker(${w.id},'${w.name.replace(/'/g,"\\'")}')">Remove</button>
+      <button class="btn btn-gold btn-sm" onclick="navigate('${h('worker',w.name).replace(/'/g,"\\'")}')">📊 Report</button>
+      <button class="btn btn-ghost btn-sm" onclick="openEditWorker(${w.id})">Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteWorker(${w.id},'${jsstr(w.name)}')">Remove</button>
     </td></tr>`).join(''):'<tr><td colspan="5" class="empty">No workers yet</td></tr>';
 }
 async function togglePrint(id, on){
@@ -1448,118 +1369,252 @@ async function togglePrint(id, on){
   if(r.ok){ toast(on?'✅ Label access granted':'Label access removed'); const w=workers.find(x=>x.id===id); if(w)w.can_print=on; }
   else toast('Could not update');
 }
-async function addWorker(){
-  const name=document.getElementById('nw-name').value.trim();
-  const pin=document.getElementById('nw-pin').value.trim();
-  if(!name){toast('Enter a name');return;}
-  if(pin.length<4){toast('PIN must be at least 4 digits');return;}
-  if(!nwSelectedRoles.length){toast('Pick at least one role');return;}
-  const r=await sb('workers',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:nwSelectedRoles})});
-  if(r.ok){ toast('✅ '+name+' added'); document.getElementById('nw-name').value=''; document.getElementById('nw-pin').value=''; nwSelectedRoles=[]; renderNwRoles(); loadWorkers(); }
-  else toast('Could not add worker');
-}
-async function deleteWorker(id,name){ if(!confirm('Remove '+name+'?'))return; const r=await sb('workers?id=eq.'+id,{method:'DELETE',headers:{'Prefer':'return=minimal'}}); if(r.ok){toast(name+' removed');loadWorkers();} }
-
-function openEdit(id){
+function openModal(html){ document.getElementById('modal-inner').innerHTML=html; document.getElementById('modal-bg').classList.add('show'); }
+function closeModal(){ document.getElementById('modal-bg').classList.remove('show'); }
+function openEditWorker(id){
   const w=workers.find(x=>x.id===id); if(!w) return;
-  document.getElementById('edit-id').value=w.id;
-  document.getElementById('edit-name').value=w.name;
-  document.getElementById('edit-pin').value=w.pin||'';
-  editSelectedRoles=[...(w.roles||[])];
-  renderEditRoles();
-  document.getElementById('edit-modal').classList.add('show');
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:16px">Edit ${esc(w.name)}</h3>
+    <div class="field" style="margin-bottom:12px"><label>Name</label><input id="ew-name" value="${esc(w.name)}"></div>
+    <div class="field" style="margin-bottom:12px"><label>PIN</label><input id="ew-pin" value="${esc(w.pin||'')}" maxlength="4"></div>
+    <div class="field" style="margin-bottom:16px"><label>Roles</label><div style="display:flex;gap:6px;flex-wrap:wrap">${roles.map(r=>`<label style="display:flex;align-items:center;gap:5px;background:var(--surface2);padding:6px 10px;border-radius:20px;font-size:12.5px;cursor:pointer"><input type="checkbox" value="${esc(r.name)}" ${((w.roles||[]).includes(r.name))?'checked':''} style="width:14px;height:14px"> ${esc(r.name)}</label>`).join('')}</div></div>
+    <button class="btn btn-gold btn-block" onclick="saveEditWorker(${id})">Save Changes</button>`);
 }
-function closeEdit(){ document.getElementById('edit-modal').classList.remove('show'); }
-function renderEditRoles(){
-  document.getElementById('edit-roles').innerHTML=roles.map(r=>{
-    const on=editSelectedRoles.includes(r.name);
-    return `<span class="chip ${on?'on':''}" onclick="toggleEditRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;
-  }).join('')||'<span style="color:var(--ink3);font-size:12px">No roles yet</span>';
+async function saveEditWorker(id){
+  const name=document.getElementById('ew-name').value.trim();
+  const pin=document.getElementById('ew-pin').value.trim();
+  const checked=[...document.querySelectorAll('#modal-inner input[type=checkbox]:checked')].map(c=>c.value);
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:checked})});
+  if(r.ok){ toast('✅ Saved'); closeModal(); await loadWorkersAndRoles(); }
+  else toast('Could not save');
 }
-function toggleEditRole(name){ const i=editSelectedRoles.indexOf(name); if(i>=0)editSelectedRoles.splice(i,1);else editSelectedRoles.push(name); renderEditRoles(); }
-async function saveEdit(){
-  const id=document.getElementById('edit-id').value;
-  const name=document.getElementById('edit-name').value.trim();
-  const pin=document.getElementById('edit-pin').value.trim();
-  if(!name||pin.length<4){toast('Name and 4-digit PIN required');return;}
-  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name,pin,roles:editSelectedRoles})});
-  if(r.ok){ toast('✅ Saved'); closeEdit(); loadWorkers(); } else toast('Could not save');
+async function deleteWorker(id,name){
+  if(!confirm('Remove '+name+'? This cannot be undone.')) return;
+  const r=await sb('workers?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Removed'); await loadWorkersAndRoles(); }
 }
 
-async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); renderRoles(); renderNwRoles(); }
-function renderRoles(){
-  document.getElementById('roles-list').innerHTML=roles.length?roles.map(r=>`
-    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span style="font-weight:700;font-size:15px">${r.name}</span>
-        <button class="btn btn-danger" onclick="deleteRole(${r.id})">✕</button>
+// ========================================================================
+// PAGE: WORKER DETAIL (employee report)
+// ========================================================================
+function empInRange(dateStr){
+  const d=new Date(dateStr);
+  if(empRange==='custom'){ if(empFrom&&d<empFrom)return false; if(empTo&&d>empTo)return false; return true; }
+  if(empRange==='all') return true;
+  const now=new Date();
+  if(empRange==='today') return d.toDateString()===now.toDateString();
+  if(empRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
+  if(empRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
+  return true;
+}
+function empSetRange(r){
+  empRange=r; empFrom=null; empTo=null;
+  document.getElementById('emp-from').value=''; document.getElementById('emp-to').value='';
+  document.querySelectorAll('#emp-range-seg button').forEach(b=>b.classList.toggle('on', b.dataset.r===r));
+  renderEmployeeReportBody(window._empName);
+}
+function empCustomRange(){
+  const f=document.getElementById('emp-from').value, t=document.getElementById('emp-to').value;
+  empFrom=f?new Date(f+'T00:00:00'):null; empTo=t?new Date(t+'T23:59:59'):null;
+  if(empFrom||empTo){ empRange='custom'; document.querySelectorAll('#emp-range-seg button').forEach(b=>b.classList.remove('on')); }
+  renderEmployeeReportBody(window._empName);
+}
+function renderWorkerDetailPage(name){
+  window._empName=name; empRange='today'; empFrom=null; empTo=null;
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">${esc(name)}</div><div class="page-sub">Full work history</div></div>
+      <div class="head-actions">
+        <div class="seg" id="emp-range-seg">
+          <button class="on" data-r="today" onclick="empSetRange('today')">Today</button>
+          <button data-r="week" onclick="empSetRange('week')">Week</button>
+          <button data-r="month" onclick="empSetRange('month')">Month</button>
+          <button data-r="all" onclick="empSetRange('all')">All</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+          <input type="date" id="emp-from" onchange="empCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+          <span>→</span>
+          <input type="date" id="emp-to" onchange="empCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+        </div>
+        <input class="search" id="emp-search" placeholder="Search ticket, item..." oninput="renderEmployeeReportBody(window._empName)">
+        <button class="btn btn-ghost btn-sm" onclick="exportEmployeeReport()">⬇ Export CSV</button>
       </div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-        <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">
-          Photo after work:
-          <select onchange="updateRoleSetting(${r.id},'image_capture',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
-            <option value="off" ${(!r.image_capture||r.image_capture==='off')?'selected':''}>Off</option>
-            <option value="optional" ${r.image_capture==='optional'?'selected':''}>Optional</option>
-            <option value="required" ${r.image_capture==='required'?'selected':''}>Required</option>
-          </select>
-        </label>
-      </div>
-    </div>`).join(''):'<div class="empty" style="padding:16px">No roles yet</div>';
+    </div>
+    <div id="emp-content"></div>
+  `;
+  renderEmployeeReportBody(name);
 }
-async function updateRoleSetting(id, field, value){
-  const body={}; body[field]=value;
-  const r=await sb('roles?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(body)});
-  if(r.ok){ const role=roles.find(x=>x.id===id); if(role)role[field]=value; toast('✅ Updated'); }
-  else toast('Could not update');
-}
-function renderNwRoles(){
-  document.getElementById('nw-roles').innerHTML=roles.map(r=>{const on=nwSelectedRoles.includes(r.name);return `<span class="chip ${on?'on':''}" onclick="toggleNwRole('${r.name.replace(/'/g,"\\'")}')">${r.name}</span>`;}).join('')||'<span style="color:var(--ink3);font-size:12px">Add a role first →</span>';
-}
-function toggleNwRole(name){ const i=nwSelectedRoles.indexOf(name); if(i>=0)nwSelectedRoles.splice(i,1);else nwSelectedRoles.push(name); renderNwRoles(); }
-async function addRole(){
-  const name=document.getElementById('new-role').value.trim(); if(!name)return;
-  const r=await sb('roles',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({name})});
-  if(r.ok){toast('✅ Role added');document.getElementById('new-role').value='';loadRoles();}else toast('Role may already exist');
-}
-async function deleteRole(id){ const r=await sb('roles?id=eq.'+id,{method:'DELETE',headers:{'Prefer':'return=minimal'}}); if(r.ok)loadRoles(); }
+function renderEmployeeReportBody(name){
+  if(!name) return;
+  const q=(document.getElementById('emp-search')?.value||'').toLowerCase().trim();
+  const res=pairSessions(empInRange);
+  let mine=res.sessions.filter(s=>s.worker===name);
+  const openNow=res.open.filter(o=>o.worker===name);
+  const totalMs=mine.reduce((a,s)=>a+s.ms,0);
+  const items=new Set(mine.map(s=>s.item_id));
+  const byOrder={};
+  mine.forEach(s=>{ const oid=orderIdOf(s.item_id); if(!byOrder[oid])byOrder[oid]={ms:0,sessions:[],items:new Set()}; byOrder[oid].ms+=s.ms; byOrder[oid].sessions.push(s); byOrder[oid].items.add(s.item_id); });
+  const byRole={}; mine.forEach(s=>{ const r=s.role||'—'; byRole[r]=(byRole[r]||0)+s.ms; });
+  const byDay={}; mine.forEach(s=>{ const d=new Date(s.end).toLocaleDateString(); byDay[d]=(byDay[d]||0)+s.ms; });
+  let orderList=Object.entries(byOrder).sort((a,b)=>b[1].ms-a[1].ms);
+  if(q) orderList=orderList.filter(([oid,o])=>oid.toLowerCase().includes(q)||o.sessions.some(s=>(s.item_desc||'').toLowerCase().includes(q)||s.item_id.toLowerCase().includes(q)));
 
-async function loadLabels(){ labels=await sb('labels?select=*&order=printed_at.desc&limit=3000'); renderLabels(); }
-function renderLabels(){
+  let html=`<div class="stat-grid">
+    <div class="card" style="text-align:center;margin:0"><div class="card-label">Total Time</div><div class="stat-num" style="font-size:28px">${fmtDur(totalMs)}</div></div>
+    <div class="card" style="text-align:center;margin:0"><div class="card-label">Items</div><div class="stat-num" style="font-size:28px">${items.size}</div></div>
+    <div class="card" style="text-align:center;margin:0"><div class="card-label">Sessions</div><div class="stat-num" style="font-size:28px">${mine.length}</div></div>
+    <div class="card" style="text-align:center;margin:0"><div class="card-label">Orders</div><div class="stat-num" style="font-size:28px">${Object.keys(byOrder).length}</div></div>
+  </div>`;
+
+  if(openNow.length){
+    html+='<div class="card" style="background:#f5faf6;border-color:var(--green)"><div class="card-label" style="color:var(--green)">▶ Working Right Now</div>'+
+      openNow.map(o=>`<div class="clickable" style="padding:8px 0" onclick="navigate('${h('item',o.item_id).replace(/'/g,"\\'")}')"><strong>${o.item_desc&&o.item_desc!==o.item_id?esc(o.item_desc):esc(o.item_id)}</strong> <span style="color:var(--ink3);font-size:11px">${esc(o.item_id)}</span> · ${esc(o.role||'—')} · since ${fmtDateFull(o.created_at)}</div>`).join('')+'</div>';
+  }
+
+  html+='<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">';
+  html+='<div class="card" style="flex:1;min-width:240px;margin:0"><div class="card-label">Time by Role</div>'+
+    (Object.entries(byRole).sort((a,b)=>b[1]-a[1]).map(([r,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${esc(r)}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
+  html+='<div class="card" style="flex:1;min-width:240px;margin:0"><div class="card-label">Time by Day</div>'+
+    (Object.entries(byDay).sort((a,b)=>new Date(b[0])-new Date(a[0])).map(([d,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${esc(d)}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
+  html+='</div>';
+
+  html+='<div class="card"><div class="card-label">Work by Order</div>';
+  html+=orderList.length?orderList.map(([oid,o])=>{
+    const safe='emp-'+oid.replace(/[^a-zA-Z0-9]/g,'_');
+    return `<div style="border-bottom:1px solid var(--border);padding:12px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="const b=document.getElementById('${safe}');b.style.display=b.style.display==='none'?'block':'none'">
+        <div><span style="font-weight:700;color:var(--gold2)">${esc(oid)}</span> <span style="color:var(--ink3);font-size:12px">${o.items.size} item(s), ${o.sessions.length} session(s)</span></div>
+        <div style="display:flex;gap:8px;align-items:center"><strong style="color:var(--gold2)">${fmtDur(o.ms)}</strong>
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('${h('order',oid).replace(/'/g,"\\'")}')">Open order →</button></div>
+      </div>
+      <div id="${safe}" style="display:none;margin-top:8px;padding-left:12px">
+        ${o.sessions.sort((a,b)=>new Date(b.end)-new Date(a.end)).map(s=>`<div class="clickable" style="padding:6px 0;font-size:13px" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')">
+          <div style="display:flex;justify-content:space-between"><span>${s.item_desc&&s.item_desc!==s.item_id?esc(s.item_desc):esc(s.item_id)} <span style="color:var(--ink3);font-size:11px">${esc(s.item_id)}</span></span><span style="color:${s.runaway?'var(--red)':'var(--gold2)'};font-weight:700">${fmtDur(s.ms)}${s.runaway?' ⚠️':''}</span></div>
+          <div style="font-size:11px;color:var(--ink3)">${esc(s.role||'—')} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}${s.runaway?' · left running':''}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join(''):'<div class="empty">No work in this range</div>';
+  html+='</div>';
+  document.getElementById('emp-content').innerHTML=html;
+}
+function exportEmployeeReport(){
+  const name=window._empName;
+  const res=pairSessions(empInRange);
+  const mine=res.sessions.filter(s=>s.worker===name).sort((a,b)=>new Date(b.end)-new Date(a.end));
+  let csv='Order,Item,Item ID,Role,Start,End,Minutes,Flag\n';
+  mine.forEach(s=>{ csv+=`"${orderIdOf(s.item_id)}","${(s.item_desc||'').replace(/"/g,'""')}","${s.item_id}","${s.role||''}","${fmtDateFull(s.start)}","${fmtDateFull(s.end)}",${Math.round(s.ms/60000)},"${s.runaway?'left running':''}"\n`; });
+  downloadCsv(csv,name+'-report.csv');
+}
+
+// ========================================================================
+// PAGE: LABELS
+// ========================================================================
+async function renderLabelsPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Labels</div><div class="page-sub">Every barcode printed, newest first</div></div>
+      <div class="head-actions">
+        <input class="search" id="labels-search" placeholder="Search..." oninput="renderLabelsTable()">
+        <button class="btn btn-ghost btn-sm" onclick="exportLabels()">⬇ Export CSV</button>
+      </div>
+    </div>
+    <div class="card"><div style="overflow-x:auto">
+      <table id="labels-table"><thead><tr><th>Printed</th><th>Item ID</th><th>Item</th><th>Customer</th><th>City</th><th>Part</th></tr></thead><tbody></tbody></table>
+    </div></div>
+  `;
+  window._labels=await sb('labels?select=*&order=printed_at.desc&limit=1000').catch(()=>[]);
+  renderLabelsTable();
+}
+function renderLabelsTable(){
   const q=(document.getElementById('labels-search').value||'').toLowerCase();
-  const rows=labels.filter(l=>!q||(l.item_id+(l.item_name||'')+(l.customer||'')+(l.city||'')).toLowerCase().includes(q)).map(l=>`
-    <tr><td style="white-space:nowrap">${fmtDate(l.printed_at)}</td>
-    <td><span style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--gold2)">${l.item_id}</span></td>
-    <td>${l.item_name||'—'}</td><td>${l.customer||'—'}</td><td>${l.city||'—'}</td>
-    <td>${l.part?'<span class="badge part">'+l.part+'</span>':'—'}</td></tr>`).join('');
-  document.querySelector('#labels-table tbody').innerHTML=rows||'<tr><td colspan="6" class="empty">No labels printed yet</td></tr>';
-}
-
-function downloadCSV(filename, rows){
-  const csv=rows.map(r=>r.map(c=>{const v=(c==null?'':String(c)); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(',')).join('\n');
-  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
-}
-function exportReports(){
-  const {sessions}=pairSessions(inRange);
-  const rows=[['Item ID','Item','Customer','Worker','Role','Start','End','Minutes']];
-  sessions.forEach(s=>rows.push([s.item_id,s.item_desc||'',s.customer||'',s.worker,s.role||'',fmtDateFull(s.start),fmtDateFull(s.end),(s.ms/60000).toFixed(1)]));
-  downloadCSV('glint-report-'+reportRange+'.csv',rows);
-}
-function exportHistory(){
-  const rows=[['Time','Item ID','Item','Customer','Worker','Role','Action']];
-  scans.forEach(s=>rows.push([fmtDateFull(s.created_at),s.item_id,s.item_desc||'',s.customer||'',s.worker,s.role||'',s.status]));
-  downloadCSV('glint-history.csv',rows);
+  const list=(window._labels||[]).filter(l=>!q||(l.item_id+l.item_name+(l.customer||'')).toLowerCase().includes(q));
+  document.querySelector('#labels-table tbody').innerHTML=list.length?list.map(l=>`
+    <tr><td>${fmtDate(l.printed_at)}</td><td><strong>${esc(l.item_id)}</strong></td><td>${esc(l.item_name||'—')}</td><td>${esc(l.customer||'—')}</td><td>${esc(l.city||'—')}</td><td>${l.part?'<span class="badge part">'+esc(l.part)+'</span>':'—'}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">No labels printed yet</td></tr>';
 }
 function exportLabels(){
-  const rows=[['Printed','Item ID','Item','Customer','City','Note','Part']];
-  labels.forEach(l=>rows.push([fmtDateFull(l.printed_at),l.item_id,l.item_name||'',l.customer||'',l.city||'',l.note||'',l.part||'']));
-  downloadCSV('glint-labels.csv',rows);
+  let csv='Printed,Item ID,Item,Customer,City,Part\n';
+  (window._labels||[]).forEach(l=>{ csv+=`"${fmtDateFull(l.printed_at)}","${l.item_id}","${(l.item_name||'').replace(/"/g,'""')}","${(l.customer||'').replace(/"/g,'""')}","${l.city||''}","${l.part||''}"\n`; });
+  downloadCsv(csv,'glint-labels.csv');
 }
 
-function fmtDur(ms){ const sec=Math.floor(ms/1000),h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60); if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m'; return Math.floor(sec)+'s'; }
-function fmtDate(d){ const dt=new Date(d); return dt.toLocaleDateString([], {month:'short',day:'numeric'})+' '+dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
-function fmtDateFull(d){ return new Date(d).toLocaleString([], {month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
-function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(window._tt); window._tt=setTimeout(()=>t.classList.remove('show'),2600); }
+// ========================================================================
+// PAGE: SETTINGS
+// ========================================================================
+function renderSettingsPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
+    <div class="card" style="max-width:460px">
+      <div class="card-label">Change Admin Password</div>
+      <div class="field" style="margin-bottom:12px"><label>Current Password</label><input id="cur-pass" type="password"></div>
+      <div class="field" style="margin-bottom:12px"><label>New Password</label><input id="new-pass" type="password" placeholder="At least 6 characters"></div>
+      <div class="field" style="margin-bottom:16px"><label>Confirm New Password</label><input id="new-pass2" type="password"></div>
+      <button class="btn btn-gold btn-block" onclick="changeAdminPassword()">Update Password</button>
+    </div>
+    <div class="card" style="max-width:460px">
+      <div class="card-label">Label Size</div>
+      <div class="page-sub" style="margin-bottom:14px">Set your Dymo label dimensions in millimeters</div>
+      <div class="row" style="margin-bottom:14px">
+        <div class="field"><label>Width (mm)</label><input id="ls-width" type="number"></div>
+        <div class="field"><label>Height (mm)</label><input id="ls-height" type="number"></div>
+        <button class="btn btn-sm" onclick="saveLabelSize()">Save</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(102,59)">102 × 59</button>
+        <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(89,36)">89 × 36</button>
+        <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(57,32)">57 × 32</button>
+        <button class="btn btn-ghost btn-sm" onclick="setLabelPreset(54,25)">54 × 25</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('ls-width').value=labelSize.width;
+  document.getElementById('ls-height').value=labelSize.height;
+}
+async function changeAdminPassword(){
+  const cur=document.getElementById('cur-pass').value, nw=document.getElementById('new-pass').value, nw2=document.getElementById('new-pass2').value;
+  const real=await fetchAdminPass();
+  if(cur!==real){ toast('Current password incorrect'); return; }
+  if(nw.length<6){ toast('New password must be at least 6 characters'); return; }
+  if(nw!==nw2){ toast('New passwords do not match'); return; }
+  const r=await sb('settings?key=eq.admin_password',{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({value:nw})});
+  if(r.ok){ toast('✅ Password updated'); document.getElementById('cur-pass').value=''; document.getElementById('new-pass').value=''; document.getElementById('new-pass2').value=''; }
+  else toast('Could not update password');
+}
+function saveLabelSize(){
+  const w=parseFloat(document.getElementById('ls-width').value), hgt=parseFloat(document.getElementById('ls-height').value);
+  if(!w||!hgt||w<10||hgt<10){ toast('Enter valid dimensions'); return; }
+  labelSize={width:w,height:hgt}; localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
+  toast('✅ Label size saved: '+w+' × '+hgt+' mm');
+}
+function setLabelPreset(w,hgt){
+  labelSize={width:w,height:hgt}; localStorage.setItem('glint_label_size', JSON.stringify(labelSize));
+  document.getElementById('ls-width').value=w; document.getElementById('ls-height').value=hgt;
+  toast('✅ Label size: '+w+' × '+hgt+' mm');
+}
+
+// ========================================================================
+// PHOTOS MODAL (used from Print Labels page) — index registry avoids quote-escaping issues
+// ========================================================================
+window._photoRegistry=[];
+function registerPhotoData(itemId,name,preImgs){
+  window._photoRegistry.push({itemId,name,preImgs});
+  return window._photoRegistry.length-1;
+}
+function openPhotosModalByIndex(idx){
+  const d=window._photoRegistry[idx]; if(!d) return;
+  openPhotosModal(d.itemId, d.name, d.preImgs);
+}
+async function openPhotosModal(itemId, name, preImgs){
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span><h3 style="margin-bottom:14px">${esc(name)}</h3><div id="pm-content"><div class="empty">Loading…</div></div>`);
+  const el=document.getElementById('pm-content');
+  let html='';
+  try{
+    const imgs=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
+    if(imgs&&imgs.length) html+='<div class="card-label">Our Photos</div><div class="photo-grid" style="margin-bottom:14px">'+imgs.map(i=>`<img src="${i.image_url}" onclick="lightbox('${jsstr(i.image_url)}')">`).join('')+'</div>';
+  }catch(e){}
+  if(preImgs&&preImgs.length) html+='<div class="card-label">Intake Photos</div><div class="photo-grid">'+preImgs.map(u=>`<img src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')+'</div>';
+  el.innerHTML=html||'<div class="empty">No photos for this item</div>';
+}
 </script>
 </body>
 </html>
