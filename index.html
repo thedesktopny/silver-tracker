@@ -377,6 +377,33 @@ function playBeep(freq, dur){
 }
 function playErrorBeep(){ playBeep(220,180); setTimeout(()=>playBeep(180,180),150); }
 
+// CRITICAL: RepairDesk's order_id (T-959) is NOT the same number as the internal ticket id.
+// e.g. order T-1095 => ticket id 1097. Guessing by stripping letters fetches the WRONG ticket.
+let oidMap = JSON.parse(localStorage.getItem('st_oid_map')||'{}'); // "T-959" -> internal id
+async function resolveTicketId(oid){
+  if(oidMap[oid]) return oidMap[oid];
+  // Use already-loaded print tickets if available
+  try{
+    if(typeof prTickets!=='undefined' && prTickets.length){
+      const hit=prTickets.find(x=>prOid(x)===oid);
+      if(hit&&hit.summary&&hit.summary.id){ oidMap[oid]=hit.summary.id; localStorage.setItem('st_oid_map',JSON.stringify(oidMap)); return oidMap[oid]; }
+    }
+  }catch(e){}
+  // Otherwise page the ticket list and build the map
+  try{
+    for(let page=1; page<=4; page++){
+      const d=await prFetch(`${PR_BASE}/tickets?api_key=${PR_KEY}&per_page=250&page=${page}&default_order=1`);
+      const batch=(d.data&&d.data.ticketData)||[];
+      batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+      localStorage.setItem('st_oid_map',JSON.stringify(oidMap));
+      if(oidMap[oid]) return oidMap[oid];
+      const pg=d.data&&d.data.pagination;
+      if(!pg || page>=parseInt(pg.total_pages)) break;
+    }
+  }catch(e){}
+  return null; // never guess — showing the wrong item is worse than showing none
+}
+
 // Resolve an item's name/customer from RepairDesk if not already cached — fixes blank item names
 async function resolveItemInfo(itemId){
   if(itemCache[itemId] && itemCache[itemId].name) return itemCache[itemId];
@@ -385,7 +412,8 @@ async function resolveItemInfo(itemId){
   if(!m) return itemCache[itemId]||{};
   const oid=m[1], num=parseInt(m[2]);
   try{
-    const tid=oid.replace(/\D/g,'');
+    const tid=await resolveTicketId(oid);
+    if(!tid) return itemCache[itemId]||{};
     const d=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`);
     if(d&&d.data){
       const t=d.data;
@@ -600,6 +628,8 @@ async function prLoad(){
       const pg=d.data&&d.data.pagination; tp=pg?parseInt(pg.total_pages):1; page++;
     } while(page<=tp&&page<=2);
     prTickets=fetched;
+    fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+    localStorage.setItem('st_oid_map',JSON.stringify(oidMap));
     prRender(prTickets);
   }catch(e){ el.innerHTML='<div style="color:var(--red);font-size:12px;padding:16px;text-align:center">Could not load — '+e.message+'. Tap ↻ to retry.</div>'; }
 }
@@ -633,7 +663,7 @@ async function prToggle(oid){
   if(!t._full){
     box.innerHTML='<div style="color:var(--ink3);font-size:12px;padding:12px;text-align:center">Loading details…</div>';
     try{
-      const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
+      const tid=(t.summary&&t.summary.id)||await resolveTicketId(oid);
       const d=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`);
       if(d&&d.data){ d.data._full=true; prTickets[idx0]=d.data; t=d.data; }
     }catch(e){}
@@ -724,7 +754,7 @@ function prToggleParts(itemId,name,cust,city,note,due,services,group){
 function prSelParts(itemId,on){ PR_PARTS.forEach(p=>{const cb=document.getElementById('prcb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); prCount(); }
 function prSelTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('prcb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} prCount(); }
 function prCount(){ const n=document.querySelectorAll('.pr-cb:checked').length; document.getElementById('pr-count').textContent=n; document.getElementById('pr-print-bar').style.display=n>0?'block':'none'; }
-function prMakeBarcode(text){ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }catch(e){ return ''; } }
+function prMakeBarcode(text){ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:false,margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }catch(e){ return ''; } }
 async function prTranslateEs(text){
   if(!text||!text.trim()) return '';
   try{
@@ -752,17 +782,23 @@ async function prPrint(){
   const withBc=items.map(it=>({...it,bc:prMakeBarcode(it.itemId)}));
   const labelsHtml=withBc.map(it=>{
     const orderId=(it.itemId.match(/^(T-\d+)/i)||[])[1]||it.itemId;
-    return `<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note">⚠️ ${it.note}${it.noteEs?`<br><span style="font-style:italic">🇪🇸 ${it.noteEs}</span>`:''}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}<div class="l-oid">${orderId}</div></div></div>`;
+    const noteLen=(it.note||'').length + (it.noteEs||'').length;
+    let noteCls='n-sm';
+    if(noteLen>200) noteCls='n-xxs';
+    else if(noteLen>120) noteCls='n-xs';
+    return `<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${it.note}${it.noteEs?`<br><span class="nl">ES</span> ${it.noteEs}`:''}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}<div class="l-oid">${orderId}</div></div></div>`;
   }).join('');
   const W=labelSize.width,H=labelSize.height;
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title><style>
 @page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}body{background:#fff;font-family:Arial,sans-serif}
-.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;justify-content:space-between;padding:2.5mm 3mm;overflow:hidden;page-break-after:always}.label:last-child{page-break-after:auto}
-.lt{text-align:center}.l-item{font-size:11pt;font-weight:700;line-height:1.1}.l-svc{font-size:8pt;color:#444;margin-top:.5mm}
-.l-row{display:flex;justify-content:center;gap:4mm;margin-top:1mm;font-size:9.5pt;font-weight:700}
-.l-note{font-size:8.5pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.15}
-.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}.lb img{max-width:98%;max-height:24mm;height:auto}
-.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm}.l-part{font-size:9pt;font-weight:700;letter-spacing:.06em}.l-oid{font-size:15pt;font-weight:800;letter-spacing:.04em}</style></head><body>${labelsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script></body></html>`;
+.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;padding:2mm 3mm;overflow:hidden;page-break-after:always}.label:last-child{page-break-after:auto}
+.lt{text-align:center;flex-shrink:0}.l-item{font-size:10.5pt;font-weight:700;line-height:1.1}.l-svc{font-size:7.5pt;color:#444;margin-top:.3mm}
+.l-row{display:flex;justify-content:center;gap:4mm;margin-top:.6mm;font-size:9pt;font-weight:700}
+.l-note{font-weight:700;margin-top:.8mm;background:#f0f0f0;padding:.8mm 1mm;border-radius:1mm;text-align:left}
+.l-note .nl{display:inline-block;background:#555;color:#fff;border-radius:.6mm;padding:0 .8mm;font-size:.85em;vertical-align:.3mm}
+.n-sm{font-size:7.5pt;line-height:1.2}.n-xs{font-size:6.5pt;line-height:1.15}.n-xxs{font-size:5.5pt;line-height:1.1}
+.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0;overflow:hidden;padding:1mm 0}.lb img{max-width:98%;max-height:100%;height:auto;object-fit:contain}
+.lf{text-align:center;border-top:.4mm dashed #999;padding-top:.7mm;flex-shrink:0}.l-part{font-size:8.5pt;font-weight:700;letter-spacing:.06em}.l-oid{font-size:14pt;font-weight:800;letter-spacing:.04em;line-height:1.1}</style></head><body>${labelsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script></body></html>`;
   const w=window.open('','_blank','width=900,height=700'); if(!w){ showToast('Allow popups to print'); return; }
   w.document.write(html); w.document.close();
   showToast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
@@ -1187,7 +1223,7 @@ async function openPreImg(itemId, name){
   // Fetch ticket detail (for repair note + intake photos)
   let t=(typeof prTickets!=='undefined')?prTickets.find(x=>prOid&&prOid(x)===oid):null;
   if(!t){
-    try{ const tid=oid.replace(/\D/g,''); const dd=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`); if(dd&&dd.data) t=dd.data; }catch(e){}
+    try{ const tid=await resolveTicketId(oid); if(tid){ const dd=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`); if(dd&&dd.data) t=dd.data; } }catch(e){}
   }
   // Repair note (diagnostic notes only, bilingual)
   if(t&&t.devices){
@@ -1334,7 +1370,7 @@ async function loadActiveWorkInfo(itemId){
   const num=parseInt(itemId.split('-')[2])||1;
   let t=(typeof prTickets!=='undefined')?prTickets.find(x=>prOid&&prOid(x)===oid):null;
   if(!t){
-    try{ const tid=oid.replace(/\D/g,''); const dd=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`); if(dd&&dd.data) t=dd.data; }catch(e){}
+    try{ const tid=await resolveTicketId(oid); if(tid){ const dd=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`); if(dd&&dd.data) t=dd.data; } }catch(e){}
   }
   // Only show if this is still the active item (worker may have moved on)
   if(!activeWork||activeWork.itemId!==itemId) return;
