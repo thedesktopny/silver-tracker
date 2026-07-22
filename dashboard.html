@@ -5,47 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Glint — Control Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.6/JsBarcode.all.min.js"></script>
 <style>
 :root{
-  --bg:#f0ebe2; --ink:#1c1a17; --ink2:#4a463f; --ink3:#8a8477;
-  --gold:#b8960c; --gold2:#8a6a20; --green:#3f7d54; --orange:#b5701f; --red:#a4433a;
-  --border:#ddd5c7; --surface:#faf7f1; --surface2:#f4efe6;
-  --sidebar-w:220px;
+  --bg:#f6f7fb; --ink:#12141c; --ink2:#4b5165; --ink3:#8b90a3;
+  --gold:#4f46e5; --gold2:#4338ca; --green:#059669; --orange:#d97706; --red:#dc2626;
+  --border:#e5e7eb; --surface:#ffffff; --surface2:#f1f2f6;
+  --accent-soft:#eef0ff; --green-soft:#ecfdf5; --orange-soft:#fffbeb; --red-soft:#fef2f2;
+  --sidebar-bg:#14161f; --sidebar-text:#8f95ab; --sidebar-border:#24263a;
+  --sidebar-w:222px;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px}
-h1,h2,h3{font-family:'Cormorant Garamond',serif;margin:0}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;font-size:14px;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:'Outfit',sans-serif;margin:0}
 a{color:inherit;text-decoration:none}
-input,select,textarea,button{font-family:'Jost',sans-serif;font-size:14px}
-input,select,textarea{background:var(--surface);border:2px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--ink);width:100%}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
+input,select,textarea,button{font-family:'Inter',sans-serif;font-size:14px}
+input,select,textarea{background:var(--surface);border:1.5px solid var(--border);border-radius:9px;padding:9px 12px;color:var(--ink);width:100%;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px var(--accent-soft)}
 
 /* ===== LOGIN ===== */
-#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)}
-.login-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:360px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.08)}
-.login-box .wordmark{font-family:'Cormorant Garamond',serif;font-size:32px;font-weight:700}
-.login-box .subtitle{font-size:11px;letter-spacing:.15em;color:var(--ink3);text-transform:uppercase;margin-top:2px;margin-bottom:24px}
+#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);background-image:radial-gradient(circle at 20% 20%, #eef0ff 0%, transparent 45%),radial-gradient(circle at 80% 80%, #f1f2f6 0%, transparent 45%)}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:44px 38px;width:100%;max-width:360px;text-align:center;box-shadow:0 24px 60px -12px rgba(18,20,28,.12)}
+.wordmark{font-family:'Outfit',sans-serif;font-weight:800;letter-spacing:-.02em;display:inline-flex;align-items:center;gap:8px}
+.wordmark .mark{width:10px;height:10px;border-radius:3.5px;background:var(--gold);display:inline-block;flex-shrink:0}
+.login-box .wordmark{font-size:26px;justify-content:center;width:100%}
+.login-box .subtitle{font-size:11px;letter-spacing:.15em;color:var(--ink3);text-transform:uppercase;margin-top:4px;margin-bottom:26px}
 .login-box input{margin-bottom:12px;text-align:center}
-.login-box button{width:100%;background:var(--ink);color:#fff;border:none;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;letter-spacing:.03em}
+.login-box button{width:100%;background:var(--gold);color:#fff;border:none;border-radius:9px;padding:12px;font-weight:700;font-size:13.5px;cursor:pointer;letter-spacing:.02em;transition:background .15s}
+.login-box button:hover{background:var(--gold2)}
 .login-err{color:var(--red);font-size:12px;margin-top:8px;min-height:16px}
 
 /* ===== APP SHELL ===== */
 #app{display:none;min-height:100vh}
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:50}
-.sidebar-logo{padding:22px 22px 18px;border-bottom:1px solid var(--border)}
-.sidebar-logo .wordmark{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:700;line-height:1}
-.sidebar-logo .subtitle{font-size:10px;letter-spacing:.14em;color:var(--ink3);text-transform:uppercase;margin-top:2px}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:var(--sidebar-w);background:var(--sidebar-bg);border-right:1px solid var(--sidebar-border);display:flex;flex-direction:column;z-index:50}
+.sidebar-logo{padding:24px 22px 20px;border-bottom:1px solid var(--sidebar-border)}
+.sidebar-logo .wordmark{font-size:21px;line-height:1;color:#fff}
+.sidebar-logo .subtitle{font-size:10px;letter-spacing:.14em;color:var(--sidebar-text);text-transform:uppercase;margin-top:4px;margin-left:18px}
 .sidebar-nav{flex:1;padding:14px 10px;overflow-y:auto}
-.snav-link{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;color:var(--ink2);font-size:13.5px;font-weight:500;cursor:pointer;margin-bottom:2px}
-.snav-link:hover{background:var(--surface2)}
-.snav-link.active{background:var(--ink);color:#fff}
-.snav-icon{width:16px;text-align:center;opacity:.85}
-.sidebar-foot{padding:14px 16px;border-top:1px solid var(--border)}
-.sidebar-foot .clk{font-size:11px;color:var(--ink3);font-variant-numeric:tabular-nums}
-.sidebar-foot .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px}
-.logout-btn{margin-top:8px;width:100%;background:none;border:1px solid var(--border);border-radius:7px;padding:8px;font-size:11px;color:var(--ink3);cursor:pointer}
+.snav-link{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:var(--sidebar-text);font-size:13.5px;font-weight:500;cursor:pointer;margin-bottom:1px;transition:all .12s}
+.snav-link:hover{background:rgba(255,255,255,.06);color:#fff}
+.snav-link.active{background:var(--gold);color:#fff;font-weight:600}
+.snav-icon{width:16px;text-align:center;opacity:.9;font-size:13px}
+.sidebar-foot{padding:14px 16px;border-top:1px solid var(--sidebar-border)}
+.sidebar-foot .clk{font-size:11px;color:var(--sidebar-text);font-variant-numeric:tabular-nums}
+.sidebar-foot .live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px;animation:dot-pulse 2.4s infinite}
+@keyframes dot-pulse{
+  0%{box-shadow:0 0 0 0 rgba(5,150,105,.4)}
+  70%{box-shadow:0 0 0 6px rgba(5,150,105,0)}
+  100%{box-shadow:0 0 0 0 rgba(5,150,105,0)}
+}
+@keyframes pulse-ring{
+  0%{box-shadow:0 0 0 0 rgba(220,38,38,.35)}
+  70%{box-shadow:0 0 0 7px rgba(220,38,38,0)}
+  100%{box-shadow:0 0 0 0 rgba(220,38,38,0)}
+}
+.wcard.state-warn{border-color:var(--orange)}
+.wcard.state-crit{border-color:var(--red);animation:pulse-ring 2.2s infinite}
+.section-label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em;margin:26px 0 12px}
+.section-label:first-child{margin-top:0}
+.live-split{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+.feed-row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.feed-row:last-child{border-bottom:none}
+.feed-row:hover{background:var(--surface2)}
+.feed-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.feed-text{font-size:12.5px;line-height:1.4}
+.feed-time{font-size:11px;color:var(--ink3);margin-top:1px}
+.roster-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
+.roster-row:last-child{border-bottom:none}
+.roster-name{font-weight:600}
+.roster-roles{font-size:11px;color:var(--ink3);margin-top:1px}
+@media (max-width:1000px){.live-split{grid-template-columns:1fr}}
+.logout-btn{margin-top:10px;width:100%;background:none;border:1px solid var(--sidebar-border);border-radius:7px;padding:8px;font-size:11px;color:var(--sidebar-text);cursor:pointer;transition:all .12s}
+.logout-btn:hover{border-color:var(--ink3);color:#fff}
 
 .main{margin-left:var(--sidebar-w);min-height:100vh;display:flex;flex-direction:column}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 28px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:40}
@@ -55,69 +87,70 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold)}
 .breadcrumb .cur{color:var(--ink);font-weight:600}
 .topbar-actions{display:flex;align-items:center;gap:14px}
 .bell-wrap{position:relative}
-.bell-btn{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:17px;position:relative}
+.bell-btn{background:var(--surface);border:1px solid var(--border);border-radius:10px;width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;position:relative;transition:border-color .12s}
+.bell-btn:hover{border-color:var(--gold)}
 .bell-badge{position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px}
-.bell-panel{display:none;position:absolute;top:46px;right:0;width:340px;max-height:440px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.14);z-index:60}
+.bell-panel{display:none;position:absolute;top:46px;right:0;width:340px;max-height:440px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 50px -12px rgba(18,20,28,.18);z-index:60}
 .bell-panel.show{display:block}
 .bell-panel-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em}
 .bell-item{padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px}
 .bell-item:hover{background:var(--surface2)}
 .bell-item .bt{color:var(--ink3);font-size:11px;margin-top:2px}
 
-.content{flex:1;padding:24px 28px 60px}
-.page-title{font-size:26px;font-weight:700}
-.page-sub{font-size:12.5px;color:var(--ink3);margin-top:2px}
-.page-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:20px}
+.content{flex:1;padding:26px 28px 60px}
+.page-title{font-size:25px;font-weight:700;letter-spacing:-.01em}
+.page-sub{font-size:12.5px;color:var(--ink3);margin-top:3px}
+.page-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:22px}
 .head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
-.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(18,20,28,.03)}
 .card-label{font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
 .empty{color:var(--ink3);font-style:italic;padding:14px 0;text-align:center}
 .clickable{cursor:pointer}
 .clickable:hover{background:var(--surface2)}
 
-.btn{background:var(--surface);border:2px solid var(--ink);border-radius:8px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink);white-space:nowrap}
-.btn:hover{background:var(--ink);color:#fff}
+.btn{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink2);white-space:nowrap;transition:all .12s}
+.btn:hover{border-color:var(--ink3);color:var(--ink)}
 .btn-gold{background:var(--gold);color:#fff;border-color:var(--gold)}
-.btn-gold:hover{background:var(--gold2);border-color:var(--gold2)}
+.btn-gold:hover{background:var(--gold2);border-color:var(--gold2);color:#fff}
 .btn-ghost{background:none;border:1px solid var(--border);color:var(--ink2)}
-.btn-ghost:hover{background:var(--surface2);color:var(--ink)}
+.btn-ghost:hover{background:var(--surface2);color:var(--ink);border-color:var(--border)}
 .btn-danger{background:none;border:1px solid var(--red);color:var(--red)}
 .btn-danger:hover{background:var(--red);color:#fff}
 .btn-sm{padding:6px 11px;font-size:12px}
 .btn-block{width:100%}
 
-.seg{display:flex;background:var(--surface2);border-radius:8px;padding:3px;gap:2px}
-.seg button{border:none;background:none;padding:7px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink3)}
-.seg button.on{background:var(--ink);color:#fff}
+.seg{display:flex;background:var(--surface2);border-radius:9px;padding:3px;gap:2px}
+.seg button{border:none;background:none;padding:7px 13px;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink3);transition:all .12s}
+.seg button.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(18,20,28,.1)}
 .search{max-width:280px}
 
 table{width:100%;border-collapse:collapse}
-th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);padding:8px 10px;border-bottom:2px solid var(--border)}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);padding:8px 10px;border-bottom:1.5px solid var(--border)}
 td{padding:11px 10px;border-bottom:1px solid var(--border);font-size:13px}
 tr.clickable:hover td{background:var(--surface2)}
 
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
-.badge.started{background:#eaf4ee;color:var(--green)}
-.badge.stopped{background:#fbeee9;color:var(--orange)}
+.badge.started{background:var(--green-soft);color:var(--green)}
+.badge.stopped{background:var(--orange-soft);color:var(--orange)}
 .badge.part{background:var(--surface2);color:var(--ink3);margin-left:6px}
 .badge.muted{background:var(--surface2);color:var(--ink3)}
 
 .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
-.stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;cursor:pointer}
-.stat-tile:hover{border-color:var(--gold)}
+.stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(18,20,28,.03)}
+.stat-tile:hover{border-color:var(--gold);box-shadow:0 4px 14px -4px rgba(79,70,229,.18)}
 .stat-tile.alert{border-color:var(--red)}
-.stat-num{font-family:'Jost',sans-serif;font-size:36px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.stat-num{font-family:'Outfit',sans-serif;font-size:34px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .stat-tile.alert .stat-num{color:var(--red)}
 .stat-label{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
 
 .worker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
-.wcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px}
-.wcard.working{border-color:var(--green);background:#f5faf6}
-.wcard .wname{font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700}
-.wcard .wrole{font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.wcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;box-shadow:0 1px 2px rgba(18,20,28,.03)}
+.wcard.working{border-color:var(--green);background:var(--green-soft)}
+.wcard .wname{font-family:'Outfit',sans-serif;font-size:18px;font-weight:700}
+.wcard .wrole{font-size:11px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
 .wcard .witem{font-size:13px;margin-top:9px;cursor:pointer;text-decoration:underline;text-decoration-color:var(--border)}
-.wcard .wtimer{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:8px}
+.wcard .wtimer{font-family:'Outfit',sans-serif;font-size:25px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:8px}
 .wcard .widle{color:var(--ink3);font-style:italic;font-size:12.5px;margin-top:10px}
 
 .timeline-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);align-items:flex-start}
@@ -131,9 +164,9 @@ tr.clickable:hover td{background:var(--surface2)}
 .row{display:flex;gap:10px;align-items:flex-end}
 .row .field{flex:1}
 
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(28,26,23,.7);z-index:100;align-items:center;justify-content:center;padding:16px}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(18,20,28,.55);backdrop-filter:blur(2px);z-index:100;align-items:center;justify-content:center;padding:16px}
 .modal-bg.show{display:flex}
-.modal{background:var(--bg);border-radius:16px;padding:26px;max-width:440px;width:100%;max-height:88vh;overflow-y:auto;position:relative}
+.modal{background:var(--surface);border-radius:16px;padding:26px;max-width:440px;width:100%;max-height:88vh;overflow-y:auto;position:relative;box-shadow:0 30px 70px -15px rgba(18,20,28,.3)}
 .modal-close{position:absolute;top:14px;right:16px;cursor:pointer;font-size:20px;color:var(--ink3)}
 
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;opacity:0;transition:all .25s;z-index:200;pointer-events:none}
@@ -142,14 +175,14 @@ tr.clickable:hover td{background:var(--surface2)}
 .photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px}
 .photo-grid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer}
 
-.note-box{background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:10px 12px}
+.note-box{background:var(--red-soft);border:1px solid #f3b8b8;border-radius:8px;padding:10px 12px}
 .note-box .nb-label{font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.05em}
 .note-box .nb-en{font-size:13.5px;margin-top:3px}
 .note-box .nb-es{font-size:12.5px;font-style:italic;color:var(--ink2);margin-top:4px}
 
 .mobile-topbar{display:none}
 @media (max-width:880px){
-  .sidebar{transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.2)}
+  .sidebar{transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.3)}
   .sidebar.open{transform:translateX(0)}
   .main{margin-left:0}
   .mobile-topbar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface)}
@@ -162,7 +195,7 @@ tr.clickable:hover td{background:var(--surface2)}
 <!-- ===== LOGIN ===== -->
 <div id="login-screen">
   <div class="login-box">
-    <div class="wordmark">glint</div>
+    <div class="wordmark"><span class="mark"></span>Glint</div>
     <div class="subtitle">Control Room</div>
     <input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')adminLogin()">
     <button onclick="adminLogin()">Enter</button>
@@ -174,7 +207,7 @@ tr.clickable:hover td{background:var(--surface2)}
 <div id="app">
   <div class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-      <div class="wordmark">glint</div>
+      <div class="wordmark"><span class="mark"></span>Glint</div>
       <div class="subtitle">Control Room</div>
     </div>
     <div class="sidebar-nav" id="sidebar-nav"></div>
@@ -187,7 +220,7 @@ tr.clickable:hover td{background:var(--surface2)}
   <div class="main">
     <div class="mobile-topbar">
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-      <div class="wordmark" style="font-size:20px">glint</div>
+      <div class="wordmark" style="font-size:18px"><span class="mark"></span>Glint</div>
     </div>
     <div class="topbar">
       <div class="breadcrumb" id="breadcrumb"></div>
@@ -228,6 +261,7 @@ const NAV_ITEMS = [
   {route:'live', label:'Live', icon:'●'},
   {route:'print', label:'Print Labels', icon:'🏷'},
   {route:'reports', label:'Reports', icon:'▤'},
+  {route:'insights', label:'Insights', icon:'◆'},
   {route:'orders', label:'Orders', icon:'▦'},
   {route:'history', label:'History', icon:'≡'},
   {route:'workers', label:'Workers', icon:'◐'},
@@ -453,7 +487,7 @@ function navigate(hash){ location.hash=hash; }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',print:'Print Labels',reports:'Reports',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -476,6 +510,7 @@ const ROUTE_RENDERERS={
   live: renderLivePage,
   print: renderPrintPage,
   reports: renderReportsPage,
+  insights: renderInsightsPage,
   orders: renderOrdersListPage,
   history: renderHistoryPage,
   workers: renderWorkersPage,
@@ -608,6 +643,10 @@ function renderLivePage(){
   const workingCount=Object.keys(active).length;
   const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
 
+  // Working entries sorted longest-running first — the ones most likely to need a look
+  const workingEntries=Object.entries(active).sort((a,b)=>new Date(a[1].startedAt)-new Date(b[1].startedAt));
+  const idleWorkers=workers.filter(w=>!active[w.name]);
+
   let html=`
   <div class="page-head"><div><div class="page-title">Right Now</div><div class="page-sub">Who's working on what, updating live</div></div>
     <button class="btn btn-ghost btn-sm" onclick="renderLivePage()">↻ Refresh</button></div>
@@ -616,29 +655,54 @@ function renderLivePage(){
     <div class="stat-tile" onclick="navigate('${h('workers')}')"><div class="stat-num">${workers.length}</div><div class="stat-label">Total Workers ›</div></div>
     <div class="stat-tile" onclick="navigate('${h('stat','today')}')"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans Today ›</div></div>
     <div class="stat-tile ${stale.length?'alert':''}" onclick="navigate('${h('stat','stale')}')"><div class="stat-num">${stale.length}</div><div class="stat-label">Left Running ${IDLE_ALERT_HOURS}h+ ›</div></div>
-  </div>
-  <div class="worker-grid">`;
-  html+=workers.map(w=>{
-    const s=active[w.name];
-    if(s){
+  </div>`;
+
+  if(workingEntries.length){
+    html+='<div class="worker-grid">'+workingEntries.map(([name,s])=>{
       const oid=orderIdOf(s.itemId);
       const desc=(s.itemDesc&&s.itemDesc!==s.itemId)?esc(s.itemDesc):esc(s.itemId);
-      const isStale=(Date.now()-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000;
-      return `<div class="wcard working">
-        <div class="wname">${esc(w.name)}</div>
-        <div class="wrole">${esc(s.role||'Working')}${isStale?' · ⚠️ long':''}</div>
+      const elapsed=Date.now()-new Date(s.startedAt).getTime();
+      const pct=elapsed/(IDLE_ALERT_HOURS*3600*1000);
+      const stateClass=pct>=1?'state-crit':(pct>=0.5?'state-warn':'');
+      const flag=pct>=1?' · 🔴 flagged':(pct>=0.5?' · ⚠️ getting long':'');
+      return `<div class="wcard working ${stateClass}">
+        <div class="wname">${esc(name)}</div>
+        <div class="wrole">${esc(s.role||'Working')}${flag}</div>
         <div class="witem" onclick="navigate('${h('item',s.itemId).replace(/'/g,"\\'")}')">${desc}<br><span style="color:var(--ink3);font-size:11px">${esc(s.itemId)}</span></div>
         <div class="wtimer live-timer" data-start="${s.startedAt}">--:--</div>
         <div style="display:flex;gap:6px;margin-top:10px">
           <button class="btn btn-ghost btn-sm" style="flex:1" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 Order</button>
-          <button class="btn btn-danger btn-sm" style="flex:1" onclick="liveForceStop('${jsstr(s.itemId)}','${jsstr(s.role||'')}','${jsstr(w.name)}','${jsstr(s.itemDesc||'')}')">■ Stop</button>
+          <button class="btn btn-danger btn-sm" style="flex:1" onclick="liveForceStop('${jsstr(s.itemId)}','${jsstr(s.role||'')}','${jsstr(name)}','${jsstr(s.itemDesc||'')}')">■ Stop</button>
         </div>
       </div>`;
-    }
-    return `<div class="wcard"><div class="wname">${esc(w.name)}</div><div class="wrole" style="color:var(--ink3)">${esc((w.roles||[]).join(', ')||'—')}</div><div class="widle">Not working right now</div></div>`;
-  }).join('');
+    }).join('')+'</div>';
+  } else {
+    html+='<div class="card"><div class="empty">Nobody working right now</div></div>';
+  }
+
+  // Recent activity feed + idle team roster, side by side
+  const feed=[...scans].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,14);
+  html+='<div class="live-split" style="margin-top:8px">';
+  html+='<div class="card" style="margin-bottom:0"><div class="card-label">Recent Activity</div>'+
+    (feed.length?feed.map(s=>{
+      const started=(s.status||'').includes('Started');
+      const desc=(s.item_desc&&s.item_desc!==s.item_id)?esc(s.item_desc):esc(s.item_id);
+      return `<div class="feed-row" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')">
+        <div class="feed-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
+        <div><div class="feed-text"><strong>${esc(s.worker)}</strong> ${started?'started':'stopped'} ${desc} <span style="color:var(--ink3)">· ${esc(s.role||'—')}</span></div>
+        <div class="feed-time">${relTime(s.created_at)}</div></div>
+      </div>`;
+    }).join(''):'<div class="empty">No activity yet</div>')+
+    '</div>';
+  html+='<div class="card" style="margin-bottom:0"><div class="card-label">Team Roster <span style="font-weight:600;text-transform:none;color:var(--ink3)">— not working right now</span></div>'+
+    (idleWorkers.length?idleWorkers.map(w=>`<div class="roster-row clickable" onclick="navigate('${h('worker',w.name).replace(/'/g,"\\'")}')">
+      <div><div class="roster-name">${esc(w.name)}</div><div class="roster-roles">${esc((w.roles||[]).join(', ')||'—')}</div></div>
+      <span style="color:var(--ink3);font-size:11px">idle</span>
+    </div>`).join(''):(workers.length?'<div class="empty">Everyone is working</div>':'<div class="empty">No workers yet — add them in the Workers tab</div>'))+
+    '</div>';
   html+='</div>';
-  document.getElementById('content').innerHTML = workers.length?html:html.replace('<div class="worker-grid">','<div class="worker-grid"><div class="empty">No workers yet — add them in the Workers tab</div>');
+
+  document.getElementById('content').innerHTML = html;
 }
 async function liveForceStop(itemId, role, worker, desc){
   if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
@@ -743,7 +807,7 @@ function renderTickets(list){
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="font-size:10.5px;font-weight:700;color:var(--gold2);letter-spacing:.05em">${esc(oid)}</div>
-            <div style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700">${esc(cust)}</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:700">${esc(cust)}</div>
             <div style="font-size:11.5px;color:var(--ink3)">${city?'📍 '+esc(city)+'  ·  ':''}${due?'Due '+esc(due):''}</div>
           </div>
           <div style="font-size:11px;color:var(--ink3)">${getDevices(t).length} item${getDevices(t).length!==1?'s':''} ▾</div>
@@ -959,6 +1023,10 @@ function renderReportsPage(){
       </div>
     </div>
     <div class="card">
+      <div class="card-label">Weekly Time Trend <span style="font-weight:600;text-transform:none;color:var(--ink3)">— total hours worked, last 10 weeks</span></div>
+      <div id="weekly-trend"></div>
+    </div>
+    <div class="card">
       <div class="card-label">Time per Item <span style="font-weight:600;text-transform:none;color:var(--ink3)">👆 tap any item for its full timeline, notes & photos</span></div>
       <div style="overflow-x:auto"><table id="item-report"><thead><tr><th>Item</th><th>Customer</th><th>Total Time</th><th>Sessions</th><th>Last Activity</th><th>Status</th></tr></thead><tbody></tbody></table></div>
     </div>
@@ -968,6 +1036,45 @@ function renderReportsPage(){
     </div>
   `;
   renderReportTables();
+  renderWeeklyTrend();
+}
+function weekStart(dateInput){
+  const dt=new Date(dateInput);
+  const day=dt.getDay(); // 0=Sun..6=Sat
+  const diff=(day===0?-6:1-day); // Monday-based week start
+  dt.setDate(dt.getDate()+diff);
+  dt.setHours(0,0,0,0);
+  return dt;
+}
+function renderWeeklyTrend(){
+  const el=document.getElementById('weekly-trend');
+  if(!el) return;
+  const {sessions}=pairSessions(()=>true); // all-time, independent of the table date filter
+  const weeks={}; // key: week-start ISO date -> ms
+  sessions.forEach(s=>{
+    const wk=weekStart(s.end).toISOString().slice(0,10);
+    weeks[wk]=(weeks[wk]||0)+s.ms;
+  });
+  // Build last 10 week buckets (including zero weeks), ending with the current week
+  const buckets=[];
+  const curWk=weekStart(new Date());
+  for(let i=9;i>=0;i--){
+    const d=new Date(curWk); d.setDate(d.getDate()-7*i);
+    const key=d.toISOString().slice(0,10);
+    buckets.push({key, date:d, ms:weeks[key]||0});
+  }
+  const maxMs=Math.max(...buckets.map(b=>b.ms), 1);
+  el.innerHTML=`<div style="display:flex;align-items:flex-end;gap:8px;height:150px;padding:10px 4px 0">
+    ${buckets.map(b=>{
+      const pct=Math.round((b.ms/maxMs)*100);
+      const hrs=(b.ms/3600000).toFixed(1);
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end">
+        <div style="font-size:10px;color:var(--ink3);margin-bottom:3px">${b.ms>0?hrs+'h':''}</div>
+        <div style="width:100%;max-width:34px;height:${Math.max(pct,2)}%;background:${b.ms>0?'var(--gold)':'var(--surface2)'};border-radius:4px 4px 0 0" title="${fmtDur(b.ms)}"></div>
+        <div style="font-size:9.5px;color:var(--ink3);margin-top:6px;white-space:nowrap">${b.date.toLocaleDateString([], {month:'short',day:'numeric'})}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 function renderReportTables(){
   if(!document.getElementById('item-report')) return;
@@ -1002,9 +1109,131 @@ function exportReports(){
   sessions.forEach(s=>{ csv+=`"${s.item_id}","${(s.item_desc||'').replace(/"/g,'""')}","${(s.customer||'').replace(/"/g,'""')}","${s.worker}","${s.role||''}","${fmtDateFull(s.start)}","${fmtDateFull(s.end)}",${Math.round(s.ms/60000)},"${s.runaway?'left running':''}"\n`; });
   downloadCsv(csv,'glint-report.csv');
 }
-function downloadCsv(csv,name){
-  const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download=name; a.click();
+// ========================================================================
+// PAGE: INSIGHTS (analytics — service times, worker speed, slowest items)
+// ========================================================================
+let insightsRange='all', insightsFrom=null, insightsTo=null;
+function insightsInRange(dateStr){
+  const d=new Date(dateStr);
+  if(insightsRange==='custom'){ if(insightsFrom&&d<insightsFrom)return false; if(insightsTo&&d>insightsTo)return false; return true; }
+  if(insightsRange==='all') return true;
+  const now=new Date();
+  if(insightsRange==='today') return d.toDateString()===now.toDateString();
+  if(insightsRange==='week'){ const wk=new Date(now); wk.setDate(now.getDate()-7); return d>=wk; }
+  if(insightsRange==='month'){ const mo=new Date(now); mo.setMonth(now.getMonth()-1); return d>=mo; }
+  return true;
+}
+function insightsSetRange(r){
+  insightsRange=r; insightsFrom=null; insightsTo=null;
+  document.getElementById('ins-from').value=''; document.getElementById('ins-to').value='';
+  document.querySelectorAll('#ins-range-seg button').forEach(b=>b.classList.toggle('on', b.dataset.r===r));
+  renderInsightsBody();
+}
+function insightsCustomRange(){
+  const f=document.getElementById('ins-from').value, t=document.getElementById('ins-to').value;
+  insightsFrom=f?new Date(f+'T00:00:00'):null; insightsTo=t?new Date(t+'T23:59:59'):null;
+  if(insightsFrom||insightsTo){ insightsRange='custom'; document.querySelectorAll('#ins-range-seg button').forEach(b=>b.classList.remove('on')); }
+  renderInsightsBody();
+}
+// Group split-part items back to their base type ("Vase Large — Base" -> "Vase Large")
+function normalizeItemType(desc){
+  if(!desc||!desc.trim()) return null;
+  return desc.replace(/\s+—\s+.+$/,'').trim();
+}
+function renderInsightsPage(){
+  insightsRange='all'; insightsFrom=null; insightsTo=null;
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Insights</div><div class="page-sub">Service times, worker speed, and which items take longest — for pricing and staffing</div></div>
+      <div class="head-actions">
+        <div class="seg" id="ins-range-seg">
+          <button data-r="today" onclick="insightsSetRange('today')">Today</button>
+          <button data-r="week" onclick="insightsSetRange('week')">Week</button>
+          <button data-r="month" onclick="insightsSetRange('month')">Month</button>
+          <button class="on" data-r="all" onclick="insightsSetRange('all')">All</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
+          <input type="date" id="ins-from" onchange="insightsCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+          <span>→</span>
+          <input type="date" id="ins-to" onchange="insightsCustomRange()" style="padding:6px 8px;font-size:12px;width:auto">
+        </div>
+      </div>
+    </div>
+    <div id="insights-body"></div>
+  `;
+  renderInsightsBody();
+}
+function renderInsightsBody(){
+  const box=document.getElementById('insights-body');
+  if(!box) return;
+  const {sessions}=pairSessions(insightsInRange);
+  if(!sessions.length){ box.innerHTML='<div class="card"><div class="empty">No completed sessions in this range yet</div></div>'; return; }
+
+  // ---- 1. Average time per service (role) ----
+  const roleAgg={};
+  sessions.forEach(s=>{
+    const r=s.role||'—';
+    if(!roleAgg[r]) roleAgg[r]={ms:0,count:0};
+    roleAgg[r].ms+=s.ms; roleAgg[r].count++;
+  });
+  const roleRows=Object.entries(roleAgg).map(([r,d])=>({role:r,avg:d.ms/d.count,total:d.ms,count:d.count})).sort((a,b)=>b.avg-a.avg);
+  const maxAvgRole=Math.max(...roleRows.map(r=>r.avg),1);
+
+  let html=`<div class="card">
+    <div class="card-label">Average Time per Service</div>
+    ${roleRows.map(r=>`<div style="padding:9px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:5px">
+        <strong>${esc(r.role)}</strong>
+        <span>${fmtDur(r.avg)} avg <span style="color:var(--ink3);font-weight:400">· ${r.count} session${r.count!==1?'s':''} · ${fmtDur(r.total)} total</span></span>
+      </div>
+      <div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden"><div style="width:${Math.round(r.avg/maxAvgRole*100)}%;height:100%;background:var(--gold)"></div></div>
+    </div>`).join('')}
+  </div>`;
+
+  // ---- 2. Fastest workers per service (min 2 sessions per worker+role to avoid single-sample noise) ----
+  const workerRoleAgg={}; // role -> worker -> {ms,count}
+  sessions.forEach(s=>{
+    const r=s.role||'—';
+    if(!workerRoleAgg[r]) workerRoleAgg[r]={};
+    if(!workerRoleAgg[r][s.worker]) workerRoleAgg[r][s.worker]={ms:0,count:0};
+    workerRoleAgg[r][s.worker].ms+=s.ms; workerRoleAgg[r][s.worker].count++;
+  });
+  html+=`<div class="card">
+    <div class="card-label">Fastest Workers by Service <span style="font-weight:600;text-transform:none;color:var(--ink3)">— ranked fastest to slowest, minimum 2 sessions</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+    ${Object.entries(workerRoleAgg).map(([role,workers])=>{
+      const ranked=Object.entries(workers).map(([w,d])=>({worker:w,avg:d.ms/d.count,count:d.count})).filter(x=>x.count>=2).sort((a,b)=>a.avg-b.avg);
+      if(!ranked.length) return '';
+      return `<div>
+        <div style="font-size:11px;font-weight:700;color:var(--gold2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">${esc(role)}</div>
+        ${ranked.map((x,i)=>`<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px;${i===0?'font-weight:700':''}">
+          <span>${i===0?'🥇 ':''}${esc(x.worker)}</span>
+          <span style="color:${i===0?'var(--green)':'var(--ink2)'}">${fmtDur(x.avg)} <span style="color:var(--ink3);font-size:11px">(${x.count})</span></span>
+        </div>`).join('')}
+      </div>`;
+    }).filter(Boolean).join('') || '<div class="empty">Not enough repeat data yet — need at least 2 sessions per worker on the same service</div>'}
+    </div>
+  </div>`;
+
+  // ---- 3. Items that take longest ----
+  const itemTypeAgg={};
+  let unresolvedCount=0;
+  sessions.forEach(s=>{
+    const type=normalizeItemType(s.item_desc);
+    if(!type){ unresolvedCount++; return; }
+    if(!itemTypeAgg[type]) itemTypeAgg[type]={ms:0,count:0};
+    itemTypeAgg[type].ms+=s.ms; itemTypeAgg[type].count++;
+  });
+  const itemRows=Object.entries(itemTypeAgg).map(([t,d])=>({type:t,avg:d.ms/d.count,total:d.ms,count:d.count})).sort((a,b)=>b.avg-a.avg);
+  html+=`<div class="card">
+    <div class="card-label">Items That Take Longest <span style="font-weight:600;text-transform:none;color:var(--ink3)">— average time per work session, by item type</span></div>
+    <div style="overflow-x:auto"><table><thead><tr><th>Item Type</th><th>Avg per Session</th><th>Total Time</th><th>Sessions</th></tr></thead><tbody>
+    ${itemRows.length?itemRows.map(r=>`<tr><td><strong>${esc(r.type)}</strong></td><td>${fmtDur(r.avg)}</td><td>${fmtDur(r.total)}</td><td>${r.count}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No item data yet</td></tr>'}
+    </tbody></table></div>
+    ${unresolvedCount?`<div style="font-size:11px;color:var(--ink3);margin-top:10px">${unresolvedCount} session${unresolvedCount!==1?'s':''} skipped — item name wasn't recorded (older scans from before the name-resolve fix)</div>`:''}
+  </div>`;
+
+  box.innerHTML=html;
 }
 
 // ========================================================================
@@ -1047,7 +1276,7 @@ function renderOrdersList(){
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
-          <div style="font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:700">${o.customer&&o.customer!=='undefined'?esc(o.customer):'—'}</div>
+          <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700">${o.customer&&o.customer!=='undefined'?esc(o.customer):'—'}</div>
           <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done</div>
         </div>
         <div style="text-align:right">
@@ -1158,7 +1387,7 @@ async function renderItemDetailPage(itemId){
 
   html+=`<div class="card" style="text-align:center">
     <div class="card-label" style="margin-bottom:4px">Total Time Worked</div>
-    <div style="font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:700">${fmtDur(totalMs)}</div>
+    <div style="font-family:'Outfit',sans-serif;font-size:34px;font-weight:700">${fmtDur(totalMs)}</div>
   </div>`;
 
   html+='<div class="card"><div class="card-label">Timeline <span style="font-weight:600;text-transform:none;color:var(--ink3)">— admins can edit or delete entries</span></div>';
@@ -1467,7 +1696,7 @@ function renderEmployeeReportBody(name){
   </div>`;
 
   if(openNow.length){
-    html+='<div class="card" style="background:#f5faf6;border-color:var(--green)"><div class="card-label" style="color:var(--green)">▶ Working Right Now</div>'+
+    html+='<div class="card" style="background:var(--green-soft);border-color:var(--green)"><div class="card-label" style="color:var(--green)">▶ Working Right Now</div>'+
       openNow.map(o=>`<div class="clickable" style="padding:8px 0" onclick="navigate('${h('item',o.item_id).replace(/'/g,"\\'")}')"><strong>${o.item_desc&&o.item_desc!==o.item_id?esc(o.item_desc):esc(o.item_id)}</strong> <span style="color:var(--ink3);font-size:11px">${esc(o.item_id)}</span> · ${esc(o.role||'—')} · since ${fmtDateFull(o.created_at)}</div>`).join('')+'</div>';
   }
 
