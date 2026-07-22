@@ -941,13 +941,24 @@ function addCustomPart(itemId){
   const list=document.getElementById('cs-list-'+key);
   const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+  // Don't allow the same part twice
+  if(document.getElementById(cbId)){ toast('"'+part+'" is already added'); inp.value=''; inp.focus(); return; }
   const div=document.createElement('div');
-  div.style.cssText='display:flex;gap:10px;padding:7px 0';
+  div.setAttribute('data-part-row','1');
+  div.style.cssText='display:flex;gap:10px;padding:7px 0;align-items:center';
   div.innerHTML=`<input type="checkbox" class="item-cb" id="${cbId}" checked onchange="updateSelCount()" style="width:18px;height:18px;accent-color:var(--ink)"
     data-item-id="${pid}" data-item-name="${esc(meta.name)} — ${esc(part)}" data-services="${esc(meta.services||'')}" data-customer="${esc(meta.cust)}" data-city="${esc(meta.city)}" data-group="${esc(meta.group||'')}" data-note="${esc(meta.note)}" data-due="${esc(meta.due)}" data-part="${esc(part)}">
-    <div style="font-weight:600;font-size:13.5px">${esc(part)}</div>`;
+    <div style="font-weight:600;font-size:13.5px;flex:1">${esc(part)}</div>
+    <button class="btn btn-ghost btn-sm" title="Remove this part" onclick="removeCustomPart(this,'${jsstr(part)}')">✕</button>`;
   list.appendChild(div);
   inp.value=''; inp.focus();
+  updateSelCount();
+}
+function removeCustomPart(btn, partName){
+  if(!confirm('Remove "'+partName+'" from this split?\n\nThis only removes it from the list — no label will be printed for it.')) return;
+  const row=btn.closest('[data-part-row]');
+  if(row) row.remove();
+  toast('Removed "'+partName+'"');
   updateSelCount();
 }
 function selectParts(itemId,on){ CANDELABRA_PARTS.forEach(p=>{const cb=document.getElementById('cb-'+(itemId+'-'+partSlug(p)).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); updateSelCount(); }
