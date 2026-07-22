@@ -585,7 +585,8 @@ function isRepairNote(n){
   const title=((n.tittle||n.title||'')+'').toLowerCase();
   return title.includes('diagnostic');
 }
-function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>(String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase())))&&isRepairNote(n)).map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · '); }
+function hasMeaning(txt){ return /[a-z0-9]/i.test(txt||''); }
+function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>(String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase())))&&isRepairNote(n)).map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(hasMeaning).join(' · '); }
 function prIsCand(n){ return /candelabra/i.test(n||''); }
 
 async function prLoad(){
@@ -1008,6 +1009,9 @@ function changeAdminPin() {
 }
 
 // ===== SCAN PROCESSING (toggle start/stop) =====
+let lastScan = { id:null, at:0 };
+const DOUBLE_SCAN_MS = 3000; // ignore the same barcode re-scanned within 3 seconds
+
 async function processScan(itemId) {
   if (!selectedWorker) { showToast('Select a worker first'); return; }
   if (!selectedRole) { showToast('Select your role first'); return; }
@@ -1022,6 +1026,17 @@ async function processScan(itemId) {
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
     return;
   }
+
+  // Guard against accidental double-scans (scanner double-fire, or a quick re-scan)
+  const now = Date.now();
+  if (lastScan.id === itemId && (now - lastScan.at) < DOUBLE_SCAN_MS) {
+    playErrorBeep();
+    showToast('⏱️ Already scanned a moment ago — ignored');
+    document.getElementById('scan-input').value = '';
+    setTimeout(() => document.getElementById('scan-input').focus(), 100);
+    return;
+  }
+  lastScan = { id: itemId, at: now };
 
   const task = selectedRole;
   const stateKey = itemId + '::' + task;
