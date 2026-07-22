@@ -453,6 +453,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   renderLabelHistory();
 
+  // Keep this device in step with the server (e.g. admin force-stops an item)
+  setInterval(() => { if (selectedWorker) syncActiveWorkFromServer(); }, 60000);
+  // Re-check the moment the worker comes back to the app
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && selectedWorker) syncActiveWorkFromServer();
+  });
+
   // Enter key to log in from PIN field
   const loginPin = document.getElementById('login-pin');
   if (loginPin) loginPin.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -729,13 +736,23 @@ function prAddCustomPart(itemId){
   const list=document.getElementById('cs-list-'+key);
   const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
   const cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+  if(document.getElementById(cbId)){ showToast('"'+part+'" is already added'); inp.value=''; inp.focus(); return; }
   const div=document.createElement('div');
+  div.setAttribute('data-part-row','1');
   div.style.cssText='display:flex;gap:10px;padding:6px 0;align-items:center';
   div.innerHTML=`<input type="checkbox" class="pr-cb" id="${cbId}" checked onchange="prCount()" style="width:18px;height:18px;accent-color:var(--ink)"
     data-item-id="${pid}" data-item-name="${meta.name} — ${part}" data-services="${meta.services||''}" data-customer="${meta.cust}" data-city="${meta.city}" data-group="${meta.group||''}" data-note="${meta.note}" data-due="${meta.due}" data-part="${part}">
-    <div style="font-weight:600;font-size:13px">${part}</div>`;
+    <div style="font-weight:600;font-size:13px;flex:1">${part}</div>
+    <button class="gen-btn" style="font-size:11px;padding:5px 10px;background:var(--surface2);color:var(--red);border:2px solid var(--border)" title="Remove" onclick="prRemoveCustomPart(this,'${part.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">✕</button>`;
   list.appendChild(div);
   inp.value=''; inp.focus();
+  prCount();
+}
+function prRemoveCustomPart(btn, partName){
+  if(!confirm('Remove "'+partName+'" from this split?\n\nNo label will be printed for it.')) return;
+  const row=btn.closest('[data-part-row]');
+  if(row) row.remove();
+  showToast('Removed "'+partName+'"');
   prCount();
 }
 function prToggleParts(itemId,name,cust,city,note,due,services,group){
@@ -876,10 +893,66 @@ function doLogout() {
   selectedWorker = null;
   selectedRole = null;
   document.getElementById('print-tab').style.display = 'none';
-  // Clear any active work timer display
+  // Clear the local panel — the real session stays open in Supabase and will be
+  // restored on next login (or can be force-stopped from the dashboard)
+  activeWork = null;
+  localStorage.setItem('st_active_work','null');
   stopActiveWorkTimer();
   showLoginScreen();
   showToast('Logged out');
+}
+
+// The green "Currently Working On" panel used to come only from this device's localStorage.
+// If storage was cleared, the worker used another device, or they logged out and back in,
+// the panel vanished while Supabase still had an open session — so the dashboard showed them
+// working forever. This syncs the panel FROM Supabase, the real source of truth, both ways.
+async function syncActiveWorkFromServer(){
+  if(!selectedWorker) return;
+  try{
+    const q = SUPABASE_URL + '/rest/v1/scans?worker=eq.' + encodeURIComponent(selectedWorker.name) +
+      '&select=item_id,item_desc,status,role,created_at&order=created_at.asc&limit=800';
+    const r = await fetch(q, { headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+    const rows = await r.json();
+    if(!Array.isArray(rows)) return;
+
+    // Pair start/stop per item+role; whatever is left unpaired is still running
+    const open={};
+    rows.forEach(s=>{
+      const key=s.item_id+'::'+(s.role||'');
+      if((s.status||'').includes('Started')) open[key]=s;
+      else delete open[key];
+    });
+    const openList=Object.values(open).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+
+    if(openList.length){
+      const s=openList[0];
+      const info = itemCache[s.item_id]||{};
+      activeWork = {
+        itemId: s.item_id,
+        name: s.item_desc || info.name || s.item_id,
+        task: s.role || '',
+        startedAt: new Date(s.created_at).getTime()
+      };
+      localStorage.setItem('st_active_work', JSON.stringify(activeWork));
+      itemTaskState[s.item_id+'::'+(s.role||'')]='in_progress';
+      localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+      renderActiveWork();
+      startActiveWorkTimer();
+      if(!s.item_desc) resolveItemInfo(s.item_id).then(inf=>{
+        if(inf&&inf.name&&activeWork&&activeWork.itemId===s.item_id){
+          activeWork.name=inf.name;
+          localStorage.setItem('st_active_work', JSON.stringify(activeWork));
+          renderActiveWork();
+        }
+      });
+    } else if(activeWork){
+      // Server says nothing is running — clear a stale local panel
+      activeWork=null;
+      localStorage.setItem('st_active_work','null');
+      stopActiveWorkTimer();
+      renderActiveWork();
+    }
+  }catch(e){ /* offline — keep whatever local state we have */ }
 }
 
 function activateWorkerOnDevice(w) {
@@ -896,6 +969,7 @@ function activateWorkerOnDevice(w) {
     document.getElementById('scan-card').style.display = 'none';
     document.getElementById('scan-recent-card').style.display = 'none';
     renderRoleButtons(w.roles);
+    syncActiveWorkFromServer();
   } else {
     selectedRole = w.roles[0] || '';
     document.getElementById('role-select-card').style.display = 'none';
@@ -905,6 +979,7 @@ function activateWorkerOnDevice(w) {
     renderScanRecent();
     renderActiveWork();
     if (activeWork) startActiveWorkTimer();
+    syncActiveWorkFromServer();
     setTimeout(() => document.getElementById('scan-input').focus(), 150);
   }
 }
@@ -926,6 +1001,7 @@ function selectRole(role) {
   renderScanRecent();
   renderActiveWork();
   if (activeWork) startActiveWorkTimer();
+  syncActiveWorkFromServer();
   setTimeout(() => document.getElementById('scan-input').focus(), 150);
 }
 
