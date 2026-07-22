@@ -10,33 +10,38 @@
 <script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap');
 
 :root {
-  --bg:#ede8df;
-  --surface:#faf7f3;
-  --surface2:#e8e1d6;
-  --border:#c8bfb0;
-  --ink:#18160f;
-  --ink2:#3a3628;
-  --ink3:#7a7060;
-  --gold:#b89040;
-  --gold2:#8a6a20;
+  --bg:#f6f7fb;
+  --surface:#ffffff;
+  --surface2:#f1f2f6;
+  --border:#e5e7eb;
+  --ink:#12141c;
+  --ink2:#4b5165;
+  --ink3:#8b90a3;
+  --gold:#4f46e5;
+  --gold2:#4338ca;
   --radius:12px;
-  --green:#1e5c38;
-  --blue:#1e3d6e;
-  --orange:#7a4810;
-  --red:#6e2020;
-  --purple:#4a2868;
+  --green:#059669;
+  --blue:#2563eb;
+  --orange:#d97706;
+  --red:#dc2626;
+  --purple:#7c3aed;
+  --accent-soft:#eef0ff;
+  --green-soft:#ecfdf5;
+  --orange-soft:#fffbeb;
+  --red-soft:#fef2f2;
+  --blue-soft:#eff6ff;
 }
 
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-height:100vh}
+body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-height:100vh}
 .app-shell{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);box-shadow:0 0 60px rgba(0,0,0,.12)}
 
 /* NAV */
 .nav{display:flex;background:var(--surface);border-bottom:2px solid var(--border);position:sticky;top:0;z-index:100}
-.nav-tab{flex:1;padding:14px 4px;text-align:center;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;user-select:none;margin-bottom:-2px}
+.nav-tab{flex:1;padding:14px 4px;text-align:center;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;user-select:none;margin-bottom:-2px}
 .nav-tab.active{color:var(--gold)!important;border-bottom-color:var(--gold)}
 
 /* HEADER */
@@ -55,7 +60,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 /* INPUTS */
 .gen-input,.scan-input,.search-input,.sheet-input{
   width:100%;background:var(--surface);border:2px solid var(--border);border-radius:8px;
-  padding:13px 14px;font-family:'Jost',sans-serif;font-size:14px;font-weight:400;
+  padding:13px 14px;font-family:'Inter',sans-serif;font-size:14px;font-weight:400;
   color:var(--ink);outline:none;transition:border-color .2s;-webkit-appearance:none;
 }
 .gen-input:focus,.scan-input:focus,.search-input:focus,.sheet-input:focus{border-color:var(--ink)}
@@ -67,23 +72,23 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .gen-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
 
 /* BUTTONS */
-.gen-btn{padding:13px 18px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:opacity .15s}
+.gen-btn{padding:13px 18px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:opacity .15s}
 .gen-btn:active{opacity:.8}
-.log-btn{width:100%;padding:18px;background:var(--ink);border:none;border-radius:var(--radius);color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;transition:opacity .2s;margin-top:4px}
+.log-btn{width:100%;padding:18px;background:var(--ink);border:none;border-radius:var(--radius);color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;transition:opacity .2s;margin-top:4px}
 .log-btn:active{opacity:.85}
 .log-btn:disabled{opacity:.15;cursor:not-allowed}
-.copy-btn{width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--radius);color:var(--gold2);font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;cursor:pointer;margin-bottom:10px}
-.print-btn-main{width:100%;padding:16px;background:var(--ink);border:none;border-radius:var(--radius);color:#fff;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;margin-top:10px}
+.copy-btn{width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--radius);color:var(--gold2);font-family:'Inter',sans-serif;font-weight:700;font-size:12px;letter-spacing:.08em;cursor:pointer;margin-bottom:10px}
+.print-btn-main{width:100%;padding:16px;background:var(--ink);border:none;border-radius:var(--radius);color:#fff;font-family:'Inter',sans-serif;font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;margin-top:10px}
 .print-btn-main:disabled{opacity:.15;cursor:not-allowed}
 
 /* WORKERS */
 .worker-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px}
-.worker-btn{padding:11px 20px;border-radius:50px;border:2px solid var(--border);background:var(--surface);color:var(--ink);font-family:'Jost',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none}
+.worker-btn{padding:11px 20px;border-radius:50px;border:2px solid var(--border);background:var(--surface);color:var(--ink);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;user-select:none}
 .worker-btn.selected{border-color:var(--ink);background:var(--ink);color:#fff;font-weight:600}
 
 /* STATUS GRID */
 .status-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.status-btn{padding:15px 6px;border-radius:var(--radius);border:2px solid var(--border);background:var(--surface);cursor:pointer;font-family:'Jost',sans-serif;font-weight:700;font-size:12px;letter-spacing:.03em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink)}
+.status-btn{padding:15px 6px;border-radius:var(--radius);border:2px solid var(--border);background:var(--surface);cursor:pointer;font-family:'Inter',sans-serif;font-weight:700;font-size:12px;letter-spacing:.03em;text-align:center;transition:all .18s;user-select:none;display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--ink)}
 .status-btn .s-icon{font-size:20px;line-height:1}
 .status-btn:active{transform:scale(.97)}
 .status-btn.sel{background:var(--ink);border-color:var(--ink);color:#fff}
@@ -96,7 +101,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .log-dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0}
 .log-meta{flex:1}
 .log-id{font-size:13px;color:var(--ink);font-weight:700;letter-spacing:.04em}
-.log-desc{font-size:13px;color:var(--ink2);margin-top:2px;font-style:italic;font-family:'Cormorant Garamond',serif;font-weight:600}
+.log-desc{font-size:13px;color:var(--ink2);margin-top:2px;font-style:italic;font-family:'Outfit',serif;font-weight:600}
 .log-status{font-size:11px;color:var(--ink2);margin-top:2px;font-weight:500}
 .log-who{font-size:10px;color:var(--ink3);margin-top:2px;letter-spacing:.04em;font-weight:500}
 .log-time{font-size:10px;color:var(--ink3);text-align:right;flex-shrink:0;letter-spacing:.02em;font-weight:500}
@@ -108,22 +113,22 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .ticket-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
 .ticket-id{font-size:11px;color:var(--gold2);letter-spacing:.14em;font-weight:700;text-transform:uppercase}
 .ticket-count{font-size:10px;color:var(--ink3);font-weight:600;letter-spacing:.06em}
-.ticket-title{font-size:22px;color:var(--ink);font-weight:700;font-family:'Cormorant Garamond',serif;letter-spacing:.01em}
+.ticket-title{font-size:22px;color:var(--ink);font-weight:700;font-family:'Outfit',serif;letter-spacing:.01em}
 .ticket-sub{font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.04em}
-.ticket-badge{display:inline-block;font-size:10px;padding:5px 12px;border-radius:6px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.05em;background:var(--surface2);color:var(--ink2);border:2px solid var(--border);white-space:normal;max-width:180px;text-align:right;line-height:1.3}
-.ticket-item-count{display:inline-block;font-size:11px;padding:6px 14px;border-radius:6px;font-weight:700;font-family:'Jost',sans-serif;letter-spacing:.06em;background:var(--ink);color:#fff;white-space:nowrap}
+.ticket-badge{display:inline-block;font-size:10px;padding:5px 12px;border-radius:6px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:.05em;background:var(--surface2);color:var(--ink2);border:2px solid var(--border);white-space:normal;max-width:180px;text-align:right;line-height:1.3}
+.ticket-item-count{display:inline-block;font-size:11px;padding:6px 14px;border-radius:6px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:.06em;background:var(--ink);color:#fff;white-space:nowrap}
 .ticket-items{display:none;border-top:2px solid var(--border);padding:14px 16px;background:var(--bg)}
 .ticket-items.open{display:block}
 .item-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
 .item-row:last-child{border-bottom:none}
 .item-cb{width:18px;height:18px;accent-color:var(--ink);cursor:pointer;flex-shrink:0;margin-top:3px}
 .item-info{flex:1}
-.item-name{font-size:18px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700}
+.item-name{font-size:18px;color:var(--ink);font-family:'Outfit',serif;font-weight:700}
 .item-meta{font-size:10px;color:var(--ink3);margin-top:4px;letter-spacing:.04em;font-weight:500}
 .s-badge{font-size:9px;padding:2px 7px;border-radius:4px;font-weight:700;letter-spacing:.06em}
-.s-open{background:#dce8f5;color:var(--blue)}
-.s-progress{background:#f5eddc;color:var(--gold2)}
-.s-done{background:#dceee5;color:var(--green)}
+.s-open{background:var(--blue-soft);color:var(--blue)}
+.s-progress{background:var(--accent-soft);color:var(--gold2)}
+.s-done{background:var(--green-soft);color:var(--green)}
 .search-bar{display:flex;gap:8px;margin-bottom:14px}
 
 /* LABELS */
@@ -131,16 +136,16 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 .label-preview-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center}
 .label-preview-card .qr-wrap{display:flex;justify-content:center;margin-bottom:8px}
 .label-preview-card .lbl-id{font-size:11px;font-weight:700;color:var(--ink);letter-spacing:.08em}
-.label-preview-card .lbl-name{font-size:13px;color:var(--ink2);margin-top:3px;font-family:'Cormorant Garamond',serif;font-weight:600;font-style:italic}
+.label-preview-card .lbl-name{font-size:13px;color:var(--ink2);margin-top:3px;font-family:'Outfit',serif;font-weight:600;font-style:italic}
 .label-preview-card .lbl-customer{font-size:10px;color:var(--ink3);margin-top:2px;font-weight:500}
-.label-preview-card .lbl-sel{display:inline-block;margin-top:5px;font-size:9px;font-weight:700;color:var(--green);background:#dceee5;border-radius:4px;padding:2px 7px;letter-spacing:.04em}
+.label-preview-card .lbl-sel{display:inline-block;margin-top:5px;font-size:9px;font-weight:700;color:var(--green);background:var(--green-soft);border-radius:4px;padding:2px 7px;letter-spacing:.04em}
 
 /* SCRIPT */
 .script-box{background:var(--ink);border:none;border-radius:var(--radius);padding:16px;font-size:11px;line-height:1.8;color:#9abf9a;overflow-x:auto;white-space:pre;margin-bottom:12px;max-height:260px;overflow-y:auto}
 .step-list{list-style:none}
 .step-list li{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--surface2);font-size:12px;line-height:1.5;color:var(--ink3)}
 .step-list li:last-child{border-bottom:none}
-.step-num{width:22px;height:22px;background:var(--ink);border-radius:50%;color:#fff;font-family:'Jost',sans-serif;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.step-num{width:22px;height:22px;background:var(--ink);border-radius:50%;color:#fff;font-family:'Inter',sans-serif;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 
 /* MISC */
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
@@ -201,7 +206,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 
   <div class="card" id="login-card" style="display:none">
     <div style="text-align:center;margin-bottom:16px">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:24px;font-weight:700;color:var(--ink)">Worker Login</div>
+      <div style="font-family:'Outfit',serif;font-size:24px;font-weight:700;color:var(--ink)">Worker Login</div>
       <div style="font-size:12px;color:var(--ink3);margin-top:2px">Enter your name and PIN to start</div>
     </div>
     <div style="margin-bottom:10px">
@@ -219,9 +224,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
     <div style="display:flex;align-items:center;justify-content:space-between">
       <div>
         <div style="font-size:11px;color:var(--ink3);font-weight:600;letter-spacing:.06em;text-transform:uppercase">Logged in as</div>
-        <div style="font-size:24px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:2px" id="active-worker-name"></div>
+        <div style="font-size:24px;color:var(--ink);font-family:'Outfit',serif;font-weight:700;margin-top:2px" id="active-worker-name"></div>
       </div>
-      <button onclick="doLogout()" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--red);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:8px 14px;cursor:pointer;letter-spacing:.04em">Log Out</button>
+      <button onclick="doLogout()" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--red);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:8px 14px;cursor:pointer;letter-spacing:.04em">Log Out</button>
     </div>
   </div>
 
@@ -241,7 +246,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
       <button onclick="toggleKeyboard()" id="keyboard-btn" class="gen-btn" style="flex-shrink:0;background:var(--surface2);border:2px solid var(--border);color:var(--ink2)" title="Show keyboard">⌨️</button>
       <button onclick="submitScan()" class="gen-btn" style="flex-shrink:0">Enter</button>
     </div>
-    <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
+    <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
       📷 Use Camera to Scan
     </button>
     <div id="camera-container" style="display:none;position:relative;border-radius:10px;overflow:hidden;margin-bottom:10px">
@@ -251,22 +256,22 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
     </div>
   </div>
 
-  <div class="card" id="active-work-panel" style="display:none;background:#eef7f2;border:2px solid var(--green)">
+  <div class="card" id="active-work-panel" style="display:none;background:var(--green-soft);border:2px solid var(--green)">
     <div style="text-align:center">
       <div style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.12em;text-transform:uppercase">▶ Currently Working On</div>
-      <div id="active-work-name" style="font-size:20px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:700;margin-top:6px;line-height:1.2"></div>
+      <div id="active-work-name" style="font-size:20px;color:var(--ink);font-family:'Outfit',serif;font-weight:700;margin-top:6px;line-height:1.2"></div>
       <div id="active-work-task" style="font-size:12px;color:var(--green);font-weight:700;margin-top:2px;letter-spacing:.04em;text-transform:uppercase"></div>
       <div id="active-work-timer" style="font-size:32px;color:var(--ink);font-weight:700;margin-top:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em">00:00</div>
       <div style="font-size:10px;color:var(--ink3);margin-top:2px">scan again to stop</div>
       <div id="active-work-info" style="margin-top:12px"></div>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
-        <button onclick="addPhotoNow()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📸 Add Photo</button>
-        <button onclick="viewItemImages()" id="view-imgs-btn" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🖼️ All Photos</button>
+        <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
+        <button onclick="addPhotoNow()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📸 Add Photo</button>
+        <button onclick="viewItemImages()" id="view-imgs-btn" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🖼️ All Photos</button>
       </div>
       <div id="note-box" style="display:none;margin-top:10px">
-        <textarea id="note-text" placeholder="Type a note about this item..." style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-family:'Jost',sans-serif;font-size:13px;resize:vertical;min-height:60px"></textarea>
-        <button onclick="saveNote()" style="width:100%;margin-top:6px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer;text-transform:uppercase">Save Note</button>
+        <textarea id="note-text" placeholder="Type a note about this item..." style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;resize:vertical;min-height:60px"></textarea>
+        <button onclick="saveNote()" style="width:100%;margin-top:6px;background:var(--ink);border:none;border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer;text-transform:uppercase">Save Note</button>
       </div>
     </div>
   </div>
@@ -306,19 +311,19 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <!-- Image capture modal -->
 <div id="img-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px">
   <div style="background:var(--bg);border-radius:16px;padding:20px;width:100%;max-width:440px;max-height:92vh;overflow-y:auto">
-    <div id="img-modal-title" style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;text-align:center;margin-bottom:4px">Capture Photo</div>
+    <div id="img-modal-title" style="font-family:'Outfit',serif;font-size:22px;font-weight:700;text-align:center;margin-bottom:4px">Capture Photo</div>
     <div id="img-modal-sub" style="font-size:12px;color:var(--ink3);text-align:center;margin-bottom:14px"></div>
     <video id="img-video" autoplay muted playsinline style="width:100%;border-radius:12px;display:none;background:#000"></video>
     <canvas id="img-canvas" style="display:none"></canvas>
     <img id="img-preview" style="width:100%;border-radius:12px;display:none">
     <div id="img-buttons" style="display:flex;gap:8px;margin-top:12px">
-      <button onclick="imgCapture()" id="img-snap-btn" style="flex:1;background:var(--ink);border:none;border-radius:10px;color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:14px;cursor:pointer;text-transform:uppercase">📷 Take Photo</button>
+      <button onclick="imgCapture()" id="img-snap-btn" style="flex:1;background:var(--ink);border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;padding:14px;cursor:pointer;text-transform:uppercase">📷 Take Photo</button>
     </div>
     <div id="img-confirm" style="display:none;gap:8px;margin-top:12px">
-      <button onclick="imgRetake()" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:10px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">Retake</button>
-      <button onclick="imgSave()" id="img-save-btn" style="flex:2;background:var(--green);border:none;border-radius:10px;color:#fff;font-family:'Jost',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">✓ Save & Finish</button>
+      <button onclick="imgRetake()" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:10px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">Retake</button>
+      <button onclick="imgSave()" id="img-save-btn" style="flex:2;background:var(--green);border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;padding:12px;cursor:pointer;text-transform:uppercase">✓ Save & Finish</button>
     </div>
-    <button onclick="imgCancel()" id="img-cancel-btn" style="width:100%;margin-top:8px;background:none;border:none;color:var(--ink3);font-family:'Jost',sans-serif;font-size:11px;cursor:pointer">Cancel</button>
+    <button onclick="imgCancel()" id="img-cancel-btn" style="width:100%;margin-top:8px;background:none;border:none;color:var(--ink3);font-family:'Inter',sans-serif;font-size:11px;cursor:pointer">Cancel</button>
   </div>
 </div>
 
@@ -326,7 +331,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
 <div id="preimg-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closePreImg()">
   <div style="background:var(--bg);border-radius:16px;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:700">Item Photos</div>
+      <div style="font-family:'Outfit',serif;font-size:20px;font-weight:700">Item Photos</div>
       <button onclick="closePreImg()" style="background:none;border:none;font-size:22px;color:var(--ink3);cursor:pointer;font-weight:700">✕</button>
     </div>
     <div id="preimg-content"><div style="text-align:center;color:var(--ink3);padding:20px">Loading…</div></div>
@@ -409,9 +414,9 @@ let activeWorkTimer = null;
 
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 function getStatusColor(status) {
-  if (status.includes('Stopped')) return '#8a5a20';
-  if (status.includes('Started')) return '#1e5c38';
-  return '#7a7060';
+  if (status.includes('Stopped')) return '#d97706';
+  if (status.includes('Started')) return '#059669';
+  return '#8b90a3';
 }
 
 // ===== INIT =====
@@ -502,7 +507,7 @@ async function runScanSuggest(q){
       <div style="font-size:11px;color:var(--gold2);font-weight:700">${oid} · ${cust}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
         ${devs.map((d,i)=>{ const nm=d.device?d.device.name:'Item '+(i+1); const iid=oid+'-'+(i+1);
-          return `<button onclick="pickSuggest('${iid}')" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Jost',sans-serif;font-size:11px;font-weight:600;cursor:pointer">${nm} <span style="color:var(--ink3)">${iid}</span></button>`;
+          return `<button onclick="pickSuggest('${iid}')" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">${nm} <span style="color:var(--ink3)">${iid}</span></button>`;
         }).join('')}
       </div>
     </div>`;
@@ -605,7 +610,7 @@ function prRender(list){
     return `<div class="card" style="padding:0;margin-bottom:10px;overflow:hidden">
       <div style="padding:14px 16px;cursor:pointer" onclick="prToggle('${oid}')">
         <div style="font-size:10px;font-weight:700;color:var(--gold2);letter-spacing:.06em">${oid}</div>
-        <div style="font-family:'Cormorant Garamond',serif;font-size:19px;font-weight:700">${prCust(t)}</div>
+        <div style="font-family:'Outfit',serif;font-size:19px;font-weight:700">${prCust(t)}</div>
         <div style="font-size:11px;color:var(--ink3)">${prCity(t)?'📍 '+prCity(t)+'  ·  ':''}${prDue(t)?'Due '+prDue(t):''}</div>
       </div>
       <div id="pri-${safe}" style="display:none;padding:0 16px 14px;border-top:1px solid var(--border)"></div>
@@ -1177,7 +1182,7 @@ async function openPreImg(itemId, name){
     if(services) html+='<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--gold2);text-transform:uppercase">Service needed</div><div style="font-size:14px">'+services+'</div></div>';
     if(note){
       const noteEs=await translateCached(note);
-      html+='<div style="background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:10px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Repair Note</div><div style="font-size:14px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:13px;font-style:italic;color:var(--ink2);margin-top:3px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
+      html+='<div style="background:var(--red-soft);border:1px solid var(--red);border-radius:8px;padding:10px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Repair Note</div><div style="font-size:14px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:13px;font-style:italic;color:var(--ink2);margin-top:3px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
     }
   }
   // Worker notes from Supabase
@@ -1324,7 +1329,7 @@ async function loadActiveWorkInfo(itemId){
   const note=dev?prNote(dev,t):'';
   if(note){
     const noteEs=await translateCached(note);
-    html+='<div style="background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:8px 10px;margin-bottom:8px;text-align:left"><span style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Note</span><div style="font-size:13px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:12px;font-style:italic;color:var(--ink2);margin-top:2px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
+    html+='<div style="background:var(--red-soft);border:1px solid var(--red);border-radius:8px;padding:8px 10px;margin-bottom:8px;text-align:left"><span style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Note</span><div style="font-size:13px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:12px;font-style:italic;color:var(--ink2);margin-top:2px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
   }
   // Intake photos (thumbnails, tappable to enlarge)
   const pre=(dev&&dev.PreConditions_images)||[];
@@ -1578,7 +1583,7 @@ function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
       const splitId = 'split-' + itemId.replace(/[^a-zA-Z0-9]/g,'_');
       html += `
         <button onclick="toggleCandelabraParts('${itemId}','${safeOrderId}',${itemNum},'${safeDeviceName}','${safeCustomer}','${safeServices}','${safeCity}','${safePhone}','${safeNote}','${esc(dates.created)}','${esc(dates.due)}')"
-          style="margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase;width:100%">
+          style="margin-top:8px;background:var(--surface2);border:2px dashed var(--gold);border-radius:8px;color:var(--gold2);font-family:'Inter',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;padding:8px 12px;cursor:pointer;text-transform:uppercase;width:100%">
           ⚙️ Split into parts (Base · Arms · Cups · Plates)
         </button>
         <div id="${splitId}" style="display:none;margin-top:8px;padding:10px;background:var(--bg);border-radius:8px;border:1px solid var(--border)"></div>`;
@@ -1588,11 +1593,11 @@ function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
     return html;
   }).join('') + `<div style="padding:8px 0;display:flex;gap:8px">
     <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', true)"
-      style="flex:1;background:var(--ink);border:2px solid var(--ink);border-radius:8px;color:#fff;font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
+      style="flex:1;background:var(--ink);border:2px solid var(--ink);border-radius:8px;color:#fff;font-family:'Inter',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
       ☑ Select All
     </button>
     <button onclick="selectAllInTicket('${safeOrderId}',${devices.length},'${orderId}', false)"
-      style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
+      style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;padding:10px 8px;cursor:pointer;text-transform:uppercase">
       ☐ Deselect All
     </button>
   </div>`;
@@ -1641,8 +1646,8 @@ function toggleCandelabraParts(itemId, safeOrderId, itemNum, deviceName, custome
       </div>`;
     }).join('') +
     `<div style="display:flex;gap:6px;margin-top:8px">
-      <button onclick="selectCandelabraParts('${itemId}',true)" style="flex:1;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">All Parts</button>
-      <button onclick="selectCandelabraParts('${itemId}',false)" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:6px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">None</button>
+      <button onclick="selectCandelabraParts('${itemId}',true)" style="flex:1;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">All Parts</button>
+      <button onclick="selectCandelabraParts('${itemId}',false)" style="flex:1;background:var(--surface2);border:2px solid var(--border);border-radius:6px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:8px;cursor:pointer;text-transform:uppercase">None</button>
     </div>`;
 
   updateSelectedCount();
@@ -1762,7 +1767,7 @@ function openPrintWindow(labelsHtml) {
 
   .label-bottom { text-align: center; border-top: 0.5mm dashed #999; padding-top: 1.5mm; }
   .l-part { font-size: 13pt; font-weight: 700; color: #000; letter-spacing: 0.1em; }
-  .l-glint { font-size: 8pt; font-weight: 700; color: #8a6a20; letter-spacing: 0.2em; }
+  .l-glint { font-size: 8pt; font-weight: 700; color: #4338ca; letter-spacing: 0.2em; }
 </style></head>
 <body>${labelsHtml}
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
@@ -2018,14 +2023,14 @@ function renderLabelHistory(filter='') {
     return `<div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
       <div style="flex:1">
         <div style="font-size:12px;font-weight:700;color:var(--gold2);letter-spacing:.06em">${h.itemId}</div>
-        <div style="font-size:15px;color:var(--ink);font-family:'Cormorant Garamond',serif;font-weight:600;margin-top:2px">${h.itemName||'—'}</div>
+        <div style="font-size:15px;color:var(--ink);font-family:'Outfit',serif;font-weight:600;margin-top:2px">${h.itemName||'—'}</div>
         ${h.services?`<div style="font-size:10px;color:var(--ink3);margin-top:2px">${h.services}</div>`:''}
         <div style="font-size:11px;color:var(--ink3);margin-top:2px;font-weight:500">${h.customer||'—'}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:10px;color:var(--ink3);font-weight:500">${dateStr}</div>
         <div style="font-size:10px;color:var(--ink3)">${timeStr}</div>
-        <button onclick="reprintLabel(${i})" style="margin-top:6px;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Jost',sans-serif;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;letter-spacing:.04em">↺ Reprint</button>
+        <button onclick="reprintLabel(${i})" style="margin-top:6px;background:var(--ink);border:none;border-radius:6px;color:#fff;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;padding:4px 10px;cursor:pointer;letter-spacing:.04em">↺ Reprint</button>
       </div>
     </div>`;
   }).join('');
