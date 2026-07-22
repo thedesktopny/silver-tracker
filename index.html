@@ -261,6 +261,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Jost',sans-serif;min-hei
       <div id="active-work-info" style="margin-top:12px"></div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
+        <button onclick="addPhotoNow()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📸 Add Photo</button>
         <button onclick="viewItemImages()" id="view-imgs-btn" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Jost',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🖼️ All Photos</button>
       </div>
       <div id="note-box" style="display:none;margin-top:10px">
@@ -355,6 +356,49 @@ const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
 let allTickets = [];
 let itemCache = {}; // itemId -> {name, customer, ticketId}
+let itemNameCache = JSON.parse(localStorage.getItem('st_item_names')||'{}'); // persists across sessions
+
+// ===== SOUND FEEDBACK (WebAudio beep, no external file needed) =====
+function playBeep(freq, dur){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type='sine'; osc.frequency.value=freq;
+    gain.gain.setValueAtTime(0.22, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+dur/1000);
+    osc.start(); osc.stop(ctx.currentTime+dur/1000);
+  }catch(e){}
+}
+function playErrorBeep(){ playBeep(220,180); setTimeout(()=>playBeep(180,180),150); }
+
+// Resolve an item's name/customer from RepairDesk if not already cached — fixes blank item names
+async function resolveItemInfo(itemId){
+  if(itemCache[itemId] && itemCache[itemId].name) return itemCache[itemId];
+  if(itemNameCache[itemId]){ itemCache[itemId]={...itemCache[itemId], ...itemNameCache[itemId]}; return itemCache[itemId]; }
+  const m = itemId.match(/^(T-\d+)-(\d+)/i);
+  if(!m) return itemCache[itemId]||{};
+  const oid=m[1], num=parseInt(m[2]);
+  try{
+    const tid=oid.replace(/\D/g,'');
+    const d=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`);
+    if(d&&d.data){
+      const t=d.data;
+      const dev=t.devices&&t.devices[num-1];
+      const baseName=dev&&dev.device?dev.device.name:'';
+      const partMatch=itemId.match(/^T-\d+-\d+-(.+)$/i);
+      const name=partMatch?(baseName+' — '+partMatch[1]):baseName;
+      const customer=t.summary&&t.summary.customer?(t.summary.customer.fullName||'').trim():'';
+      const city=t.summary&&t.summary.customer?(t.summary.customer.city||''):'';
+      const info={name, customer, city};
+      itemCache[itemId]={...itemCache[itemId], ...info};
+      itemNameCache[itemId]=info;
+      localStorage.setItem('st_item_names', JSON.stringify(itemNameCache));
+      return itemCache[itemId];
+    }
+  }catch(e){}
+  return itemCache[itemId]||{};
+}
 let itemTaskState = JSON.parse(localStorage.getItem('st_item_task_state') || '{}'); // itemId::role -> 'in_progress' | null
 let adminPin = localStorage.getItem('st_admin_pin') || '1234';
 let newWorkerSelectedRoles = [];
@@ -531,14 +575,12 @@ function prGroup(t){ const s=t.summary; return s&&s.customer&&s.customer.custome
 function prPhone(t){ const s=t.summary; return s&&s.customer?(s.customer.mobile||s.customer.phone||''):''; }
 function prDue(t){ const s=t.summary; let ts=s?(s.due_date||s.due_on):null; if(!ts&&t.devices&&t.devices.length)ts=t.devices[0].due_on||t.devices[0].due_date; return ts?new Date(ts*1000).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}):''; }
 function prDevs(t){ return t.devices||[]; }
-function isDriverNote(n){
+// Only include diagnostic/repair notes — excludes driver, delivery, and other note types
+function isRepairNote(n){
   const title=((n.tittle||n.title||'')+'').toLowerCase();
-  const txt=((n.msg_text||'')+'').toLowerCase();
-  if(/driver|delivery|deliver|pickup|pick up|pick-up|scanovator|not home|nobody home|no one home|left at|reschedul/.test(title)) return true;
-  if(/driver|nobody was home|no one was home|not home|nobody home|left at door|left with|reschedul|attempted delivery/.test(txt)) return true;
-  return false;
+  return title.includes('diagnostic');
 }
-function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>(String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase())))&&!isDriverNote(n)).map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · '); }
+function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>(String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase())))&&isRepairNote(n)).map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(Boolean).join(' · '); }
 function prIsCand(n){ return /candelabra/i.test(n||''); }
 
 async function prLoad(){
@@ -685,6 +727,14 @@ async function prTranslateEs(text){
     if(Array.isArray(d)&&Array.isArray(d[0])) return d[0].map(seg=>seg[0]).join('');
   }catch(e){}
   return '';
+}
+let esCache={};
+async function translateCached(text){
+  if(!text) return '';
+  if(esCache[text]!==undefined) return esCache[text];
+  const t=await prTranslateEs(text);
+  esCache[text]=t;
+  return t;
 }
 async function prPrint(){
   const checked=document.querySelectorAll('.pr-cb:checked');
@@ -961,6 +1011,7 @@ async function processScan(itemId) {
   // Only accept our own printed labels: T-<ticket>-<item>, optionally -PART
   if (!/^T-\d+-\d+/.test(itemId)) {
     if (navigator.vibrate) navigator.vibrate([100,50,100]);
+    playErrorBeep();
     showToast('⚠️ Not a Glint label — scan the printed Glint barcode');
     document.getElementById('scan-input').value = '';
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
@@ -969,6 +1020,9 @@ async function processScan(itemId) {
 
   const task = selectedRole;
   const stateKey = itemId + '::' + task;
+
+  // Resolve item name/customer if we don't have it yet (fixes blank item names on regular scans)
+  await resolveItemInfo(itemId);
 
   // Check Supabase for the TRUE latest state of this item+role (source of truth)
   // This handles admin force-stops and multi-device consistency
@@ -984,6 +1038,10 @@ async function processScan(itemId) {
       isInProgress = false; // no history for this item+role
     }
   } catch(e) { /* offline — fall back to local state */ }
+
+  // Sound + vibration feedback for what was just scanned
+  playBeep(isInProgress?620:920, 140);
+  if (navigator.vibrate) navigator.vibrate(isInProgress ? [40,40,40] : 100);
 
   const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
 
@@ -1029,6 +1087,14 @@ async function saveNote(){
 
 // ===== IMAGE CAPTURE (Supabase Storage) =====
 let imgStream=null, imgBlob=null, imgTarget=null, imgRequired=false;
+
+// Let a worker add a photo of the item they're currently working on, anytime — not just at stop
+function addPhotoNow(){
+  if(!activeWork){ showToast('No active item'); return; }
+  pendingStop = null; // this is a voluntary photo, not gating a stop
+  openImgModal(activeWork.itemId, activeWork.name || activeWork.itemId, false);
+}
+
 function openImgModal(itemId, name, required){
   imgTarget={itemId, name}; imgRequired=required;
   document.getElementById('img-modal-title').textContent = required?'Photo Required':'Add Photo';
@@ -1103,13 +1169,16 @@ async function openPreImg(itemId, name){
   if(!t){
     try{ const tid=oid.replace(/\D/g,''); const dd=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`); if(dd&&dd.data) t=dd.data; }catch(e){}
   }
-  // Repair note (excludes driver notes)
+  // Repair note (diagnostic notes only, bilingual)
   if(t&&t.devices){
     const dev=t.devices[num-1];
     const note=dev?prNote(dev,t):'';
     const services=dev&&dev.repairProdItems?dev.repairProdItems.map(s=>s.name.trim()).join(', '):'';
     if(services) html+='<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--gold2);text-transform:uppercase">Service needed</div><div style="font-size:14px">'+services+'</div></div>';
-    if(note) html+='<div style="background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:10px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Repair Note</div><div style="font-size:14px">'+note+'</div></div>';
+    if(note){
+      const noteEs=await translateCached(note);
+      html+='<div style="background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:10px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Repair Note</div><div style="font-size:14px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:13px;font-style:italic;color:var(--ink2);margin-top:3px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
+    }
   }
   // Worker notes from Supabase
   try{
@@ -1186,7 +1255,6 @@ async function completeScan(itemId, task, isInProgress) {
     });
   } catch(e) {}
 
-  if (navigator.vibrate) navigator.vibrate(isInProgress ? [50,50,50] : 120);
   showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
 
   document.getElementById('scan-input').value = '';
@@ -1252,15 +1320,20 @@ async function loadActiveWorkInfo(itemId){
   if(!activeWork||activeWork.itemId!==itemId) return;
   let dev=null;
   if(t&&t.devices) dev=t.devices[num-1];
-  // Repair note
+  // Repair note (bilingual)
   const note=dev?prNote(dev,t):'';
-  if(note) html+='<div style="background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:8px 10px;margin-bottom:8px;text-align:left"><span style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Note: </span><span style="font-size:13px">'+note+'</span></div>';
+  if(note){
+    const noteEs=await translateCached(note);
+    html+='<div style="background:#fdf0ee;border:1px solid var(--red);border-radius:8px;padding:8px 10px;margin-bottom:8px;text-align:left"><span style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Note</span><div style="font-size:13px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:12px;font-style:italic;color:var(--ink2);margin-top:2px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
+  }
   // Intake photos (thumbnails, tappable to enlarge)
   const pre=(dev&&dev.PreConditions_images)||[];
   if(pre.length){
     html+='<div style="font-size:10px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;text-align:left">📷 What it looked like at intake</div>';
     html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+pre.map(i=>`<a href="${i.medium||i.small}" target="_blank"><img src="${i.small||i.medium}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover"></a>`).join('')+'</div>';
   }
+  // Final check — worker may have moved to a different item during translation
+  if(!activeWork||activeWork.itemId!==itemId) return;
   box.innerHTML=html; // empty if no note/photos — that's fine
 }
 
