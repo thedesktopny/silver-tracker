@@ -580,7 +580,8 @@ function showPage(name, el) {
 // ===== PRINT LABELS (for can_print workers) =====
 const PR_BASE='https://api.repairdesk.co/api/web/v1';
 const PR_KEY='smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
-const PR_PARTS=['Base','Arms','Cups','Plates'];
+const PR_PARTS=['Base','Arms','Cups and Plates','Non Silver Pieces'];
+function partSlug(p){ return (p||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
 let prTickets=[];
 function prProxy(url){ return 'https://corsproxy.io/?url='+encodeURIComponent(url); }
 const PR_PROXIES=[
@@ -742,7 +743,7 @@ function prToggleParts(itemId,name,cust,city,note,due,services,group){
   if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; prCount(); return; }
   box.style.display='block';
   box.innerHTML=PR_PARTS.map(part=>{
-    const pid=itemId+'-'+part.toUpperCase(),cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
+    const pid=itemId+'-'+partSlug(part),cbId='prcb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
     return `<div style="display:flex;gap:10px;padding:6px 0"><input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:18px;height:18px;accent-color:var(--ink)"
       data-item-id="${pid}" data-item-name="${name} — ${part}" data-services="${services||''}" data-customer="${cust}" data-city="${city}" data-group="${group||''}" data-note="${note}" data-due="${due}" data-part="${part}">
       <div style="font-weight:600;font-size:13px">${part}</div></div>`;
@@ -751,7 +752,7 @@ function prToggleParts(itemId,name,cust,city,note,due,services,group){
     <button class="gen-btn" style="flex:1;font-size:10px;background:var(--surface2);color:var(--ink2)" onclick="prSelParts('${itemId}',false)">None</button></div>`;
   prCount();
 }
-function prSelParts(itemId,on){ PR_PARTS.forEach(p=>{const cb=document.getElementById('prcb-'+(itemId+'-'+p.toUpperCase()).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); prCount(); }
+function prSelParts(itemId,on){ PR_PARTS.forEach(p=>{const cb=document.getElementById('prcb-'+(itemId+'-'+partSlug(p)).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;}); prCount(); }
 function prSelTicket(oid,count,on){ for(let i=1;i<=count;i++){const cb=document.getElementById('prcb-'+(oid+'-'+i).replace(/[^a-zA-Z0-9]/g,'_'));if(cb)cb.checked=on;} prCount(); }
 function prCount(){ const n=document.querySelectorAll('.pr-cb:checked').length; document.getElementById('pr-count').textContent=n; document.getElementById('pr-print-bar').style.display=n>0?'block':'none'; }
 function prMakeBarcode(text){ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:false,margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }catch(e){ return ''; } }
@@ -786,7 +787,9 @@ async function prPrint(){
     let noteCls='n-sm';
     if(noteLen>200) noteCls='n-xxs';
     else if(noteLen>120) noteCls='n-xs';
-    return `<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${it.note}${it.noteEs?`<br><span class="nl">ES</span> ${it.noteEs}`:''}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}<div class="l-oid">${orderId}</div></div></div>`;
+    const idLen=(it.itemId||'').length;
+    const idCls = idLen>18 ? 'o-sm' : (idLen>12 ? 'o-md' : 'o-lg');
+    return `<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${it.note}${it.noteEs?`<br><span class="nl">ES</span> ${it.noteEs}`:''}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}<div class="l-oid ${idCls}">${it.itemId}</div></div></div>`;
   }).join('');
   const W=labelSize.width,H=labelSize.height;
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title><style>
@@ -798,7 +801,7 @@ async function prPrint(){
 .l-note .nl{display:inline-block;background:#555;color:#fff;border-radius:.6mm;padding:0 .8mm;font-size:.85em;vertical-align:.3mm}
 .n-sm{font-size:7.5pt;line-height:1.2}.n-xs{font-size:6.5pt;line-height:1.15}.n-xxs{font-size:5.5pt;line-height:1.1}
 .lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0;overflow:hidden;padding:1mm 0}.lb img{max-width:98%;max-height:100%;height:auto;object-fit:contain}
-.lf{text-align:center;border-top:.4mm dashed #999;padding-top:.7mm;flex-shrink:0}.l-part{font-size:8.5pt;font-weight:700;letter-spacing:.06em}.l-oid{font-size:14pt;font-weight:800;letter-spacing:.04em;line-height:1.1}</style></head><body>${labelsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script></body></html>`;
+.lf{text-align:center;border-top:.4mm dashed #999;padding-top:.7mm;flex-shrink:0}.l-part{font-size:8.5pt;font-weight:700;letter-spacing:.06em}.l-oid{font-weight:800;letter-spacing:.03em;line-height:1.1;white-space:nowrap}.o-lg{font-size:14pt}.o-md{font-size:11.5pt}.o-sm{font-size:9.5pt}</style></head><body>${labelsHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script></body></html>`;
   const w=window.open('','_blank','width=900,height=700'); if(!w){ showToast('Allow popups to print'); return; }
   w.document.write(html); w.document.close();
   showToast('🖨️ Printing '+items.length+' label'+(items.length!==1?'s':''));
@@ -1575,7 +1578,7 @@ function toggleTicket(orderId) {
   renderTicketItems(orderId, customer, devices, itemsEl, t);
 }
 
-const CANDELABRA_PARTS = ['Base', 'Arms', 'Cups', 'Plates'];
+const CANDELABRA_PARTS = ['Base', 'Arms', 'Cups and Plates', 'Non Silver Pieces'];
 
 function isCandelabra(name) {
   return /candelabra/i.test(name || '');
