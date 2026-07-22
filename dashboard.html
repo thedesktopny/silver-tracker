@@ -360,6 +360,29 @@ async function translateCached(text){
 
 // ===== RepairDesk field getters =====
 function getOrderId(t){ return (t.summary&&t.summary.order_id)||''; }
+
+// CRITICAL: RepairDesk's order_id (T-959) is NOT the internal ticket id (e.g. T-1095 => 1097).
+// Guessing by stripping letters fetches a completely different ticket.
+let oidMap = JSON.parse(localStorage.getItem('glint_oid_map')||'{}');
+async function resolveTicketId(oid){
+  if(oidMap[oid]) return oidMap[oid];
+  if(allTickets.length){
+    const hit=allTickets.find(x=>getOrderId(x)===oid);
+    if(hit&&hit.summary&&hit.summary.id){ oidMap[oid]=hit.summary.id; localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); return oidMap[oid]; }
+  }
+  try{
+    for(let page=1; page<=4; page++){
+      const d=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      const batch=(d.data&&d.data.ticketData)||[];
+      batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+      localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
+      if(oidMap[oid]) return oidMap[oid];
+      const pg=d.data&&d.data.pagination;
+      if(!pg || page>=parseInt(pg.total_pages)) break;
+    }
+  }catch(e){}
+  return null; // never guess — wrong data is worse than no data
+}
 function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
 function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
 function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return (s.customer.customer_group_name||'').trim(); } return ''; }
@@ -389,7 +412,7 @@ function getDeviceNote(device, ticket){
 }
 function makeBarcode(text){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:true,fontSize:20,fontOptions:'bold',margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
+  try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:false,margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
   catch(e){ return ''; }
 }
 
@@ -790,6 +813,9 @@ async function loadTickets(){
       page++;
     } while(page<=totalPages && page<=2);
     allTickets=fetched;
+    // Warm the order_id -> internal ticket id map while we have the list
+    fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+    localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
     renderTickets(allTickets);
   }catch(err){
     el.innerHTML='<div class="empty">Could not load tickets — '+esc(err.message)+'. Tap Reload to try again.</div>';
@@ -832,7 +858,7 @@ async function toggleTicket(oid){
   if(!t._full){
     box.innerHTML='<div class="empty" style="padding:16px">Loading details…</div>';
     try{
-      const tid=(t.summary&&t.summary.id)||oid.replace(/\D/g,'');
+      const tid=(t.summary&&t.summary.id)||await resolveTicketId(oid);
       const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
       if(d&&d.data){ d.data._full=true; allTickets[idx0]=d.data; t=d.data; }
     }catch(e){}
@@ -945,12 +971,17 @@ async function printSelected(){
   const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
   const labelsHtml=withBc.map(it=>{
     const oid=orderIdOf(it.itemId);
+    // Scale note text down as it gets longer so both languages always fit
+    const noteLen=(it.note||'').length + (it.noteEs||'').length;
+    let noteCls='n-sm';
+    if(noteLen>200) noteCls='n-xxs';
+    else if(noteLen>120) noteCls='n-xs';
     return `<div class="label">
       <div class="lt">
         <div class="l-item">${escLbl(it.itemName)}${it.part?' — '+escLbl(it.part):''}</div>
         ${it.services?`<div class="l-svc">${escLbl(it.services)}</div>`:''}
         <div class="l-row">${it.due?`<span>DUE: ${escLbl(it.due)}</span>`:''}${it.group?`<span>${escLbl(it.group)}</span>`:''}</div>
-        ${it.note?`<div class="l-note">⚠️ EN: ${escLbl(it.note)}${it.noteEs?`<br>🇪🇸 ES: ${escLbl(it.noteEs)}`:''}</div>`:''}
+        ${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${escLbl(it.note)}${it.noteEs?`<br><span class="nl">ES</span> ${escLbl(it.noteEs)}`:''}</div>`:''}
       </div>
       <div class="lb"><img src="${it.bc}"></div>
       <div class="lf">${it.part?`<div class="l-part">◆ ${escLbl(it.part.toUpperCase())}</div>`:''}<div class="l-oid">${escLbl(oid)}</div></div>
@@ -961,18 +992,22 @@ async function printSelected(){
 <style>
 @page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}
 body{background:#fff;font-family:Arial,sans-serif}
-.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;justify-content:space-between;padding:2.5mm 3mm;overflow:hidden;page-break-after:always}
+.label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;padding:2mm 3mm;overflow:hidden;page-break-after:always}
 .label:last-child{page-break-after:auto}
-.lt{text-align:center}
-.l-item{font-size:11pt;font-weight:700;line-height:1.1}
-.l-svc{font-size:8pt;color:#444;margin-top:.5mm}
-.l-row{display:flex;justify-content:center;gap:4mm;margin-top:1mm;font-size:9.5pt;font-weight:700}
-.l-note{font-size:7.5pt;font-weight:700;margin-top:1mm;background:#f0f0f0;padding:1mm;border-radius:1mm;line-height:1.25}
-.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0}
-.lb img{max-width:98%;max-height:22mm;height:auto}
-.lf{text-align:center;border-top:.5mm dashed #999;padding-top:1mm}
-.l-part{font-size:9pt;font-weight:700;letter-spacing:.06em}
-.l-oid{font-size:15pt;font-weight:800;letter-spacing:.04em}
+.lt{text-align:center;flex-shrink:0}
+.l-item{font-size:10.5pt;font-weight:700;line-height:1.1}
+.l-svc{font-size:7.5pt;color:#444;margin-top:.3mm}
+.l-row{display:flex;justify-content:center;gap:4mm;margin-top:.6mm;font-size:9pt;font-weight:700}
+.l-note{font-weight:700;margin-top:.8mm;background:#f0f0f0;padding:.8mm 1mm;border-radius:1mm;text-align:left}
+.l-note .nl{display:inline-block;background:#555;color:#fff;border-radius:.6mm;padding:0 .8mm;font-size:.85em;vertical-align:.3mm}
+.n-sm{font-size:7.5pt;line-height:1.2}
+.n-xs{font-size:6.5pt;line-height:1.15}
+.n-xxs{font-size:5.5pt;line-height:1.1}
+.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0;overflow:hidden;padding:1mm 0}
+.lb img{max-width:98%;max-height:100%;height:auto;object-fit:contain}
+.lf{text-align:center;border-top:.4mm dashed #999;padding-top:.7mm;flex-shrink:0}
+.l-part{font-size:8.5pt;font-weight:700;letter-spacing:.06em}
+.l-oid{font-size:14pt;font-weight:800;letter-spacing:.04em;line-height:1.1}
 </style></head><body>${labelsHtml}
 <script>window.onload=function(){setTimeout(function(){window.print();},250);window.onafterprint=function(){window.close();}}<\/script>
 </body></html>`;
@@ -1319,7 +1354,7 @@ async function renderOrderDetailPage(oid){
 
   // Fetch RepairDesk detail (customer info, service, notes, intake photos)
   let t=null;
-  try{ const tid=oid.replace(/\D/g,''); const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`); if(d&&d.data) t=d.data; }catch(e){}
+  try{ const tid=await resolveTicketId(oid); if(tid){ const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`); if(d&&d.data) t=d.data; } }catch(e){}
 
   let html=`<div class="page-head"><div><div class="page-title">${esc(oid)}</div><div class="page-sub">${esc(customer||(t?getCustomerName(t):'—'))}</div></div>
     <button class="btn btn-ghost btn-sm" onclick="navigate('${h('orders')}')">← Back to Orders</button></div>`;
@@ -1425,9 +1460,9 @@ async function renderItemDetailPage(itemId){
   // Async: repair note (from RepairDesk), worker notes, photos
   let repairNoteBlock='';
   try{
-    const tid=oid.replace(/\D/g,'');
+    const tid=await resolveTicketId(oid);
     const num=parseInt(itemId.split('-')[2])||1;
-    const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
+    const d=tid?await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`):null;
     if(d&&d.data&&d.data.devices){
       const dev=d.data.devices[num-1];
       if(dev){
