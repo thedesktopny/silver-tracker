@@ -263,6 +263,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
       <div id="active-work-task" style="font-size:12px;color:var(--green);font-weight:700;margin-top:2px;letter-spacing:.04em;text-transform:uppercase"></div>
       <div id="active-work-timer" style="font-size:32px;color:var(--ink);font-weight:700;margin-top:10px;font-variant-numeric:tabular-nums;letter-spacing:.02em">00:00</div>
       <div style="font-size:10px;color:var(--ink3);margin-top:2px">scan again to stop</div>
+      <button id="finish-stage-btn" onclick="markStageFinished()" style="display:none;width:100%;margin-top:12px;background:var(--green);border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;padding:14px;cursor:pointer;letter-spacing:.06em;text-transform:uppercase">✓ Finished — Move to Next Step</button>
       <div id="active-work-info" style="margin-top:12px"></div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
@@ -307,6 +308,17 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 
 </div><!-- app-shell -->
 <div class="toast" id="toast"></div>
+
+<!-- Delivery stage chooser modal -->
+<div id="stage-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeStageModal()">
+  <div style="background:var(--bg);border-radius:16px;padding:22px;width:100%;max-width:400px">
+    <div style="font-size:10px;color:var(--ink3);font-weight:700;letter-spacing:.12em;text-transform:uppercase;text-align:center">What happened with this item?</div>
+    <div id="stage-modal-title" style="font-family:'Outfit',serif;font-size:21px;font-weight:700;text-align:center;margin-top:6px"></div>
+    <div id="stage-modal-sub" style="font-size:11px;color:var(--ink3);text-align:center;margin-bottom:16px"></div>
+    <div id="stage-modal-btns"></div>
+    <button onclick="closeStageModal()" style="width:100%;margin-top:4px;background:none;border:none;color:var(--ink3);font-family:'Inter',sans-serif;font-size:11px;cursor:pointer;padding:8px">Cancel</button>
+  </div>
+</div>
 
 <!-- Image capture modal -->
 <div id="img-modal" style="display:none;position:fixed;inset:0;background:rgba(28,26,23,.85);z-index:200;align-items:center;justify-content:center;padding:16px">
@@ -359,6 +371,32 @@ let sheetUrl = localStorage.getItem('st_url') || '';
 let rdApiKey = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
+
+// ===== PIPELINE STAGES =====
+// Each item moves through these steps in order. Scanning a step automatically
+// finishes everything before it; workers can also explicitly mark a step FINISHED.
+const STAGE_NAMES=['Cleaning','Antique','Polish','Inspection','Lacquer','Final Inspection','Packed','On Way','Delivered'];
+function stageForRole(role){
+  const r=(role||'').toLowerCase();
+  if(!r) return null;
+  if(r.includes('final')) return 5;
+  if(r.includes('clean')) return 0;
+  if(r.includes('antiq')) return 1;
+  if(r.includes('polish')) return 2;
+  if(r.includes('lacquer')||r.includes('laquer')||r.includes('lack')) return 4;
+  if(r.includes('inspect')) return 3;
+  if(r.includes('pack')||r.includes('deliver')||r.includes('driver')||r.includes('ship')) return 'delivery';
+  return null; // role with no pipeline step — time tracking still works normally
+}
+function isDeliveryRole(role){ return stageForRole(role)==='delivery'; }
+let skipFinishPrompt=false; // set while the Finish button is doing the stop itself
+async function postStageEvent(itemId, stage, action, desc){
+  try{
+    await fetch(SUPABASE_URL+'/rest/v1/stage_events',{method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage, action, worker:selectedWorker?selectedWorker.name:''})});
+  }catch(e){ /* offline — pipeline mark lost, admin can override later */ }
+}
 let allTickets = [];
 let itemCache = {}; // itemId -> {name, customer, ticketId}
 let itemNameCache = JSON.parse(localStorage.getItem('st_item_names')||'{}'); // persists across sessions
@@ -1159,6 +1197,15 @@ async function processScan(itemId) {
   // Resolve item name/customer if we don't have it yet (fixes blank item names on regular scans)
   await resolveItemInfo(itemId);
 
+  // Delivery-type roles (Packing / Driver / Delivery) don't run a timer —
+  // scanning asks which delivery step happened instead
+  if (isDeliveryRole(task)) {
+    playBeep(920,140);
+    if (navigator.vibrate) navigator.vibrate(100);
+    openDeliveryChooser(itemId);
+    return;
+  }
+
   // Check Supabase for the TRUE latest state of this item+role (source of truth)
   // This handles admin force-stops and multi-device consistency
   let isInProgress = itemTaskState[stateKey] === 'in_progress';
@@ -1392,9 +1439,65 @@ async function completeScan(itemId, task, isInProgress) {
 
   showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
 
+  // On STOP, ask if this step is completely finished — workers may clean/polish
+  // an item several times, so stopping alone doesn't move it forward
+  if (isInProgress && !skipFinishPrompt) {
+    const sIdx = stageForRole(task);
+    if (typeof sIdx === 'number' && sIdx <= 5) {
+      if (confirm('Is ' + task.toUpperCase() + ' completely FINISHED for ' + (info.name || itemId) + '?\n\nOK = Finished, move to next step\nCancel = Not yet (just pausing)')) {
+        postStageEvent(itemId, STAGE_NAMES[sIdx], 'finished', info.name || '');
+        showToast('✅ ' + task + ' finished — moved to next step');
+      }
+    }
+  }
+
   document.getElementById('scan-input').value = '';
   hideSuggest();
   setTimeout(() => { document.getElementById('scan-input').focus(); }, 100);
+}
+
+// ===== FINISH STAGE (button on the green panel: stop + mark finished in one tap) =====
+async function markStageFinished(){
+  if(!activeWork){ showToast('No active item'); return; }
+  const sIdx=stageForRole(activeWork.task);
+  if(typeof sIdx!=='number' || sIdx>5){ showToast('This role has no pipeline step'); return; }
+  if(!confirm('Finish '+activeWork.task.toUpperCase()+' on '+activeWork.name+'?\n\nThe item moves to the next step.')) return;
+  const it={...activeWork};
+  skipFinishPrompt=true;
+  try{ await completeScan(it.itemId, it.task, true); } finally { skipFinishPrompt=false; }
+  postStageEvent(it.itemId, STAGE_NAMES[sIdx], 'finished', it.name||'');
+  showToast('✅ '+it.task+' finished — moved to next step');
+}
+
+// ===== DELIVERY ROLES (Packing / Driver / Delivery) =====
+// These don't run a timer — scanning an item asks which delivery step happened
+function openDeliveryChooser(itemId){
+  const info=itemCache[itemId]||{};
+  const name=info.name||itemId;
+  const m=document.getElementById('stage-modal');
+  document.getElementById('stage-modal-title').textContent=name;
+  document.getElementById('stage-modal-sub').textContent=itemId+(info.customer?' · '+info.customer:'');
+  document.getElementById('stage-modal-btns').innerHTML=[
+    {s:'Packed', icon:'📦', c:'var(--ink)'},
+    {s:'On Way', icon:'🚚', c:'var(--blue)'},
+    {s:'Delivered', icon:'✅', c:'var(--green)'}
+  ].map(b=>`<button onclick="deliveryMark('${itemId.replace(/'/g,"\\'")}','${b.s}')" style="width:100%;margin-bottom:8px;background:${b.c};border:none;border-radius:10px;color:#fff;font-family:'Inter',sans-serif;font-size:13px;font-weight:700;padding:16px;cursor:pointer;letter-spacing:.08em;text-transform:uppercase">${b.icon} ${b.s}</button>`).join('');
+  m.style.display='flex';
+  document.getElementById('scan-input').value='';
+}
+function closeStageModal(){
+  document.getElementById('stage-modal').style.display='none';
+  setTimeout(()=>document.getElementById('scan-input').focus(),100);
+}
+async function deliveryMark(itemId, stage){
+  const info=itemCache[itemId]||{};
+  postStageEvent(itemId, stage, 'finished', info.name||'');
+  sessionLog.unshift({ itemId, itemDesc:info.name||'', customer:info.customer||'', status:stage+' ✓', worker:selectedWorker?selectedWorker.name:'', timestamp:new Date().toISOString() });
+  renderHistory(); renderScanRecent();
+  playBeep(920,140);
+  if(navigator.vibrate) navigator.vibrate(100);
+  showToast('✅ '+(info.name||itemId)+' marked: '+stage);
+  closeStageModal();
 }
 
 function renderScanRecent() {
@@ -1427,6 +1530,14 @@ function renderActiveWork() {
     panel.style.display = 'block';
     document.getElementById('active-work-name').textContent = activeWork.name;
     document.getElementById('active-work-task').textContent = activeWork.task;
+    // Show the Finish button only for roles that are pipeline work steps
+    const fb=document.getElementById('finish-stage-btn');
+    if(fb){
+      const sIdx=stageForRole(activeWork.task);
+      const show=(typeof sIdx==='number' && sIdx<=5);
+      fb.style.display=show?'block':'none';
+      if(show) fb.textContent='✓ '+activeWork.task+' Finished — Move to Next Step';
+    }
     updateActiveWorkTimer();
     // Auto-load this item's photos + note (only once per item)
     if(activeInfoLoadedFor!==activeWork.itemId){
