@@ -180,6 +180,32 @@ tr.clickable:hover td{background:var(--surface2)}
 .note-box .nb-en{font-size:13.5px;margin-top:3px}
 .note-box .nb-es{font-size:12.5px;font-style:italic;color:var(--ink2);margin-top:4px}
 
+/* ===== PIPELINE BOARD ===== */
+.pipe-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start}
+.pipe-col{min-width:212px;width:212px;flex-shrink:0;background:var(--surface2);border-radius:12px;padding:10px 9px}
+.pipe-col-head{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;padding:0 4px}
+.pipe-col-head .cnt{background:var(--surface);border-radius:12px;padding:1px 8px;font-size:10.5px;color:var(--ink3)}
+.pipe-card{background:var(--surface);border:1.5px solid var(--border);border-radius:10px;padding:10px 11px;margin-bottom:8px;cursor:pointer;box-shadow:0 1px 2px rgba(18,20,28,.04);transition:border-color .12s}
+.pipe-card:hover{border-color:var(--gold)}
+.pipe-card.warn{border-color:var(--orange)}
+.pipe-card.crit{border-color:var(--red)}
+.pipe-card .pc-name{font-weight:700;font-size:13px;line-height:1.25}
+.pipe-card .pc-id{font-size:10px;color:var(--ink3);margin-top:1px}
+.pipe-card .pc-cust{font-size:11px;color:var(--ink2);margin-top:2px}
+.pipe-card .pc-foot{display:flex;justify-content:space-between;align-items:center;margin-top:7px;gap:6px}
+.pipe-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.pipe-badge.b-wait{background:var(--surface2);color:var(--ink3)}
+.pipe-badge.b-work{background:var(--green-soft);color:var(--green)}
+.pipe-badge.b-pause{background:var(--orange-soft);color:var(--orange)}
+.pipe-badge.b-ready{background:var(--accent-soft);color:var(--gold2)}
+.pipe-badge.b-pieces{background:var(--orange-soft);color:var(--orange)}
+.pipe-badge.b-done{background:var(--green-soft);color:var(--green)}
+.pipe-time{font-size:10px;color:var(--ink3);font-variant-numeric:tabular-nums}
+.pipe-time.warn{color:var(--orange);font-weight:700}
+.pipe-time.crit{color:var(--red);font-weight:700}
+.pipe-track{height:7px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-top:5px}
+.pipe-track>div{height:100%;background:var(--gold)}
+.pipe-track.full>div{background:var(--green)}
 .mobile-topbar{display:none}
 @media (max-width:880px){
   .sidebar{transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.3)}
@@ -261,6 +287,7 @@ const MAX_SESSION_MS = 8*3600*1000;
 
 const NAV_ITEMS = [
   {route:'live', label:'Live', icon:'●'},
+  {route:'pipeline', label:'Pipeline', icon:'⇶'},
   {route:'print', label:'Print Labels', icon:'🏷'},
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
@@ -275,6 +302,8 @@ const NAV_ITEMS = [
 // STATE
 // ========================================================================
 let scans=[], workers=[], roles=[], allTickets=[];
+let stageEvents=[], pipeLabels=[];
+let pipeView='board', pipeStage='all', pipeStatus='all', pipeShowDelivered=false;
 let labelSize = JSON.parse(localStorage.getItem('glint_label_size') || '{"width":102,"height":59}');
 let reportRange='today', customFrom=null, customTo=null;
 let empRange='today', empFrom=null, empTo=null;
@@ -514,7 +543,7 @@ function navigate(hash){ location.hash=hash; }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -535,6 +564,7 @@ function renderBreadcrumb(){
 
 const ROUTE_RENDERERS={
   live: renderLivePage,
+  pipeline: renderPipelinePage,
   print: renderPrintPage,
   reports: renderReportsPage,
   insights: renderInsightsPage,
@@ -565,17 +595,20 @@ window.addEventListener('hashchange', router);
 async function loadAllScans(){ scans=await sb('scans?select=*&order=created_at.desc&limit=5000'); }
 async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); }
 async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); }
+async function loadStageEvents(){ try{ const r=await sb('stage_events?select=*&order=created_at.asc&limit=8000'); stageEvents=Array.isArray(r)?r:[]; }catch(e){ stageEvents=[]; } }
+async function loadPipeLabels(){ try{ const r=await sb('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=Array.isArray(r)?r:[]; }catch(e){ pipeLabels=[]; } }
 
 async function bootstrap(){
   startClock();
   if(!location.hash) location.hash='#/live';
-  await Promise.all([loadAllScans(), loadWorkers(), loadRoles()]);
+  await Promise.all([loadAllScans(), loadWorkers(), loadRoles(), loadStageEvents(), loadPipeLabels()]);
   checkForNewScans();
   router();
   setInterval(async ()=>{
-    await loadAllScans();
+    await Promise.all([loadAllScans(), loadStageEvents()]);
     checkForNewScans();
     if(currentRoute()==='live') renderLivePage();
+    if(currentRoute()==='pipeline') renderPipeBody();
   }, 15000);
   setInterval(()=>{ document.querySelectorAll('.live-timer[data-start]').forEach(updateOneTimer); }, 1000);
 }
@@ -780,6 +813,342 @@ function renderStatDetailPage(kind){
   }
   html+='</div>';
   document.getElementById('content').innerHTML=html;
+}
+
+// ========================================================================
+// PIPELINE ENGINE — item stage tracking
+// Stage position is COMPUTED from two sources:
+//   1. scans (existing) — a "Started" scan under a role puts the item IN that stage
+//      and automatically implies every earlier stage is finished
+//   2. stage_events (new)  — explicit "finished" marks from workers + admin "override" moves
+// "Waiting for X" is never stored — it's derived (previous stage finished, X not started).
+// ========================================================================
+const STAGE_NAMES=['Cleaning','Antique','Polish','Inspection','Lacquer','Final Inspection','Packed','On Way','Delivered'];
+const PIPE_COLS=[
+  {k:'shop',  l:'Waiting for Shop'},
+  {k:0, l:'Cleaning'}, {k:1, l:'Antique'}, {k:2, l:'Polish'}, {k:3, l:'Inspection'},
+  {k:4, l:'Lacquer'}, {k:5, l:'Final Inspection'},
+  {k:'ready', l:'Ready'},
+  {k:6, l:'Packed'}, {k:7, l:'On Way'}, {k:8, l:'Delivered'}
+];
+const STUCK_WARN_DAYS=3, STUCK_CRIT_DAYS=7;
+// Map a worker role name to a pipeline stage index (loose matching so
+// "Final Inspection", "final insp", etc. all land in the right place)
+function stageForRole(role){
+  const r=(role||'').toLowerCase();
+  if(!r) return null;
+  if(r.includes('final')) return 5;
+  if(r.includes('clean')) return 0;
+  if(r.includes('antiq')) return 1;
+  if(r.includes('polish')) return 2;
+  if(r.includes('lacquer')||r.includes('laquer')||r.includes('lack')) return 4;
+  if(r.includes('inspect')) return 3;
+  if(r.includes('pack')||r.includes('deliver')||r.includes('driver')||r.includes('ship')) return 'delivery';
+  return null; // role has no pipeline stage — time is still tracked, pipeline unaffected
+}
+function stageIdxByName(n){ const x=(n||'').toLowerCase(); return STAGE_NAMES.findIndex(s=>s.toLowerCase()===x); }
+
+// Walk an item's merged event history and figure out where it is right now.
+// fin = index of the highest stage that is FINISHED (-1 = nothing finished yet)
+function derivePipeState(events){
+  let fin=-1, cur=null, since=null;
+  events.forEach(e=>{
+    since=e.t;
+    if(e.kind==='override'){
+      const st=(e.stage||'').toUpperCase();
+      if(st==='RESET'){ fin=-1; cur=null; return; }
+      if(st==='READY'){ fin=Math.max(fin,5); cur=null; return; }
+      const i=stageIdxByName(e.stage); if(i<0) return;
+      fin = i>=6 ? i : i-1; // work stages: "move to waiting for X"; delivery stages: "item IS at X"
+      cur=null;
+    } else if(e.kind==='finish'){
+      const i=stageIdxByName(e.stage); if(i<0) return;
+      if(i>fin) fin=i;
+      if(cur&&cur.idx<=fin) cur=null;
+    } else if(e.kind==='start'){
+      cur={idx:e.idx, st:'in_progress', worker:e.worker};
+      if(e.idx-1>fin) fin=e.idx-1; // scanning a later stage auto-finishes everything before it
+    } else if(e.kind==='stop'){
+      if(cur&&cur.idx===e.idx) cur.st='paused';
+    }
+  });
+  let col, status, worker=null;
+  if(cur&&cur.idx>fin){ col=cur.idx; status=cur.st; worker=cur.worker; }
+  else if(fin<0){ col='shop'; status='waiting'; }
+  else if(fin<5){ col=fin+1; status='waiting'; }
+  else if(fin===5){ col='ready'; status='ready'; }
+  else { col=fin; status='done'; }
+  return {fin, col, status, worker, since};
+}
+
+// Numeric position along the whole pipeline (for progress bars): 0..10
+function pipePos(it){
+  if(it.col==='shop') return 0;
+  if(it.col==='ready') return 7;
+  if(typeof it.col==='number') return it.col<=5 ? it.col+1 : it.col+2;
+  return 0;
+}
+function colLabel(col){ const c=PIPE_COLS.find(x=>x.k===col); return c?c.l:String(col); }
+
+function buildPipelineItems(){
+  const items={};
+  function ensure(id, desc, customer){
+    id=(id||'').toUpperCase();
+    if(!/^T-\d+-\d+/i.test(id)) return null; // only real Glint labels
+    if(!items[id]) items[id]={id, desc:'', customer:'', events:[], workers:new Set()};
+    if(desc&&desc!==id&&!items[id].desc) items[id].desc=desc;
+    if(customer&&customer!=='undefined'&&!items[id].customer) items[id].customer=customer;
+    return items[id];
+  }
+  (pipeLabels||[]).forEach(l=>ensure(l.item_id, l.item_name, l.customer)); // printed label = item exists, "Waiting for Shop"
+  scans.forEach(s=>{
+    const it=ensure(s.item_id, s.item_desc, s.customer); if(!it) return;
+    if(s.worker) it.workers.add(s.worker);
+    const idx=stageForRole(s.role);
+    if(typeof idx!=='number') return;
+    it.events.push({t:s.created_at, kind:(s.status||'').includes('Started')?'start':'stop', idx, worker:s.worker});
+  });
+  (stageEvents||[]).forEach(e=>{
+    const it=ensure(e.item_id, e.item_desc, ''); if(!it) return;
+    if(e.worker) it.workers.add(e.worker);
+    it.events.push({t:e.created_at, kind:e.action==='override'?'override':'finish', stage:e.stage, worker:e.worker});
+  });
+  Object.values(items).forEach(it=>{
+    it.events.sort((a,b)=>new Date(a.t)-new Date(b.t));
+    Object.assign(it, derivePipeState(it.events));
+  });
+  // "Waiting for other pieces": item is ready but its brothers in the same order aren't
+  const byOrder={};
+  Object.values(items).forEach(it=>{ const o=orderIdOf(it.id); (byOrder[o]=byOrder[o]||[]).push(it); });
+  Object.values(byOrder).forEach(list=>{
+    const allReady=list.every(x=>x.fin>=5);
+    list.forEach(x=>{ x.waitingPieces = (x.col==='ready') && !allReady && list.length>1; });
+  });
+  window._pipeItems=items;
+  return {items, byOrder};
+}
+function pipeStuckLevel(it){
+  if(it.col===8||!it.since) return 0; // delivered items are never "stuck"
+  const days=(Date.now()-new Date(it.since).getTime())/86400000;
+  if(days>=STUCK_CRIT_DAYS) return 2;
+  if(days>=STUCK_WARN_DAYS) return 1;
+  return 0;
+}
+function pipeBadge(it){
+  if(it.status==='in_progress') return `<span class="pipe-badge b-work">▶ ${esc(it.worker||'working')}</span>`;
+  if(it.status==='paused') return `<span class="pipe-badge b-pause">⏸ paused</span>`;
+  if(it.waitingPieces) return `<span class="pipe-badge b-pieces">⏳ waiting for pieces</span>`;
+  if(it.status==='ready') return `<span class="pipe-badge b-ready">✓ ready</span>`;
+  if(it.status==='done') return `<span class="pipe-badge b-done">✓ ${esc(colLabel(it.col))}</span>`;
+  return `<span class="pipe-badge b-wait">waiting</span>`;
+}
+
+// ========================================================================
+// PAGE: PIPELINE
+// ========================================================================
+function renderPipelinePage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Pipeline</div><div class="page-sub">Where every item is right now — scans move items forward automatically</div></div>
+      <div class="head-actions">
+        <div class="seg" id="pipe-view-seg">
+          <button class="${pipeView==='board'?'on':''}" onclick="pipeSetView('board')">Board</button>
+          <button class="${pipeView==='order'?'on':''}" onclick="pipeSetView('order')">By Order</button>
+        </div>
+        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()">
+        <select id="pipe-stage" onchange="pipeStage=this.value;renderPipeBody()" style="width:auto;padding:8px 10px;font-size:12.5px">
+          <option value="all">All steps</option>
+          ${PIPE_COLS.map(c=>`<option value="${c.k}">${c.l}</option>`).join('')}
+        </select>
+        <select id="pipe-status" onchange="pipeStatus=this.value;renderPipeBody()" style="width:auto;padding:8px 10px;font-size:12.5px">
+          <option value="all">All statuses</option>
+          <option value="waiting">Waiting</option>
+          <option value="in_progress">In progress</option>
+          <option value="paused">Paused</option>
+          <option value="stuck">Stuck ${STUCK_WARN_DAYS}+ days</option>
+          <option value="pieces">Waiting for pieces</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink3);white-space:nowrap">
+          <input type="checkbox" id="pipe-show-del" ${pipeShowDelivered?'checked':''} onchange="pipeShowDelivered=this.checked;renderPipeBody()" style="width:15px;height:15px"> Show delivered
+        </label>
+      </div>
+    </div>
+    <div id="pipe-body"></div>`;
+  renderPipeBody();
+}
+function pipeSetView(v){
+  pipeView=v;
+  document.querySelectorAll('#pipe-view-seg button').forEach((b,i)=>b.classList.toggle('on',(i===0)===(v==='board')));
+  renderPipeBody();
+}
+function pipeFilteredItems(){
+  const q=(document.getElementById('pipe-search')?.value||'').toLowerCase().trim();
+  const {items}=buildPipelineItems();
+  return Object.values(items).filter(it=>{
+    if(!pipeShowDelivered && it.col===8) return false;
+    if(pipeStage!=='all' && String(it.col)!==String(pipeStage)) return false;
+    if(pipeStatus!=='all'){
+      if(pipeStatus==='stuck'){ if(pipeStuckLevel(it)===0) return false; }
+      else if(pipeStatus==='pieces'){ if(!it.waitingPieces) return false; }
+      else if(it.status!==pipeStatus) return false;
+    }
+    if(q){
+      const hay=(it.id+' '+(it.desc||'')+' '+(it.customer||'')+' '+orderIdOf(it.id)+' '+[...it.workers].join(' ')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+function renderPipeBody(){
+  const box=document.getElementById('pipe-body');
+  if(!box) return;
+  const list=pipeFilteredItems();
+  if(!list.length){ box.innerHTML='<div class="card"><div class="empty">No items match — items appear here once a label is printed or the first scan happens</div></div>'; return; }
+  if(pipeView==='board') box.innerHTML=renderPipeBoard(list);
+  else box.innerHTML=renderPipeByOrder(list);
+}
+function renderPipeBoard(list){
+  const cols=PIPE_COLS.filter(c=>pipeShowDelivered || c.k!==8 || list.some(it=>it.col===8));
+  return `<div class="pipe-board">`+cols.map(c=>{
+    const its=list.filter(it=>it.col===c.k).sort((a,b)=>new Date(a.since||0)-new Date(b.since||0));
+    return `<div class="pipe-col">
+      <div class="pipe-col-head"><span>${c.l}</span><span class="cnt">${its.length}</span></div>
+      ${its.map(it=>{
+        const lvl=pipeStuckLevel(it);
+        return `<div class="pipe-card ${lvl===2?'crit':(lvl===1?'warn':'')}" onclick="openPipeModal('${jsstr(it.id)}')">
+          <div class="pc-name">${esc(it.desc||it.id)}</div>
+          <div class="pc-id">${esc(it.id)} · ${esc(orderIdOf(it.id))}</div>
+          ${it.customer?`<div class="pc-cust">${esc(it.customer)}</div>`:''}
+          <div class="pc-foot">${pipeBadge(it)}<span class="pipe-time ${lvl===2?'crit':(lvl===1?'warn':'')}">${it.since?fmtDur(Date.now()-new Date(it.since).getTime()):'—'}</span></div>
+        </div>`;
+      }).join('')||'<div style="font-size:11px;color:var(--ink3);text-align:center;padding:10px 0">—</div>'}
+    </div>`;
+  }).join('')+`</div>`;
+}
+function renderPipeByOrder(list){
+  const byOrder={};
+  list.forEach(it=>{ const o=orderIdOf(it.id); (byOrder[o]=byOrder[o]||[]).push(it); });
+  const orders=Object.entries(byOrder).sort((a,b)=>{
+    const la=Math.max(...a[1].map(x=>new Date(x.since||0).getTime()));
+    const lb=Math.max(...b[1].map(x=>new Date(x.since||0).getTime()));
+    return lb-la;
+  });
+  return orders.map(([oid,its])=>{
+    const delivered=its.filter(x=>x.col===8).length;
+    const ready=its.filter(x=>x.fin>=5).length;
+    const cust=its.find(x=>x.customer)?.customer||'';
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+        <div>
+          <span style="font-size:11px;font-weight:700;color:var(--gold2);cursor:pointer" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">${esc(oid)} ›</span>
+          <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:700">${esc(cust||'Name not recorded')}</div>
+        </div>
+        <div style="font-size:12px;color:var(--ink3);text-align:right">${its.length} item${its.length!==1?'s':''} · ${ready} ready · ${delivered} delivered</div>
+      </div>
+      ${its.sort((a,b)=>pipePos(a)-pipePos(b)).map(it=>{
+        const pos=pipePos(it), pct=Math.round(pos/10*100), lvl=pipeStuckLevel(it);
+        return `<div class="clickable" style="padding:9px 4px;border-top:1px solid var(--border)" onclick="openPipeModal('${jsstr(it.id)}')">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="min-width:180px"><strong style="font-size:13px">${esc(it.desc||it.id)}</strong> <span style="color:var(--ink3);font-size:10.5px">${esc(it.id)}</span></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:11.5px;font-weight:600;color:var(--ink2)">${esc(colLabel(it.col))}</span>
+              ${pipeBadge(it)}
+              <span class="pipe-time ${lvl===2?'crit':(lvl===1?'warn':'')}">${it.since?fmtDur(Date.now()-new Date(it.since).getTime()):'—'}</span>
+            </div>
+          </div>
+          <div class="pipe-track ${pct===100?'full':''}"><div style="width:${Math.max(pct,3)}%"></div></div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+}
+
+// ---- Item modal: history + admin override ----
+function openPipeModal(itemId){
+  const it=(window._pipeItems||{})[itemId] || buildPipelineItems().items[itemId];
+  if(!it){ toast('Item not found'); return; }
+  const hist=[...it.events].reverse().slice(0,14).map(e=>{
+    let txt='';
+    if(e.kind==='start') txt='▶ Started '+STAGE_NAMES[e.idx];
+    else if(e.kind==='stop') txt='⏸ Stopped '+STAGE_NAMES[e.idx];
+    else if(e.kind==='finish') txt='✓ '+esc(e.stage)+' finished';
+    else txt='⚡ Admin moved to '+esc(e.stage);
+    return `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+      <span>${txt}${e.worker?' <span style="color:var(--ink3)">· '+esc(e.worker)+'</span>':''}</span>
+      <span style="color:var(--ink3);white-space:nowrap;font-size:11px">${fmtDate(e.t)}</span></div>`;
+  }).join('')||'<div class="empty">No activity yet</div>';
+  const overrideOpts=[
+    {v:'RESET', l:'Waiting for Shop (reset)'},
+    ...STAGE_NAMES.slice(0,6).map(s=>({v:s, l:'Waiting for '+s})),
+    {v:'READY', l:'Ready (final inspection done)'},
+    {v:'Packed', l:'Packed'}, {v:'On Way', l:'On Way'}, {v:'Delivered', l:'Delivered'}
+  ];
+  const canFinishHere = typeof it.col==='number' && it.col<=5;
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:2px">${esc(it.desc||it.id)}</h3>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:10px">${esc(it.id)}${it.customer?' · '+esc(it.customer):''}</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <span style="font-weight:700;font-size:14px">${esc(colLabel(it.col))}</span>${pipeBadge(it)}
+      <span class="pipe-time">${it.since?'for '+fmtDur(Date.now()-new Date(it.since).getTime()):''}</span>
+    </div>
+    ${canFinishHere?`<button class="btn btn-gold btn-block" style="margin-bottom:10px" onclick="pipeMarkFinished('${jsstr(it.id)}','${jsstr(STAGE_NAMES[it.col])}')">✓ Mark ${esc(STAGE_NAMES[it.col])} Finished</button>`:''}
+    <div class="field" style="margin-bottom:14px"><label>Admin Override — move item to</label>
+      <div style="display:flex;gap:8px">
+        <select id="pipe-ov-sel">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select>
+        <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(it.id)}')">Move</button>
+      </div>
+    </div>
+    <div class="card-label">History</div>${hist}
+    <button class="btn btn-ghost btn-block" style="margin-top:12px" onclick="closeModal();navigate('${h('item',it.id).replace(/'/g,"\\'")}')">Open full item page →</button>`);
+}
+async function postStageEventAdmin(itemId, stage, action, desc){
+  return sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage, action, worker:'Admin'})});
+}
+async function pipeMarkFinished(itemId, stage){
+  if(!confirm('Mark '+stage+' as FINISHED for '+itemId+'?\n\nThe item moves to the next step.')) return;
+  const it=(window._pipeItems||{})[itemId];
+  const r=await postStageEventAdmin(itemId, stage, 'finished', it?it.desc:'');
+  if(r.ok){ toast('✓ '+stage+' finished'); closeModal(); await loadStageEvents(); pipeRefreshAfterChange(itemId); }
+  else toast('Could not save — did you create the stage_events table?');
+}
+async function pipeApplyOverride(itemId){
+  const val=document.getElementById('pipe-ov-sel').value;
+  const label=(document.getElementById('pipe-ov-sel').selectedOptions[0]||{}).textContent||val;
+  if(!confirm('Move '+itemId+' to "'+label+'"?\n\nThis is logged as an admin override.')) return;
+  const it=(window._pipeItems||{})[itemId];
+  const r=await postStageEventAdmin(itemId, val, 'override', it?it.desc:'');
+  if(r.ok){ toast('⚡ Moved to '+label); closeModal(); await loadStageEvents(); pipeRefreshAfterChange(itemId); }
+  else toast('Could not save — did you create the stage_events table?');
+}
+function pipeRefreshAfterChange(itemId){
+  const route=currentRoute();
+  if(route==='pipeline') renderPipeBody();
+  else if(route==='item') renderItemDetailPage(currentParam());
+}
+
+// Small pipeline card for the Item Detail page (admin override on any item)
+function itemPipeCardHtml(itemId){
+  const {items}=buildPipelineItems();
+  const it=items[itemId];
+  if(!it) return '';
+  const overrideOpts=[
+    {v:'RESET', l:'Waiting for Shop (reset)'},
+    ...STAGE_NAMES.slice(0,6).map(s=>({v:s, l:'Waiting for '+s})),
+    {v:'READY', l:'Ready (final inspection done)'},
+    {v:'Packed', l:'Packed'}, {v:'On Way', l:'On Way'}, {v:'Delivered', l:'Delivered'}
+  ];
+  return `<div class="card">
+    <div class="card-label">Pipeline</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:700">${esc(colLabel(it.col))}</span>
+      ${pipeBadge(it)}
+      <span class="pipe-time">${it.since?'for '+fmtDur(Date.now()-new Date(it.since).getTime()):''}</span>
+    </div>
+    <div class="pipe-track ${pipePos(it)===10?'full':''}" style="margin-bottom:14px"><div style="width:${Math.max(Math.round(pipePos(it)/10*100),3)}%"></div></div>
+    <div class="row"><div class="field"><label>Admin Override — move item to</label>
+      <select id="pipe-ov-sel">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select></div>
+      <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(itemId)}')">Move</button></div>
+  </div>`;
 }
 
 // ========================================================================
@@ -1454,6 +1823,8 @@ async function renderItemDetailPage(itemId){
     <div class="card-label" style="margin-bottom:4px">Total Time Worked</div>
     <div style="font-family:'Outfit',sans-serif;font-size:34px;font-weight:700">${fmtDur(totalMs)}</div>
   </div>`;
+
+  html+=itemPipeCardHtml(itemId);
 
   html+='<div class="card"><div class="card-label">Timeline <span style="font-weight:600;text-transform:none;color:var(--ink3)">— admins can edit or delete entries</span></div>';
   html+=evts.map((e,i)=>{
