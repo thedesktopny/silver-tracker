@@ -399,6 +399,12 @@ async function postStageEvent(itemId, stage, action, desc){
 }
 let allTickets = [];
 let itemCache = {}; // itemId -> {name, customer, ticketId}
+// One-time purge: caches written before the ticket-ID fix hold WRONG item names.
+if(localStorage.getItem('st_cache_v')!=='2'){
+  localStorage.removeItem('st_item_names');
+  localStorage.removeItem('st_oid_map');
+  localStorage.setItem('st_cache_v','2');
+}
 let itemNameCache = JSON.parse(localStorage.getItem('st_item_names')||'{}'); // persists across sessions
 
 // ===== SOUND FEEDBACK (WebAudio beep, no external file needed) =====
