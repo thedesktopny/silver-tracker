@@ -136,10 +136,12 @@ tr.clickable:hover td{background:var(--surface2)}
 .badge.part{background:var(--surface2);color:var(--ink3);margin-left:6px}
 .badge.muted{background:var(--surface2);color:var(--ink3)}
 
-.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:18px}
 .stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;cursor:pointer;transition:all .12s;box-shadow:0 1px 2px rgba(18,20,28,.03)}
 .stat-tile:hover{border-color:var(--gold);box-shadow:0 4px 14px -4px rgba(79,70,229,.18)}
 .stat-tile.alert{border-color:var(--red)}
+.stat-tile.warn{border-color:var(--orange)}
+.stat-tile.warn .stat-num{color:var(--orange)}
 .stat-num{font-family:'Outfit',sans-serif;font-size:34px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .stat-tile.alert .stat-num{color:var(--red)}
 .stat-label{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-top:6px}
@@ -309,6 +311,11 @@ let reportRange='today', customFrom=null, customTo=null;
 let empRange='today', empFrom=null, empTo=null;
 let notifications = JSON.parse(localStorage.getItem('glint_notifications')||'[]');
 let lastSeenTs = localStorage.getItem('glint_last_seen_ts') || null;
+if(localStorage.getItem('glint_cache_v')!=='2'){
+  localStorage.removeItem('glint_item_names');
+  localStorage.removeItem('glint_oid_map');
+  localStorage.setItem('glint_cache_v','2');
+}
 let itemNameCache = JSON.parse(localStorage.getItem('glint_item_names')||'{}'); // itemId -> name (fallback resolution)
 
 // ========================================================================
@@ -507,11 +514,19 @@ function checkForNewScans(){
   if(newOnes.length){
     newOnes.forEach(s=>{
       const started=(s.status||'').includes('Started');
-      notifications.unshift({
-        itemId:s.item_id,
-        text:`${s.worker} ${started?'started':'stopped'} ${s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id}`,
-        ts:s.created_at
-      });
+      let reworkNote=null;
+      if(started){
+        const itemEvts=scans.filter(x=>x.item_id===s.item_id);
+        const rw=computeReworkForItem(itemEvts);
+        const hit=rw.find(r=>r.at===s.created_at);
+        if(hit) reworkNote=hit;
+      }
+      const label=s.item_desc&&s.item_desc!==s.item_id?s.item_desc:s.item_id;
+      if(reworkNote){
+        notifications.unshift({ itemId:s.item_id, text:`↩️ SENT BACK: ${label} went back to ${reworkNote.role} (round ${reworkNote.round}) — ${s.worker}`, ts:s.created_at });
+      } else {
+        notifications.unshift({ itemId:s.item_id, text:`${s.worker} ${started?'started':'stopped'} ${label}`, ts:s.created_at });
+      }
     });
     lastSeenTs=newest.created_at;
     localStorage.setItem('glint_last_seen_ts', lastSeenTs);
@@ -601,7 +616,7 @@ async function loadPipeLabels(){ try{ const r=await sb('labels?select=item_id,it
 async function bootstrap(){
   startClock();
   if(!location.hash) location.hash='#/live';
-  await Promise.all([loadAllScans(), loadWorkers(), loadRoles(), loadStageEvents(), loadPipeLabels()]);
+  await Promise.all([loadAllScans(), loadWorkers(), loadRoles(), loadStageEvents(), loadPipeLabels(), loadPipeStages()]);
   checkForNewScans();
   router();
   setInterval(async ()=>{
@@ -671,6 +686,36 @@ function analyzeItem(events){
   return { ms, working:stillOpen, workingBy, done, byWorker, hadRunaway };
 }
 
+// ===== REWORK DETECTION =====
+// An item "went back a step" when a role starts again AFTER a different role ran in between.
+// (Cleaning -> Polish -> Cleaning again = rework. Cleaning stopped & resumed = NOT rework.)
+function computeReworkForItem(events){
+  const evts=[...events].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const seq=[];
+  evts.forEach(e=>{
+    if(!(e.status||'').includes('Started')) return;
+    const r=e.role||'—';
+    if(seq.length && seq[seq.length-1].role===r) return;
+    seq.push({role:r, at:e.created_at, worker:e.worker});
+  });
+  const seen={}; const reworks=[];
+  seq.forEach(v=>{
+    seen[v.role]=(seen[v.role]||0)+1;
+    if(seen[v.role]>1) reworks.push({role:v.role, at:v.at, round:seen[v.role], worker:v.worker});
+  });
+  return reworks;
+}
+function computeAllRework(){
+  const byItem={};
+  scans.forEach(s=>{ (byItem[s.item_id]=byItem[s.item_id]||{desc:s.item_desc, customer:s.customer, events:[]}).events.push(s); });
+  const out=[];
+  Object.entries(byItem).forEach(([id,d])=>{
+    const rw=computeReworkForItem(d.events);
+    if(rw.length) out.push({itemId:id, itemDesc:d.desc, customer:d.customer, reworks:rw, last:rw[rw.length-1].at});
+  });
+  return out.sort((a,b)=>new Date(b.last)-new Date(a.last));
+}
+
 // ========================================================================
 // ADMIN: EDIT / DELETE SCAN ENTRIES
 // ========================================================================
@@ -705,6 +750,7 @@ function renderLivePage(){
   window._staleList=stale; window._activeList=Object.values(active);
   const workingCount=Object.keys(active).length;
   const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
+  const reworkItems=computeAllRework();
 
   // Working entries sorted longest-running first — the ones most likely to need a look
   const workingEntries=Object.entries(active).sort((a,b)=>new Date(a[1].startedAt)-new Date(b[1].startedAt));
@@ -718,6 +764,7 @@ function renderLivePage(){
     <div class="stat-tile" onclick="navigate('${h('workers')}')"><div class="stat-num">${workers.length}</div><div class="stat-label">Total Workers ›</div></div>
     <div class="stat-tile" onclick="navigate('${h('stat','today')}')"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans Today ›</div></div>
     <div class="stat-tile ${stale.length?'alert':''}" onclick="navigate('${h('stat','stale')}')"><div class="stat-num">${stale.length}</div><div class="stat-label">Left Running ${IDLE_ALERT_HOURS}h+ ›</div></div>
+    <div class="stat-tile ${reworkItems.length?'warn':''}" onclick="navigate('${h('stat','rework')}')"><div class="stat-num">${reworkItems.length}</div><div class="stat-label">↩️ Sent Back ›</div></div>
   </div>`;
 
   if(workingEntries.length){
@@ -780,7 +827,7 @@ async function liveForceStop(itemId, role, worker, desc){
 function renderStatDetailPage(kind){
   const {active, stale}=computeActive();
   window._staleList=stale; window._activeList=Object.values(active);
-  const titles={working:'Working Now', today:'Scans Today', stale:'Left Running '+IDLE_ALERT_HOURS+'h+'};
+  const titles={working:'Working Now', today:'Scans Today', stale:'Left Running '+IDLE_ALERT_HOURS+'h+', rework:'↩️ Sent Back a Step'};
   let html=`<div class="page-head"><div><div class="page-title">${titles[kind]||'Detail'}</div></div></div><div class="card">`;
   if(kind==='stale'){
     const list=window._staleList||[];
@@ -794,6 +841,16 @@ function renderStatDetailPage(kind){
         <div style="color:var(--red);font-weight:700">${fmtDur(Date.now()-new Date(s.startedAt))}</div>
         <button class="btn btn-danger btn-sm" style="margin-top:6px" onclick="liveForceStop('${jsstr(s.itemId)}','${jsstr(s.role||'')}','${jsstr(s.worker)}','${jsstr(s.itemDesc||'')}');setTimeout(()=>renderStatDetailPage('stale'),400)">■ Force Stop</button>
       </div></div>`).join(''):'<div class="empty">Nothing left running</div>';
+  } else if(kind==='rework'){
+    const list=computeAllRework();
+    html+=list.length?list.map(it=>{
+      const label=it.itemDesc&&it.itemDesc!==it.itemId?esc(it.itemDesc):esc(it.itemId);
+      return `<div class="timeline-row clickable" onclick="navigate('${h('item',it.itemId).replace(/'/g,"\\'")}')">
+      <div class="tl-dot" style="background:var(--orange)"></div>
+      <div style="flex:1"><strong>${label}</strong> <span style="color:var(--ink3);font-size:11px">${esc(it.itemId)}</span>${it.customer&&it.customer!=='undefined'?' · <span style="color:var(--ink3)">'+esc(it.customer)+'</span>':''}
+      <div style="font-size:12px;color:var(--orange);margin-top:2px">${it.reworks.map(r=>'↩️ back to '+esc(r.role)+' (round '+r.round+') — '+esc(r.worker)+' · '+fmtDate(r.at)).join('<br>')}</div></div>
+    </div>`;
+    }).join(''):'<div class="empty">No items have been sent back — good sign!</div>';
   } else if(kind==='today'){
     const today=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     html+=today.length?today.map(s=>`<div class="timeline-row clickable" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')">
@@ -823,27 +880,57 @@ function renderStatDetailPage(kind){
 //   2. stage_events (new)  — explicit "finished" marks from workers + admin "override" moves
 // "Waiting for X" is never stored — it's derived (previous stage finished, X not started).
 // ========================================================================
-const STAGE_NAMES=['Cleaning','Antique','Polish','Inspection','Lacquer','Final Inspection','Packed','On Way','Delivered'];
-const PIPE_COLS=[
-  {k:'shop',  l:'Waiting for Shop'},
-  {k:0, l:'Cleaning'}, {k:1, l:'Antique'}, {k:2, l:'Polish'}, {k:3, l:'Inspection'},
-  {k:4, l:'Lacquer'}, {k:5, l:'Final Inspection'},
-  {k:'ready', l:'Ready'},
-  {k:6, l:'Packed'}, {k:7, l:'On Way'}, {k:8, l:'Delivered'}
-];
+// Work stages are CONFIGURABLE (Settings -> Pipeline Stages, stored in the settings table).
+// Delivery stages are fixed — they're logistics, not services.
+const DEFAULT_WORK_STAGES=['Cleaning','Antique','Polish','Inspection','Lacquer','Final Inspection'];
+const DELIVERY_STAGES=['Packed','On Way','Delivered'];
+let WORK_STAGES=[...DEFAULT_WORK_STAGES];
+let STAGE_NAMES=[], PIPE_COLS=[], LASTW=5, DELIV0=6, DELIV_LAST=8, PIPE_MAXPOS=10;
+function applyPipeStages(){
+  STAGE_NAMES=[...WORK_STAGES, ...DELIVERY_STAGES];
+  LASTW=WORK_STAGES.length-1;
+  DELIV0=WORK_STAGES.length;
+  DELIV_LAST=STAGE_NAMES.length-1;
+  PIPE_MAXPOS=STAGE_NAMES.length+1;
+  PIPE_COLS=[
+    {k:'shop', l:'Waiting for Shop'},
+    ...WORK_STAGES.map((s,i)=>({k:i, l:s})),
+    {k:'ready', l:'Ready'},
+    ...DELIVERY_STAGES.map((s,i)=>({k:DELIV0+i, l:s}))
+  ];
+}
+applyPipeStages();
+async function loadPipeStages(){
+  try{
+    const r=await sb("settings?key=eq.pipe_work_stages&select=value");
+    if(r&&r[0]&&r[0].value){
+      const arr=JSON.parse(r[0].value);
+      if(Array.isArray(arr)&&arr.length&&arr.every(x=>typeof x==='string')){ WORK_STAGES=arr; applyPipeStages(); }
+    }
+  }catch(e){}
+}
+async function savePipeStages(){
+  applyPipeStages();
+  const r=await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({key:'pipe_work_stages', value:JSON.stringify(WORK_STAGES)})});
+  if(!r.ok) toast('Could not save stage order');
+  return r.ok;
+}
 const STUCK_WARN_DAYS=3, STUCK_CRIT_DAYS=7;
 // Map a worker role name to a pipeline stage index (loose matching so
 // "Final Inspection", "final insp", etc. all land in the right place)
 function stageForRole(role){
-  const r=(role||'').toLowerCase();
+  const r=(role||'').toLowerCase().trim();
   if(!r) return null;
-  if(r.includes('final')) return 5;
-  if(r.includes('clean')) return 0;
-  if(r.includes('antiq')) return 1;
-  if(r.includes('polish')) return 2;
-  if(r.includes('lacquer')||r.includes('laquer')||r.includes('lack')) return 4;
-  if(r.includes('inspect')) return 3;
-  if(r.includes('pack')||r.includes('deliver')||r.includes('driver')||r.includes('ship')) return 'delivery';
+  if(/pack|deliver|driver|ship/.test(r)) return 'delivery';
+  // 1. Exact match against the configured stage list
+  for(let i=0;i<WORK_STAGES.length;i++){ if(r===WORK_STAGES[i].toLowerCase().trim()) return i; }
+  // 2. Substring match either direction ("Gold Plating" role -> "Gold Plating" stage)
+  for(let i=0;i<WORK_STAGES.length;i++){ const s=WORK_STAGES[i].toLowerCase().trim(); if(s&&(r.includes(s)||s.includes(r))) return i; }
+  // 3. Legacy keyword fallback so old role names keep mapping
+  const kw=[['final','Final Inspection'],['clean','Cleaning'],['antiq','Antique'],['polish','Polish'],['lacquer','Lacquer'],['laquer','Lacquer'],['lack','Lacquer'],['inspect','Inspection']];
+  for(const [k,name] of kw){
+    if(r.includes(k)){ const i=WORK_STAGES.findIndex(s=>s.toLowerCase().trim()===name.toLowerCase()); if(i>=0) return i; }
+  }
   return null; // role has no pipeline stage — time is still tracked, pipeline unaffected
 }
 function stageIdxByName(n){ const x=(n||'').toLowerCase(); return STAGE_NAMES.findIndex(s=>s.toLowerCase()===x); }
@@ -857,9 +944,9 @@ function derivePipeState(events){
     if(e.kind==='override'){
       const st=(e.stage||'').toUpperCase();
       if(st==='RESET'){ fin=-1; cur=null; return; }
-      if(st==='READY'){ fin=Math.max(fin,5); cur=null; return; }
+      if(st==='READY'){ fin=Math.max(fin,LASTW); cur=null; return; }
       const i=stageIdxByName(e.stage); if(i<0) return;
-      fin = i>=6 ? i : i-1; // work stages: "move to waiting for X"; delivery stages: "item IS at X"
+      fin = i>=DELIV0 ? i : i-1; // work stages: "move to waiting for X"; delivery stages: "item IS at X"
       cur=null;
     } else if(e.kind==='finish'){
       const i=stageIdxByName(e.stage); if(i<0) return;
@@ -875,17 +962,17 @@ function derivePipeState(events){
   let col, status, worker=null;
   if(cur&&cur.idx>fin){ col=cur.idx; status=cur.st; worker=cur.worker; }
   else if(fin<0){ col='shop'; status='waiting'; }
-  else if(fin<5){ col=fin+1; status='waiting'; }
-  else if(fin===5){ col='ready'; status='ready'; }
+  else if(fin<LASTW){ col=fin+1; status='waiting'; }
+  else if(fin===LASTW){ col='ready'; status='ready'; }
   else { col=fin; status='done'; }
   return {fin, col, status, worker, since};
 }
 
-// Numeric position along the whole pipeline (for progress bars): 0..10
+// Numeric position along the whole pipeline (for progress bars): 0..PIPE_MAXPOS
 function pipePos(it){
   if(it.col==='shop') return 0;
-  if(it.col==='ready') return 7;
-  if(typeof it.col==='number') return it.col<=5 ? it.col+1 : it.col+2;
+  if(it.col==='ready') return LASTW+2;
+  if(typeof it.col==='number') return it.col<=LASTW ? it.col+1 : it.col+2;
   return 0;
 }
 function colLabel(col){ const c=PIPE_COLS.find(x=>x.k===col); return c?c.l:String(col); }
@@ -921,14 +1008,14 @@ function buildPipelineItems(){
   const byOrder={};
   Object.values(items).forEach(it=>{ const o=orderIdOf(it.id); (byOrder[o]=byOrder[o]||[]).push(it); });
   Object.values(byOrder).forEach(list=>{
-    const allReady=list.every(x=>x.fin>=5);
+    const allReady=list.every(x=>x.fin>=LASTW);
     list.forEach(x=>{ x.waitingPieces = (x.col==='ready') && !allReady && list.length>1; });
   });
   window._pipeItems=items;
   return {items, byOrder};
 }
 function pipeStuckLevel(it){
-  if(it.col===8||!it.since) return 0; // delivered items are never "stuck"
+  if(it.col===DELIV_LAST||!it.since) return 0; // delivered items are never "stuck"
   const days=(Date.now()-new Date(it.since).getTime())/86400000;
   if(days>=STUCK_CRIT_DAYS) return 2;
   if(days>=STUCK_WARN_DAYS) return 1;
@@ -985,7 +1072,7 @@ function pipeFilteredItems(){
   const q=(document.getElementById('pipe-search')?.value||'').toLowerCase().trim();
   const {items}=buildPipelineItems();
   return Object.values(items).filter(it=>{
-    if(!pipeShowDelivered && it.col===8) return false;
+    if(!pipeShowDelivered && it.col===DELIV_LAST) return false;
     if(pipeStage!=='all' && String(it.col)!==String(pipeStage)) return false;
     if(pipeStatus!=='all'){
       if(pipeStatus==='stuck'){ if(pipeStuckLevel(it)===0) return false; }
@@ -1008,7 +1095,7 @@ function renderPipeBody(){
   else box.innerHTML=renderPipeByOrder(list);
 }
 function renderPipeBoard(list){
-  const cols=PIPE_COLS.filter(c=>pipeShowDelivered || c.k!==8 || list.some(it=>it.col===8));
+  const cols=PIPE_COLS.filter(c=>pipeShowDelivered || c.k!==DELIV_LAST || list.some(it=>it.col===DELIV_LAST));
   return `<div class="pipe-board">`+cols.map(c=>{
     const its=list.filter(it=>it.col===c.k).sort((a,b)=>new Date(a.since||0)-new Date(b.since||0));
     return `<div class="pipe-col">
@@ -1034,8 +1121,8 @@ function renderPipeByOrder(list){
     return lb-la;
   });
   return orders.map(([oid,its])=>{
-    const delivered=its.filter(x=>x.col===8).length;
-    const ready=its.filter(x=>x.fin>=5).length;
+    const delivered=its.filter(x=>x.col===DELIV_LAST).length;
+    const ready=its.filter(x=>x.fin>=LASTW).length;
     const cust=its.find(x=>x.customer)?.customer||'';
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
@@ -1046,7 +1133,7 @@ function renderPipeByOrder(list){
         <div style="font-size:12px;color:var(--ink3);text-align:right">${its.length} item${its.length!==1?'s':''} · ${ready} ready · ${delivered} delivered</div>
       </div>
       ${its.sort((a,b)=>pipePos(a)-pipePos(b)).map(it=>{
-        const pos=pipePos(it), pct=Math.round(pos/10*100), lvl=pipeStuckLevel(it);
+        const pos=pipePos(it), pct=Math.round(pos/PIPE_MAXPOS*100), lvl=pipeStuckLevel(it);
         return `<div class="clickable" style="padding:9px 4px;border-top:1px solid var(--border)" onclick="openPipeModal('${jsstr(it.id)}')">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="min-width:180px"><strong style="font-size:13px">${esc(it.desc||it.id)}</strong> <span style="color:var(--ink3);font-size:10.5px">${esc(it.id)}</span></div>
@@ -1079,11 +1166,11 @@ function openPipeModal(itemId){
   }).join('')||'<div class="empty">No activity yet</div>';
   const overrideOpts=[
     {v:'RESET', l:'Waiting for Shop (reset)'},
-    ...STAGE_NAMES.slice(0,6).map(s=>({v:s, l:'Waiting for '+s})),
-    {v:'READY', l:'Ready (final inspection done)'},
-    {v:'Packed', l:'Packed'}, {v:'On Way', l:'On Way'}, {v:'Delivered', l:'Delivered'}
+    ...WORK_STAGES.map(s=>({v:s, l:'Waiting for '+s})),
+    {v:'READY', l:'Ready (all work steps done)'},
+    ...DELIVERY_STAGES.map(s=>({v:s, l:s}))
   ];
-  const canFinishHere = typeof it.col==='number' && it.col<=5;
+  const canFinishHere = typeof it.col==='number' && it.col<=LASTW;
   openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
     <h3 style="margin-bottom:2px">${esc(it.desc||it.id)}</h3>
     <div style="font-size:12px;color:var(--ink3);margin-bottom:10px">${esc(it.id)}${it.customer?' · '+esc(it.customer):''}</div>
@@ -1133,9 +1220,9 @@ function itemPipeCardHtml(itemId){
   if(!it) return '';
   const overrideOpts=[
     {v:'RESET', l:'Waiting for Shop (reset)'},
-    ...STAGE_NAMES.slice(0,6).map(s=>({v:s, l:'Waiting for '+s})),
-    {v:'READY', l:'Ready (final inspection done)'},
-    {v:'Packed', l:'Packed'}, {v:'On Way', l:'On Way'}, {v:'Delivered', l:'Delivered'}
+    ...WORK_STAGES.map(s=>({v:s, l:'Waiting for '+s})),
+    {v:'READY', l:'Ready (all work steps done)'},
+    ...DELIVERY_STAGES.map(s=>({v:s, l:s}))
   ];
   return `<div class="card">
     <div class="card-label">Pipeline</div>
@@ -1144,7 +1231,7 @@ function itemPipeCardHtml(itemId){
       ${pipeBadge(it)}
       <span class="pipe-time">${it.since?'for '+fmtDur(Date.now()-new Date(it.since).getTime()):''}</span>
     </div>
-    <div class="pipe-track ${pipePos(it)===10?'full':''}" style="margin-bottom:14px"><div style="width:${Math.max(Math.round(pipePos(it)/10*100),3)}%"></div></div>
+    <div class="pipe-track ${pipePos(it)===PIPE_MAXPOS?'full':''}" style="margin-bottom:14px"><div style="width:${Math.max(Math.round(pipePos(it)/PIPE_MAXPOS*100),3)}%"></div></div>
     <div class="row"><div class="field"><label>Admin Override — move item to</label>
       <select id="pipe-ov-sel">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select></div>
       <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(itemId)}')">Move</button></div>
@@ -1255,8 +1342,11 @@ async function toggleTicket(oid){
         ${services?`<div style="font-size:11.5px;color:var(--gold2)">${esc(services)}</div>`:''}
         ${note?`<div style="font-size:11.5px;color:var(--red)">⚠️ ${esc(note)}</div>`:''}
         <div style="font-size:10.5px;color:var(--ink3)">${itemId}</div>
+        <div id="svcchips-${cbId}" style="font-size:11px;color:var(--gold2);margin-top:2px"></div>
+        <div id="svced-${cbId}" style="display:none;margin-top:8px"></div>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="openPhotosModalByIndex(${registerPhotoData(itemId,name,preImgs)})">🖼️ Photos</button>`;
+        <button class="btn btn-ghost btn-sm" onclick="openPhotosModalByIndex(${registerPhotoData(itemId,name,preImgs)})">🖼️ Photos</button>
+        <button class="btn btn-ghost btn-sm" onclick="openServicesEditor('${itemId}','${jsstr(services)}')">⚙️ Services</button>`;
     const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
     if(isCandelabra(name)){
       row+=`<button class="btn btn-ghost btn-sm" onclick="toggleParts('${itemId}','${jsstr(name)}','${jsstr(cust)}','${jsstr(city)}','${jsstr(note)}','${jsstr(due)}','${jsstr(services)}','${jsstr(group)}')">⚙️ Split into parts</button>`;
@@ -1271,7 +1361,60 @@ async function toggleTicket(oid){
     <button class="btn btn-sm" onclick="selectTicket('${jsstr(oid)}',${devices.length},true)">Select All</button>
     <button class="btn btn-ghost btn-sm" onclick="selectTicket('${jsstr(oid)}',${devices.length},false)">Clear</button>
   </div>`;
+  loadItemServicesForTicket(oid, devices.length);
 }
+
+// ===== PER-ITEM SERVICES (which pipeline steps each item needs) =====
+window._itemSvc = window._itemSvc || {}; // itemId -> [services]
+async function loadItemServicesForTicket(oid, count){
+  try{
+    const ids=[]; for(let i=1;i<=count;i++) ids.push('"'+oid+'-'+i+'"');
+    const rows=await sb('item_services?item_id=in.('+encodeURIComponent(ids.join(','))+')&select=*');
+    (Array.isArray(rows)?rows:[]).forEach(r=>{ window._itemSvc[r.item_id]=r.services||[]; });
+    for(let i=1;i<=count;i++) renderSvcChips(oid+'-'+i);
+  }catch(e){}
+}
+function renderSvcChips(itemId){
+  const cbId='cb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const el=document.getElementById('svcchips-'+cbId); if(!el) return;
+  const svcs=window._itemSvc[itemId];
+  el.innerHTML = (svcs&&svcs.length) ? '⚙️ '+svcs.map(s=>esc(s)).join(' · ') : '';
+  const cb=document.getElementById(cbId);
+  if(cb&&svcs&&svcs.length) cb.dataset.services=svcs.join(', ');
+}
+function openServicesEditor(itemId, rdServices){
+  const cbId='cb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const box=document.getElementById('svced-'+cbId); if(!box) return;
+  if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='block';
+  const saved=window._itemSvc[itemId];
+  const rdLower=(rdServices||'').toLowerCase();
+  const isOn=(name)=> saved ? saved.includes(name) : rdLower.includes(name.toLowerCase());
+  // Offer the pipeline stages plus any extra roles (e.g. non-stage services)
+  const options=[...WORK_STAGES];
+  roles.forEach(r=>{ if(!options.some(o=>o.toLowerCase()===r.name.toLowerCase())) options.push(r.name); });
+  box.innerHTML=`<div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
+    <div style="font-size:10.5px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Services this item needs</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      ${options.map(nm=>`<label style="display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);padding:6px 10px;border-radius:20px;font-size:12.5px;cursor:pointer"><input type="checkbox" class="svc-pick" value="${esc(nm)}" ${isOn(nm)?'checked':''} style="width:14px;height:14px"> ${esc(nm)}</label>`).join('')}
+    </div>
+    <button class="btn btn-gold btn-sm" onclick="saveItemServices('${jsstr(itemId)}')">Save</button>
+    <button class="btn btn-ghost btn-sm" onclick="this.closest('[id^=svced-]').style.display='none'">Cancel</button>
+  </div>`;
+}
+async function saveItemServices(itemId){
+  const cbId='cb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
+  const box=document.getElementById('svced-'+cbId); if(!box) return;
+  const picked=[...box.querySelectorAll('.svc-pick:checked')].map(x=>x.value);
+  const r=await sb('item_services?on_conflict=item_id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({item_id:itemId,services:picked,updated_at:new Date().toISOString()})});
+  if(r.ok){
+    window._itemSvc[itemId]=picked;
+    box.style.display='none'; box.innerHTML='';
+    renderSvcChips(itemId);
+    toast('✅ Services saved for '+itemId);
+  } else toast('Could not save — did you create the item_services table?');
+}
+
 function toggleParts(itemId,name,cust,city,note,due,services,group){
   const sid='split-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'), box=document.getElementById(sid);
   if(box.style.display==='block'){ box.style.display='none'; box.innerHTML=''; updateSelCount(); return; }
@@ -1826,6 +1969,17 @@ async function renderItemDetailPage(itemId){
 
   html+=itemPipeCardHtml(itemId);
 
+  // Rework banner — this item went back to a stage it already passed
+  const reworksHere=computeReworkForItem(evts);
+  if(reworksHere.length){
+    html+=`<div class="card" style="border-color:var(--orange);background:var(--orange-soft)">
+      <div class="card-label" style="color:var(--orange)">↩️ Sent Back a Step</div>
+      ${reworksHere.map(r=>`<div style="font-size:13px;padding:3px 0">Went back to <strong>${esc(r.role)}</strong> (round ${r.round}) — ${esc(r.worker)} · ${fmtDateFull(r.at)}</div>`).join('')}
+    </div>`;
+  }
+  const reworkKeys=new Set(reworksHere.map(r=>r.at+'::'+(r.role||'—')));
+  html+='<div id="item-svc-checklist"></div>';
+
   html+='<div class="card"><div class="card-label">Timeline <span style="font-weight:600;text-transform:none;color:var(--ink3)">— admins can edit or delete entries</span></div>';
   html+=evts.map((e,i)=>{
     const started=(e.status||'').includes('Started');
@@ -1834,7 +1988,7 @@ async function renderItemDetailPage(itemId){
     const dupe=prev && ((prev.status||'').includes('Started')===started) && prev.worker===e.worker && (prev.role||'')===(e.role||'');
     return `<div class="timeline-row"${dupe?' style="background:var(--orange-soft)"':''}>
       <div class="tl-dot" style="background:${started?'var(--green)':'var(--orange)'}"></div>
-      <div style="flex:1"><div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${esc(e.role||'—')}${dupe?' <span style="color:var(--orange);font-weight:600;font-size:11px">⚠️ duplicate scan — consider deleting</span>':''}</div>
+      <div style="flex:1"><div style="font-weight:700">${started?'▶ Started':'■ Stopped'} · ${esc(e.role||'—')}${reworkKeys.has(e.created_at+'::'+(e.role||'—'))?' <span style="color:var(--orange);font-weight:700;font-size:11px">↩️ back to this step</span>':''}${dupe?' <span style="color:var(--orange);font-weight:600;font-size:11px">⚠️ duplicate scan — consider deleting</span>':''}</div>
       <div style="font-size:12px;color:var(--ink3)">${esc(e.worker)} · ${fmtDateFull(e.created_at)}</div></div>
       <div class="tl-actions">
         <button onclick="editScanEntry(${e.id||'null'},()=>renderItemDetailPage('${jsstr(itemId)}'))" title="Edit time">✏️</button>
@@ -1848,6 +2002,30 @@ async function renderItemDetailPage(itemId){
   el.innerHTML=html;
 
   // Async: repair note (from RepairDesk), worker notes, photos
+  // Async: service checklist (assigned services vs actual scans)
+  try{
+    const base=(itemId.match(/^(T-\d+-\d+)/i)||[])[1]||itemId;
+    const asg=await sb('item_services?item_id=eq.'+encodeURIComponent(base)+'&select=*');
+    const svcs=(asg&&asg[0]&&asg[0].services)||[];
+    const chk=document.getElementById('item-svc-checklist');
+    if(chk&&svcs.length){
+      const rows=svcs.map(svc=>{
+        const mine=evts.filter(e=>(e.role||'')===svc);
+        const hasStop=mine.some(e=>(e.status||'').includes('Stopped'));
+        const lastIsStart=mine.length&&(mine[mine.length-1].status||'').includes('Started');
+        const state=lastIsStart?'progress':(hasStop?'done':'pending');
+        const icon=state==='done'?'✓':(state==='progress'?'▶':'○');
+        const color=state==='done'?'var(--green)':(state==='progress'?'var(--gold)':'var(--ink3)');
+        const lab=state==='done'?'Done':(state==='progress'?'In progress':'Not yet');
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+          <span style="font-weight:600">${esc(svc)}</span>
+          <span style="color:${color};font-weight:700;font-size:12.5px">${icon} ${lab}</span>
+        </div>`;
+      }).join('');
+      chk.innerHTML=`<div class="card"><div class="card-label">Service Checklist</div>${rows}</div>`;
+    }
+  }catch(e){}
+
   let repairNoteBlock='';
   try{
     const tid=await resolveTicketId(oid);
@@ -2213,6 +2391,15 @@ function renderSettingsPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
     <div class="card" style="max-width:460px">
+      <div class="card-label">Pipeline Stages</div>
+      <div class="page-sub" style="margin-bottom:12px">The ordered work steps items move through. Name a stage the same as a worker role and scans move items automatically. Packed / On Way / Delivered always come after.</div>
+      <div id="pipe-stages-list"></div>
+      <div class="row" style="margin-top:12px">
+        <div class="field"><input id="new-stage-name" placeholder="e.g. Gold Plating" onkeydown="if(event.key==='Enter')stageAdd()"></div>
+        <button class="btn btn-sm" onclick="stageAdd()">+ Add</button>
+      </div>
+    </div>
+    <div class="card" style="max-width:460px">
       <div class="card-label">Change Admin Password</div>
       <div class="field" style="margin-bottom:12px"><label>Current Password</label><input id="cur-pass" type="password"></div>
       <div class="field" style="margin-bottom:12px"><label>New Password</label><input id="new-pass" type="password" placeholder="At least 6 characters"></div>
@@ -2237,6 +2424,40 @@ function renderSettingsPage(){
   `;
   document.getElementById('ls-width').value=labelSize.width;
   document.getElementById('ls-height').value=labelSize.height;
+  renderPipeStagesList();
+}
+function renderPipeStagesList(){
+  const el=document.getElementById('pipe-stages-list'); if(!el) return;
+  el.innerHTML=WORK_STAGES.map((s,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:11px;color:var(--ink3);width:18px">${i+1}.</span>
+      <span style="font-weight:600;flex:1">${esc(s)}</span>
+      <button class="btn btn-ghost btn-sm" ${i===0?'disabled style="opacity:.3"':''} onclick="stageMove(${i},-1)">↑</button>
+      <button class="btn btn-ghost btn-sm" ${i===WORK_STAGES.length-1?'disabled style="opacity:.3"':''} onclick="stageMove(${i},1)">↓</button>
+      <button class="btn btn-danger btn-sm" onclick="stageRemove(${i})">✕</button>
+    </div>`).join('');
+}
+async function stageAdd(){
+  const inp=document.getElementById('new-stage-name');
+  const name=(inp.value||'').trim();
+  if(!name){ toast('Enter a stage name'); return; }
+  if(WORK_STAGES.some(s=>s.toLowerCase()===name.toLowerCase())){ toast('"'+name+'" is already a stage'); return; }
+  // New stages go before Final Inspection if present, else at the end
+  const fi=WORK_STAGES.findIndex(s=>s.toLowerCase().includes('final'));
+  if(fi>=0) WORK_STAGES.splice(fi,0,name); else WORK_STAGES.push(name);
+  if(await savePipeStages()){ inp.value=''; renderPipeStagesList(); toast('✅ Added "'+name+'" — remember to give this role to the workers who do it'); }
+}
+async function stageMove(i,dir){
+  const j=i+dir; if(j<0||j>=WORK_STAGES.length) return;
+  [WORK_STAGES[i],WORK_STAGES[j]]=[WORK_STAGES[j],WORK_STAGES[i]];
+  if(await savePipeStages()) renderPipeStagesList();
+}
+async function stageRemove(i){
+  const name=WORK_STAGES[i];
+  if(WORK_STAGES.length<=1){ toast('You need at least one stage'); return; }
+  if(!confirm('Remove stage "'+name+'"?\n\nItems and history keep their data — this stage just disappears from the pipeline board.')) return;
+  WORK_STAGES.splice(i,1);
+  if(await savePipeStages()){ renderPipeStagesList(); toast('Removed "'+name+'"'); }
 }
 async function changeAdminPassword(){
   const cur=document.getElementById('cur-pass').value, nw=document.getElementById('new-pass').value, nw2=document.getElementById('new-pass2').value;
