@@ -1881,12 +1881,32 @@ function prodDelta(cur,prev){
 }
 function fmtMoney(v){ return '$'+Math.round(v).toLocaleString(); }
 
+// Production needs ticket prices, but loadTickets() only runs on the Print Labels page.
+async function ensureTicketsLoaded(){
+  if(allTickets&&allTickets.length) return;
+  try{
+    let fetched=[]; let page=1, totalPages=1;
+    do{
+      const data=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      const batch=(data.data&&data.data.ticketData)||[];
+      fetched=fetched.concat(batch);
+      const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
+      page++;
+    } while(page<=totalPages && page<=2);
+    allTickets=fetched;
+    fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+    localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
+  }catch(e){}
+}
 async function renderProductionPage(){
   prodDefaultValue=parseFloat(localStorage.getItem('glint_default_item_value')||'0')||0;
   try{
     const r=await sb("settings?key=eq.default_item_value&select=value");
     if(r&&r[0]) prodDefaultValue=parseFloat(r[0].value)||0;
   }catch(e){}
+  prodValueCache={}; prodValueSrc={};
+  document.getElementById('content').innerHTML='<div class="card"><div class="empty">Loading production data…</div></div>';
+  await ensureTicketsLoaded();
   prodValueCache={}; prodValueSrc={};
   drawProduction();
 }
@@ -1901,11 +1921,19 @@ async function prodSaveDefault(){
 }
 function drawProduction(){
   const {start,end}=prodRange(prodPeriod,prodOffset);
-  const {start:pStart,end:pEnd}=prodRange(prodPeriod,prodOffset-1);
+  let {start:pStart,end:pEnd}=prodRange(prodPeriod,prodOffset-1);
+  // Comparing a half-finished day against a whole one makes everything look red.
+  // For the period in progress, measure the SAME elapsed slice of the previous period.
+  const inProgress = prodOffset===0 && Date.now() < end.getTime();
+  const elapsed = inProgress ? Math.max(Date.now()-start.getTime(), 0) : (end-start);
+  if(inProgress) pEnd=new Date(pStart.getTime()+elapsed);
   const cur=prodMetrics(start,end);
   const prev=prodMetrics(pStart,pEnd);
   const rec=prodRecords(prodPeriod);
-  const hasValue=cur.value>0||prev.value>0||prodDefaultValue>0;
+  const fraction = inProgress ? Math.min(elapsed/(end-start),1) : 1;
+  const pace = fraction>0.02 ? Math.round(cur.pieces/fraction) : null; // projected finish
+  const cmpWord = inProgress ? ('same time last '+(prodPeriod==='day'?'day':prodPeriod)) : ('previous '+prodPeriod);
+  const hasValue = cur.value>0 || prev.value>0 || prodDefaultValue>0;
   const periodWord=prodPeriod==='day'?'day':(prodPeriod==='month'?'month':'week');
 
   // Daily bars across the period
@@ -1944,14 +1972,17 @@ function drawProduction(){
     const stages=Object.entries(cur.workerStages[w]||{}).map(([s,k])=>esc(s)+' '+k).join(' · ');
     const record=rec.recWorker[w]||n;
     const prevN=prev.workerPieces[w]||0;
-    const vsRec=record?Math.round(n/record*100):100;
+    // Scale the record to how much of the period has actually elapsed,
+    // otherwise everyone looks red at 9am
+    const target=Math.max(record*fraction,0.0001);
+    const vsRec=Math.round(n/target*100);
     const flag=vsRec>=80?'🟢':(vsRec>=50?'🟡':'🔴');
     return `<tr class="clickable" onclick="navigate('${h('worker',w).replace(/'/g,"\\'")}')">
       <td style="font-weight:600">${flag} ${esc(w)}</td>
       <td><strong>${n}</strong> ${prodDelta(n,prevN)}</td>
       <td>${fmtDur(ms)}</td>
       <td style="font-size:12px;color:var(--ink3)">${stages||'—'}</td>
-      <td style="color:var(--ink3)">best: ${record} <span style="font-size:11px">(now at ${vsRec}%)</span></td>
+      <td style="color:var(--ink3)">best: ${record}${inProgress?' <span style="font-size:11px">(on pace for '+Math.round(n/Math.max(fraction,0.0001))+')</span>':' <span style="font-size:11px">('+vsRec+'% of best)</span>'}</td>
     </tr>`;
   }).join('');
 
@@ -1972,11 +2003,17 @@ function drawProduction(){
     </div>
   </div>
 
+  <div class="card" style="background:var(--accent-soft);border-color:var(--gold)">
+    <div style="font-size:14.5px;line-height:1.6">${prodSummary(cur,prev,rec,pace,inProgress,periodWord,cmpWord,hasValue)}</div>
+  </div>
+
   <div class="stat-grid">
-    <div class="stat-tile"><div class="stat-num">${cur.pieces}</div><div class="stat-label">Pieces Processed ${prodDelta(cur.pieces,prev.pieces)}</div></div>
+    <div class="stat-tile"><div class="stat-num">${cur.pieces}</div><div class="stat-label">Pieces ${inProgress?'So Far':'Processed'} ${prodDelta(cur.pieces,prev.pieces)}</div></div>
     <div class="stat-tile"><div class="stat-num">${fmtDur(cur.totalMs)}</div><div class="stat-label">Hands-On Time</div></div>
-    ${hasValue?`<div class="stat-tile"><div class="stat-num" style="font-size:26px">${fmtMoney(cur.value)}</div><div class="stat-label">Value Processed ${prodDelta(cur.value,prev.value)}</div></div>`:''}
-    <div class="stat-tile ${cur.pieces>=rec.recTotal&&cur.pieces>0?'':''}"><div class="stat-num">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
+    <div class="stat-tile" onclick="document.getElementById('prod-defval')&&document.getElementById('prod-defval').focus()">
+      <div class="stat-num" style="font-size:26px">${hasValue?fmtMoney(cur.value):'—'}</div>
+      <div class="stat-label">${hasValue?`Value ${inProgress?'So Far':'Processed'} ${prodDelta(cur.value,prev.value)}`:'Value · set a price below ›'}</div></div>
+    <div class="stat-tile"><div class="stat-num">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
   </div>
 
   <div class="card"><div class="card-label">Pieces per day</div>
@@ -2005,6 +2042,22 @@ function drawProduction(){
     <div class="row"><div class="field"><label>Default value per item ($)</label><input id="prod-defval" type="number" value="${prodDefaultValue||''}" placeholder="e.g. 250"></div>
     <button class="btn btn-sm" onclick="prodSaveDefault()">Save</button></div>
   </div>`;
+}
+// Plain-language read of the numbers — the "what am I looking at" line
+function prodSummary(cur,prev,rec,pace,inProgress,periodWord,cmpWord,hasValue){
+  if(!cur.pieces) return '<strong>Nothing finished yet in this '+periodWord+'.</strong> Pieces appear here once a worker scans out of a stage.';
+  const bits=[];
+  bits.push(`<strong>${cur.pieces} pieces</strong> ${inProgress?'so far this '+periodWord:'this '+periodWord}` + (hasValue?` · <strong>${fmtMoney(cur.value)}</strong> of work`:''));
+  if(prev.pieces){
+    const d=cur.pieces-prev.pieces;
+    const pct=Math.abs(Math.round(d/prev.pieces*100));
+    bits.push(d>=0
+      ? `<span style="color:var(--green)">Ahead of the ${cmpWord}</span> (${prev.pieces} then, +${pct}%)`
+      : `<span style="color:var(--red)">Behind the ${cmpWord}</span> (${prev.pieces} then, −${pct}%)`);
+  }
+  if(inProgress && pace) bits.push(`At this pace you'll finish around <strong>${pace}</strong> for the ${periodWord}`);
+  if(rec.recTotal) bits.push(`Your best ${periodWord} ever was <strong>${rec.recTotal}</strong>`);
+  return bits.join('<br>');
 }
 function stageValue(m,stage){
   // Sum of item values for pieces completed in this stage this period
