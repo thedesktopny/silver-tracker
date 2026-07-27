@@ -1829,7 +1829,7 @@ function itemValue(itemId){
 }
 // Core metric: pieces = distinct item×stage with a finished session in range
 function prodMetrics(start,end){
-  const sess=pairSessions(s=>{ const e=new Date(s.end); return e>=start && e<end; });
+  const {sessions:sess}=pairSessions(t=>{ const e=new Date(t); return e>=start && e<end; });
   const stagePieces={}, stageMs={}, workerPieces={}, workerMs={}, workerStages={};
   const seenStage={}, seenWorker={};
   let totalMs=0, value=0; const seenValue={};
@@ -1855,7 +1855,7 @@ function prodMetrics(start,end){
 // Best period ever, for "record" comparisons
 function prodRecords(period){
   const buckets={};
-  pairSessions(()=>true).forEach(s=>{
+  pairSessions().sessions.forEach(s=>{
     const d=new Date(s.end); let key;
     if(period==='day') key=d.toDateString();
     else if(period==='month') key=d.getFullYear()+'-'+d.getMonth();
