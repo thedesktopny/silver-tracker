@@ -291,14 +291,32 @@ function partSlug(p){
   if(words.length===1) return words[0].slice(0,5);
   return words.map(w=>w[0]).join('').slice(0,4);   // "Cups and Plates" -> "CP"
 }
-// Labels printed before the short-code change encode the long form. Map them so an
-// old label and a new one resolve to the SAME item instead of splitting its history.
+// Dense old barcodes get misread by phone cameras (CUPSANDPLATES -> CUPSANDPL$TE).
+// A misread ID can't match the open session, so the scan would start a NEW timer
+// instead of stopping the running one. Repair near-misses back to the real item.
+function editDist(a,b){
+  const m=a.length,n=b.length; if(Math.abs(m-n)>3) return 99;
+  let prev=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){
+    const cur=[i];
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur;
+  }
+  return prev[n];
+}
 const LEGACY_PART_SLUGS={ CUPSANDPLATES:'CP', NONSILVERPIECES:'NSP' };
 function normalizeItemId(id){
   const m=String(id||'').match(/^(T-\d+-\d+)-(.+)$/i);
   if(!m) return id;
-  const short=LEGACY_PART_SLUGS[m[2].toUpperCase()];
-  return short ? m[1]+'-'+short : id;
+  const suf=m[2].toUpperCase();
+  if(LEGACY_PART_SLUGS[suf]) return m[1]+'-'+LEGACY_PART_SLUGS[suf];
+  for(const long in LEGACY_PART_SLUGS){
+    // Same opening letters + only a couple of wrong characters = a misread of this part,
+    // not a different part. Guards against matching genuinely different names.
+    const tol=long.length>=8?3:2;
+    if(suf.slice(0,3)===long.slice(0,3) && editDist(suf,long)<=tol) return m[1]+'-'+LEGACY_PART_SLUGS[long];
+  }
+  return id;
 }
 const IDLE_ALERT_HOURS = 12;
 const MAX_SESSION_MS = 8*3600*1000;
