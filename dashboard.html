@@ -309,6 +309,7 @@ const NAV_ITEMS = [
   {route:'print', label:'Print Labels', icon:'🏷'},
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
+  {route:'production', label:'Production', icon:'📈'},
   {route:'orders', label:'Orders', icon:'▦'},
   {route:'history', label:'History', icon:'≡'},
   {route:'workers', label:'Workers', icon:'◐'},
@@ -574,7 +575,7 @@ function navigate(hash){ location.hash=hash; }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -599,6 +600,7 @@ const ROUTE_RENDERERS={
   print: renderPrintPage,
   reports: renderReportsPage,
   insights: renderInsightsPage,
+  production: renderProductionPage,
   orders: renderOrdersListPage,
   history: renderHistoryPage,
   workers: renderWorkersPage,
@@ -1757,6 +1759,265 @@ function normalizeItemType(desc){
   if(!desc||!desc.trim()) return null;
   return desc.replace(/\s+—\s+.+$/,'').trim();
 }
+
+// ========================================================================
+// PRODUCTION — shop capacity & throughput (pieces, not revenue)
+// ========================================================================
+let prodPeriod='week', prodOffset=0; // 0=current, -1=previous...
+let prodValueCache={}; // parent itemId -> value
+let prodValueSrc={};   // parent itemId -> 'item' | 'split' | 'default'
+let prodDefaultValue=0;
+
+function prodRange(period, offset){
+  const now=new Date(); let start, end;
+  if(period==='day'){
+    start=new Date(now.getFullYear(),now.getMonth(),now.getDate()+offset);
+    end=new Date(start); end.setDate(end.getDate()+1);
+  } else if(period==='month'){
+    start=new Date(now.getFullYear(),now.getMonth()+offset,1);
+    end=new Date(now.getFullYear(),now.getMonth()+offset+1,1);
+  } else {
+    const dow=(now.getDay()+6)%7; // Monday start
+    start=new Date(now.getFullYear(),now.getMonth(),now.getDate()-dow+offset*7);
+    end=new Date(start); end.setDate(end.getDate()+7);
+  }
+  return {start,end};
+}
+function prodRangeLabel(period,offset){
+  const {start,end}=prodRange(period,offset);
+  const f=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  if(period==='day') return start.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  if(period==='month') return start.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const e=new Date(end); e.setDate(e.getDate()-1);
+  return f(start)+' – '+f(e);
+}
+// Item value: ticket price split across its items; falls back to the default you set
+// Split parts (T-902-1-CP) belong to their parent item — value counts once per parent
+function parentItemId(itemId){ const m=String(itemId||'').match(/^(T-\d+-\d+)/i); return m?m[1]:itemId; }
+function priceOf(o){
+  if(!o||typeof o!=='object') return 0;
+  for(const k of ['price','retail_price','unit_price','amount','total','cost','selling_price']){
+    const v=parseFloat(o[k]); if(!isNaN(v)&&v>0) return v;
+  }
+  return 0;
+}
+// What THIS piece is charged: its own service lines. Falls back to an even split of the
+// ticket total, then to the default you set in Settings.
+function itemValue(itemId){
+  const base=parentItemId(itemId);
+  if(prodValueCache[base]!==undefined) return prodValueCache[base];
+  const oid=orderIdOf(base);
+  const idx=parseInt((base.split('-')[2]||'1'),10)||1;
+  let v=prodDefaultValue, src='default';
+  const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+  if(t){
+    const dev=t.devices&&t.devices[idx-1];
+    // 1. True per-piece: sum this item's own service prices
+    if(dev&&Array.isArray(dev.repairProdItems)&&dev.repairProdItems.length){
+      const sum=dev.repairProdItems.reduce((a,s)=>a+priceOf(s),0);
+      if(sum>0){ v=sum; src='item'; }
+    }
+    // 2. Fallback: ticket total shared across items
+    if(src!=='item'&&t.summary){
+      const raw=priceOf(t.summary);
+      const n=(t.devices&&t.devices.length)||1;
+      if(raw>0){ v=raw/n; src='split'; }
+    }
+  }
+  prodValueSrc[base]=src;
+  prodValueCache[base]=v; return v;
+}
+// Core metric: pieces = distinct item×stage with a finished session in range
+function prodMetrics(start,end){
+  const sess=pairSessions(s=>{ const e=new Date(s.end); return e>=start && e<end; });
+  const stagePieces={}, stageMs={}, workerPieces={}, workerMs={}, workerStages={};
+  const seenStage={}, seenWorker={};
+  let totalMs=0, value=0; const seenValue={};
+  sess.forEach(s=>{
+    const role=s.role||'—';
+    totalMs+=s.ms;
+    stageMs[role]=(stageMs[role]||0)+s.ms;
+    workerMs[s.worker]=(workerMs[s.worker]||0)+s.ms;
+    const kS=role+'::'+s.item_id;
+    if(!seenStage[kS]){ seenStage[kS]=1; stagePieces[role]=(stagePieces[role]||0)+1; }
+    const kW=s.worker+'::'+role+'::'+s.item_id;
+    if(!seenWorker[kW]){
+      seenWorker[kW]=1;
+      workerPieces[s.worker]=(workerPieces[s.worker]||0)+1;
+      (workerStages[s.worker]=workerStages[s.worker]||{})[role]=(workerStages[s.worker][role]||0)+1;
+      const kV=role+'::'+parentItemId(s.item_id);
+      if(!seenValue[kV]){ seenValue[kV]=1; value+=itemValue(s.item_id); }
+    }
+  });
+  const pieces=Object.values(stagePieces).reduce((a,b)=>a+b,0);
+  return {sess,stagePieces,stageMs,workerPieces,workerMs,workerStages,pieces,totalMs,value};
+}
+// Best period ever, for "record" comparisons
+function prodRecords(period){
+  const buckets={};
+  pairSessions(()=>true).forEach(s=>{
+    const d=new Date(s.end); let key;
+    if(period==='day') key=d.toDateString();
+    else if(period==='month') key=d.getFullYear()+'-'+d.getMonth();
+    else { const t=new Date(d); t.setDate(t.getDate()-((t.getDay()+6)%7)); key=t.toDateString(); }
+    const b=(buckets[key]=buckets[key]||{stage:{},worker:{},seenS:{},seenW:{},total:0});
+    const role=s.role||'—';
+    if(!b.seenS[role+'::'+s.item_id]){ b.seenS[role+'::'+s.item_id]=1; b.stage[role]=(b.stage[role]||0)+1; b.total++; }
+    if(!b.seenW[s.worker+'::'+role+'::'+s.item_id]){ b.seenW[s.worker+'::'+role+'::'+s.item_id]=1; b.worker[s.worker]=(b.worker[s.worker]||0)+1; }
+  });
+  const recStage={}, recWorker={}; let recTotal=0;
+  Object.values(buckets).forEach(b=>{
+    recTotal=Math.max(recTotal,b.total);
+    Object.entries(b.stage).forEach(([k,v])=>{ recStage[k]=Math.max(recStage[k]||0,v); });
+    Object.entries(b.worker).forEach(([k,v])=>{ recWorker[k]=Math.max(recWorker[k]||0,v); });
+  });
+  return {recStage,recWorker,recTotal};
+}
+function prodDelta(cur,prev){
+  if(!prev) return cur>0?'<span style="color:var(--green);font-size:11px;font-weight:700">new</span>':'';
+  const pct=Math.round((cur-prev)/prev*100);
+  const col=pct>=0?'var(--green)':'var(--red)';
+  return `<span style="color:${col};font-size:11px;font-weight:700">${pct>=0?'▲':'▼'} ${Math.abs(pct)}%</span>`;
+}
+function fmtMoney(v){ return '$'+Math.round(v).toLocaleString(); }
+
+async function renderProductionPage(){
+  prodDefaultValue=parseFloat(localStorage.getItem('glint_default_item_value')||'0')||0;
+  try{
+    const r=await sb("settings?key=eq.default_item_value&select=value");
+    if(r&&r[0]) prodDefaultValue=parseFloat(r[0].value)||0;
+  }catch(e){}
+  prodValueCache={}; prodValueSrc={};
+  drawProduction();
+}
+function prodSet(period){ prodPeriod=period; prodOffset=0; drawProduction(); }
+function prodNav(d){ prodOffset+=d; if(prodOffset>0)prodOffset=0; drawProduction(); }
+async function prodSaveDefault(){
+  const v=parseFloat(document.getElementById('prod-defval').value)||0;
+  prodDefaultValue=v; prodValueCache={}; prodValueSrc={};
+  localStorage.setItem('glint_default_item_value',String(v));
+  await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({key:'default_item_value',value:String(v)})});
+  toast('Saved'); drawProduction();
+}
+function drawProduction(){
+  const {start,end}=prodRange(prodPeriod,prodOffset);
+  const {start:pStart,end:pEnd}=prodRange(prodPeriod,prodOffset-1);
+  const cur=prodMetrics(start,end);
+  const prev=prodMetrics(pStart,pEnd);
+  const rec=prodRecords(prodPeriod);
+  const hasValue=cur.value>0||prev.value>0||prodDefaultValue>0;
+  const periodWord=prodPeriod==='day'?'day':(prodPeriod==='month'?'month':'week');
+
+  // Daily bars across the period
+  const days=[]; const d=new Date(start);
+  while(d<end && days.length<31){ days.push(new Date(d)); d.setDate(d.getDate()+1); }
+  const perDay=days.map(day=>{
+    const dEnd=new Date(day); dEnd.setDate(dEnd.getDate()+1);
+    return prodMetrics(day,dEnd).pieces;
+  });
+  const maxDay=Math.max(...perDay,1);
+  const barW=days.length>14?18:34;
+  const bars=days.map((day,i)=>`
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div style="font-size:10px;color:var(--ink3)">${perDay[i]||''}</div>
+      <div style="width:${barW}px;height:${Math.max(Math.round(perDay[i]/maxDay*90),2)}px;background:${perDay[i]?'var(--gold)':'var(--border)'};border-radius:4px 4px 0 0"></div>
+      <div style="font-size:9.5px;color:var(--ink3)">${prodPeriod==='month'?day.getDate():day.toLocaleDateString('en-US',{weekday:'short'})}</div>
+    </div>`).join('');
+
+  // Stage table
+  const stageRows=Object.entries(cur.stagePieces).sort((a,b)=>b[1]-a[1]).map(([st,n])=>{
+    const ms=cur.stageMs[st]||0;
+    const per=n?ms/n:0;
+    return `<tr>
+      <td style="font-weight:600">${esc(st)}</td>
+      <td><strong>${n}</strong> ${prodDelta(n,prev.stagePieces[st]||0)}</td>
+      <td>${fmtDur(ms)}</td>
+      <td>${n?fmtDur(per):'—'}</td>
+      ${hasValue?`<td>${fmtMoney(stageValue(cur,st))}</td>`:''}
+      <td style="color:var(--ink3)">best: ${rec.recStage[st]||n}</td>
+    </tr>`;
+  }).join('');
+
+  // Worker table
+  const workerRows=Object.entries(cur.workerPieces).sort((a,b)=>b[1]-a[1]).map(([w,n])=>{
+    const ms=cur.workerMs[w]||0;
+    const stages=Object.entries(cur.workerStages[w]||{}).map(([s,k])=>esc(s)+' '+k).join(' · ');
+    const record=rec.recWorker[w]||n;
+    const prevN=prev.workerPieces[w]||0;
+    const vsRec=record?Math.round(n/record*100):100;
+    const flag=vsRec>=80?'🟢':(vsRec>=50?'🟡':'🔴');
+    return `<tr class="clickable" onclick="navigate('${h('worker',w).replace(/'/g,"\\'")}')">
+      <td style="font-weight:600">${flag} ${esc(w)}</td>
+      <td><strong>${n}</strong> ${prodDelta(n,prevN)}</td>
+      <td>${fmtDur(ms)}</td>
+      <td style="font-size:12px;color:var(--ink3)">${stages||'—'}</td>
+      <td style="color:var(--ink3)">best: ${record} <span style="font-size:11px">(now at ${vsRec}%)</span></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML=`
+  <div class="page-head">
+    <div><div class="page-title">Production</div><div class="page-sub">How many pieces the shop pushes out — per stage, per worker</div></div>
+    <div class="head-actions">
+      <div class="seg">
+        <button class="${prodPeriod==='day'?'on':''}" onclick="prodSet('day')">Day</button>
+        <button class="${prodPeriod==='week'?'on':''}" onclick="prodSet('week')">Week</button>
+        <button class="${prodPeriod==='month'?'on':''}" onclick="prodSet('month')">Month</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="prodNav(-1)">‹</button>
+        <span style="font-weight:700;font-size:13px;min-width:120px;text-align:center">${prodRangeLabel(prodPeriod,prodOffset)}</span>
+        <button class="btn btn-ghost btn-sm" ${prodOffset>=0?'disabled style="opacity:.3"':''} onclick="prodNav(1)">›</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-tile"><div class="stat-num">${cur.pieces}</div><div class="stat-label">Pieces Processed ${prodDelta(cur.pieces,prev.pieces)}</div></div>
+    <div class="stat-tile"><div class="stat-num">${fmtDur(cur.totalMs)}</div><div class="stat-label">Hands-On Time</div></div>
+    ${hasValue?`<div class="stat-tile"><div class="stat-num" style="font-size:26px">${fmtMoney(cur.value)}</div><div class="stat-label">Value Processed ${prodDelta(cur.value,prev.value)}</div></div>`:''}
+    <div class="stat-tile ${cur.pieces>=rec.recTotal&&cur.pieces>0?'':''}"><div class="stat-num">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
+  </div>
+
+  <div class="card"><div class="card-label">Pieces per day</div>
+    <div style="display:flex;align-items:flex-end;gap:${days.length>14?4:10}px;overflow-x:auto;padding:6px 2px">${bars}</div>
+  </div>
+
+  <div class="card"><div class="card-label">By Stage</div>
+    ${stageRows?`<table><thead><tr><th>Stage</th><th>Pieces</th><th>Time</th><th>Avg / piece</th>${hasValue?'<th>Value</th>':''}<th>Record ${periodWord}</th></tr></thead><tbody>${stageRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
+  </div>
+
+  <div class="card"><div class="card-label">By Worker <span style="font-weight:600;text-transform:none">— 🟢 near their best · 🟡 below · 🔴 well below</span></div>
+    ${workerRows?`<table><thead><tr><th>Worker</th><th>Pieces</th><th>Time</th><th>Stages</th><th>vs their record</th></tr></thead><tbody>${workerRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
+  </div>
+
+  <div class="card" style="max-width:520px"><div class="card-label">Item value</div>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Best source first: each piece's own RepairDesk service prices. If those are missing, the ticket total split across its items. If neither, the default below.</div>
+    <div style="font-size:12.5px;margin-bottom:10px">${(()=>{
+      const srcs=Object.values(prodValueSrc);
+      if(!srcs.length) return '<span style="color:var(--ink3)">Open Print Labels once to load ticket prices.</span>';
+      const n=k=>srcs.filter(x=>x===k).length;
+      return `<strong>Where this period's prices came from:</strong><br>
+        <span style="color:var(--green)">✓ ${n('item')} exact (per-piece)</span> ·
+        <span style="color:var(--orange)">≈ ${n('split')} estimated (ticket split)</span> ·
+        <span style="color:var(--ink3)">○ ${n('default')} default</span>`;
+    })()}</div>
+    <div class="row"><div class="field"><label>Default value per item ($)</label><input id="prod-defval" type="number" value="${prodDefaultValue||''}" placeholder="e.g. 250"></div>
+    <button class="btn btn-sm" onclick="prodSaveDefault()">Save</button></div>
+  </div>`;
+}
+function stageValue(m,stage){
+  // Sum of item values for pieces completed in this stage this period
+  let v=0; const seen={};
+  m.sess.forEach(s=>{
+    if((s.role||'—')!==stage) return;
+    const pk=parentItemId(s.item_id);
+    if(seen[pk]) return; seen[pk]=1;
+    v+=itemValue(s.item_id);
+  });
+  return v;
+}
+
 function renderInsightsPage(){
   insightsRange='all'; insightsFrom=null; insightsTo=null;
   document.getElementById('content').innerHTML=`
