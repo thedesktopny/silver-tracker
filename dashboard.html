@@ -1764,6 +1764,28 @@ function normalizeItemType(desc){
 // PRODUCTION — shop capacity & throughput (pieces, not revenue)
 // ========================================================================
 let prodPeriod='week', prodOffset=0; // 0=current, -1=previous...
+let prodDrill=null; // {kind:'stage'|'worker', key:'Polish'}
+function prodOpenDrill(kind,key){
+  if(prodDrill && prodDrill.kind===kind && prodDrill.key===key) prodDrill=null;
+  else prodDrill={kind,key};
+  drawProduction();
+  setTimeout(()=>{ const el=document.getElementById('prod-drill'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
+}
+// Every finished piece behind a stage or worker number, so you can click into the detail
+function prodDrillItems(m,kind,key){
+  const seen={}, out=[];
+  m.sess.forEach(s=>{
+    const role=s.role||'—';
+    if(kind==='stage' && role!==key) return;
+    if(kind==='worker' && s.worker!==key) return;
+    const k=role+'::'+parentItemId(s.item_id);
+    if(seen[k]) { seen[k].ms+=s.ms; return; }
+    const rec={itemId:s.item_id, desc:s.item_desc, customer:s.customer, role, worker:s.worker,
+               end:s.end, ms:s.ms, value:pieceValue(role,s.item_id)};
+    seen[k]=rec; out.push(rec);
+  });
+  return out.sort((a,b)=>new Date(b.end)-new Date(a.end));
+}
 let prodValueCache={}; // parent itemId -> value
 let prodValueSrc={};   // parent itemId -> 'item' | 'split' | 'default'
 let prodDefaultValue=0;
@@ -2011,24 +2033,44 @@ function drawProduction(){
   });
   const maxDay=Math.max(...perDay,1);
   const barW=days.length>14?18:34;
-  const bars=days.map((day,i)=>`
-    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-      <div style="font-size:10px;color:var(--ink3)">${perDay[i]||''}</div>
-      <div style="width:${barW}px;height:${Math.max(Math.round(perDay[i]/maxDay*90),2)}px;background:${perDay[i]?'var(--gold)':'var(--border)'};border-radius:4px 4px 0 0"></div>
-      <div style="font-size:9.5px;color:var(--ink3)">${prodPeriod==='month'?day.getDate():day.toLocaleDateString('en-US',{weekday:'short'})}</div>
-    </div>`).join('');
+  const todayStr=new Date().toDateString();
+  const bars=days.map((day,i)=>{
+    const isToday=day.toDateString()===todayStr;
+    const hot=perDay[i]===maxDay&&maxDay>0;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+      <div style="font-size:11px;font-weight:700;color:${perDay[i]?'var(--ink)':'var(--ink3)'}">${perDay[i]||''}</div>
+      <div style="width:${barW}px;height:${Math.max(Math.round(perDay[i]/maxDay*100),3)}px;border-radius:6px 6px 0 0;
+        background:${perDay[i]?(hot?'linear-gradient(180deg,var(--green),#34d399)':'linear-gradient(180deg,var(--gold),#818cf8)'):'var(--border)'};
+        ${isToday?'outline:2px solid var(--gold);outline-offset:2px':''}" title="${perDay[i]} pieces"></div>
+      <div style="font-size:9.5px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--gold)':'var(--ink3)'}">${prodPeriod==='month'?day.getDate():day.toLocaleDateString('en-US',{weekday:'short'})}</div>
+    </div>`;
+  }).join('');
 
   // Stage table
-  const stageRows=Object.entries(cur.stagePieces).sort((a,b)=>b[1]-a[1]).map(([st,n])=>{
-    const ms=cur.stageMs[st]||0;
-    const per=n?ms/n:0;
-    return `<tr>
-      <td style="font-weight:600">${esc(st)}</td>
-      <td><strong>${n}</strong> ${prodDelta(n,prev.stagePieces[st]||0)}</td>
+  const stageMax=Math.max(...Object.values(cur.stagePieces),1);
+  const STAGE_HUES=['#4f46e5','#0ea5e9','#059669','#d97706','#db2777','#7c3aed','#0891b2','#ca8a04'];
+  const stageRows=Object.entries(cur.stagePieces).sort((a,b)=>b[1]-a[1]).map(([st,n],i)=>{
+    const ms=cur.stageMs[st]||0, per=n?ms/n:0;
+    const hue=STAGE_HUES[i%STAGE_HUES.length];
+    const best=rec.recStage[st]||n;
+    const open=prodDrill&&prodDrill.kind==='stage'&&prodDrill.key===st;
+    return `<tr class="clickable" onclick="prodOpenDrill('stage','${jsstr(st)}')" ${open?'style="background:var(--accent-soft)"':''}>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;border-radius:3px;background:${hue};flex-shrink:0"></span>
+        <span style="font-weight:600">${esc(st)}</span>
+        <span style="color:var(--ink3);font-size:11px">${open?'▾':'›'}</span></div></td>
+      <td style="min-width:150px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <strong style="font-size:15px">${n}</strong> ${prodDelta(n,prev.stagePieces[st]||0)}
+        </div>
+        <div style="height:6px;background:var(--surface2);border-radius:3px;margin-top:5px;overflow:hidden">
+          <div style="width:${Math.round(n/stageMax*100)}%;height:100%;background:${hue};border-radius:3px"></div></div>
+      </td>
       <td>${fmtDur(ms)}</td>
       <td>${n?fmtDur(per):'—'}</td>
-      <td>${stageValue(cur,st)>0?fmtMoney(stageValue(cur,st)):'—'}</td>
-      <td style="color:var(--ink3)">best: ${rec.recStage[st]||n}</td>
+      <td style="font-weight:700;color:var(--green)">${stageValue(cur,st)>0?fmtMoney(stageValue(cur,st)):'—'}</td>
+      <td style="color:var(--ink3);font-size:12px">best ${best}<div style="height:4px;background:var(--surface2);border-radius:2px;margin-top:4px;width:70px;overflow:hidden">
+        <div style="width:${Math.min(Math.round(n/Math.max(best,1)*100),100)}%;height:100%;background:var(--ink3)"></div></div></td>
     </tr>`;
   }).join('');
 
@@ -2043,13 +2085,23 @@ function drawProduction(){
     const target=Math.max(record*fraction,0.0001);
     const vsRec=Math.round(n/target*100);
     const flag=vsRec>=80?'🟢':(vsRec>=50?'🟡':'🔴');
-    return `<tr class="clickable" onclick="navigate('${h('worker',w).replace(/'/g,"\\'")}')">
-      <td style="font-weight:600">${flag} ${esc(w)}</td>
-      <td><strong>${n}</strong> ${prodDelta(n,prevN)}</td>
+    const barCol=vsRec>=80?'var(--green)':(vsRec>=50?'var(--orange)':'var(--red)');
+    const open=prodDrill&&prodDrill.kind==='worker'&&prodDrill.key===w;
+    const initials=esc(w).trim().charAt(0).toUpperCase();
+    return `<tr class="clickable" onclick="prodOpenDrill('worker','${jsstr(w)}')" ${open?'style="background:var(--accent-soft)"':''}>
+      <td><div style="display:flex;align-items:center;gap:9px">
+        <span style="width:28px;height:28px;border-radius:50%;background:${barCol};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0">${initials}</span>
+        <span style="font-weight:600">${esc(w)}</span>
+        <span style="color:var(--ink3);font-size:11px">${open?'▾':'›'}</span></div></td>
+      <td><div style="display:flex;align-items:center;gap:8px"><strong style="font-size:15px">${n}</strong> ${prodDelta(n,prevN)}</div></td>
       <td>${fmtDur(ms)}</td>
       <td style="font-size:12px;color:var(--ink3)">${stages||'—'}</td>
-      <td style="font-weight:700">${workerValue(cur,w)>0?fmtMoney(workerValue(cur,w)):'—'}</td>
-      <td style="color:var(--ink3)">best: ${record}${inProgress?' <span style="font-size:11px">(on pace for '+Math.round(n/Math.max(fraction,0.0001))+')</span>':' <span style="font-size:11px">('+vsRec+'% of best)</span>'}</td>
+      <td style="font-weight:700;color:var(--green)">${workerValue(cur,w)>0?fmtMoney(workerValue(cur,w)):'—'}</td>
+      <td style="min-width:150px">
+        <div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden">
+          <div style="width:${Math.min(vsRec,100)}%;height:100%;background:${barCol};border-radius:4px"></div></div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:4px">${inProgress?'on pace for '+Math.round(n/Math.max(fraction,0.0001))+' · best '+record:vsRec+'% of best ('+record+')'}</div>
+      </td>
     </tr>`;
   }).join('');
 
@@ -2075,21 +2127,50 @@ function drawProduction(){
   </div>
 
   <div class="stat-grid">
-    <div class="stat-tile"><div class="stat-num">${cur.pieces}</div><div class="stat-label">Pieces ${inProgress?'So Far':'Processed'} ${prodDelta(cur.pieces,prev.pieces)}</div></div>
-    <div class="stat-tile"><div class="stat-num">${fmtDur(cur.totalMs)}</div><div class="stat-label">Hands-On Time</div></div>
-    <div class="stat-tile" onclick="document.getElementById('prod-defval')&&document.getElementById('prod-defval').focus()">
-      <div class="stat-num" style="font-size:26px">${hasValue?fmtMoney(cur.value):'—'}</div>
+    <div class="stat-tile" style="border-left:4px solid var(--gold)"><div class="stat-num" style="color:var(--gold)">${cur.pieces}</div><div class="stat-label">Pieces ${inProgress?'So Far':'Processed'} ${prodDelta(cur.pieces,prev.pieces)}</div></div>
+    <div class="stat-tile" style="border-left:4px solid var(--ink3)"><div class="stat-num">${fmtDur(cur.totalMs)}</div><div class="stat-label">Hands-On Time</div></div>
+    <div class="stat-tile" style="border-left:4px solid var(--green)" onclick="document.getElementById('prod-defval')&&document.getElementById('prod-defval').focus()">
+      <div class="stat-num" style="font-size:26px;color:var(--green)">${hasValue?fmtMoney(cur.value):'—'}</div>
       <div class="stat-label">${hasValue?`Value ${inProgress?'So Far':'Processed'} ${prodDelta(cur.value,prev.value)}`:'Value · set a price below ›'}</div></div>
-    <div class="stat-tile"><div class="stat-num">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
+    <div class="stat-tile" style="border-left:4px solid var(--orange)"><div class="stat-num" style="color:var(--orange)">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
   </div>
 
   <div class="card"><div class="card-label">Pieces per day</div>
     <div style="display:flex;align-items:flex-end;gap:${days.length>14?4:10}px;overflow-x:auto;padding:6px 2px">${bars}</div>
   </div>
 
-  <div class="card"><div class="card-label">By Stage</div>
+  <div class="card"><div class="card-label">By Stage <span style="font-weight:600;text-transform:none;color:var(--gold)">— tap a stage to see every piece</span></div>
     ${stageRows?`<table><thead><tr><th>Stage</th><th>Pieces</th><th>Time</th><th>Avg / piece</th><th>Value</th><th>Record ${periodWord}</th></tr></thead><tbody>${stageRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
   </div>
+
+  ${prodDrill?(()=>{
+    const list=prodDrillItems(cur,prodDrill.kind,prodDrill.key);
+    const totV=list.reduce((a,x)=>a+x.value,0), totMs=list.reduce((a,x)=>a+x.ms,0);
+    return `<div class="card" id="prod-drill" style="border-color:var(--gold);box-shadow:0 6px 24px -8px rgba(79,70,229,.25)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div>
+          <div class="card-label" style="margin-bottom:2px">${prodDrill.kind==='stage'?'Stage':'Worker'} detail</div>
+          <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700">${esc(prodDrill.key)}</div>
+          <div style="font-size:12.5px;color:var(--ink3)">${list.length} piece${list.length!==1?'s':''} · ${fmtDur(totMs)} hands-on · ${fmtMoney(totV)}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          ${prodDrill.kind==='worker'?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('${h('worker',prodDrill.key).replace(/'/g,"\\'")}')">Full worker page ›</button>`:''}
+          <button class="btn btn-ghost btn-sm" onclick="prodDrill=null;drawProduction()">✕ Close</button>
+        </div>
+      </div>
+      ${list.length?`<table><thead><tr><th>Item</th><th>Customer</th>${prodDrill.kind==='stage'?'<th>Worker</th>':'<th>Stage</th>'}<th>Time</th><th>Value</th><th>Finished</th></tr></thead><tbody>
+        ${list.map(x=>`<tr class="clickable" onclick="navigate('${h('item',x.itemId).replace(/'/g,"\\'")}')">
+          <td><strong>${x.desc&&x.desc!==x.itemId?esc(x.desc):esc(x.itemId)}</strong><div style="font-size:11px;color:var(--ink3)">${esc(x.itemId)}</div></td>
+          <td style="font-size:12.5px">${x.customer&&x.customer!=='undefined'?esc(x.customer):'—'}</td>
+          <td style="font-size:12.5px">${esc(prodDrill.kind==='stage'?x.worker:x.role)}</td>
+          <td>${fmtDur(x.ms)}</td>
+          <td style="font-weight:700;color:var(--green)">${x.value>0?fmtMoney(x.value):'—'}</td>
+          <td style="font-size:12px;color:var(--ink3)">${fmtDate(x.end)}</td>
+        </tr>`).join('')}</tbody></table>
+        <div style="font-size:11.5px;color:var(--ink3);margin-top:10px">Tap any row to open that item.</div>`
+       :'<div class="empty">No finished pieces in this period</div>'}
+    </div>`;
+  })():''}
 
   <div class="card"><div class="card-label">By Worker <span style="font-weight:600;text-transform:none">— 🟢 near their best · 🟡 below · 🔴 well below</span></div>
     ${workerRows?`<table><thead><tr><th>Worker</th><th>Pieces</th><th>Time</th><th>Stages</th><th>Value</th><th>vs their record</th></tr></thead><tbody>${workerRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
