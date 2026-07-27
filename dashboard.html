@@ -283,7 +283,23 @@ const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 const CANDELABRA_PARTS = ['Base','Arms','Cups and Plates','Non Silver Pieces'];
 // Part names become part of the barcode ID, so strip anything non-alphanumeric
-function partSlug(p){ return (p||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function partSlug(p){
+  // Barcode IDs must stay SHORT — long ones print bars too thin for a phone to read.
+  const words=(p||'').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').split(/\s+/)
+    .filter(w=>w && !['AND','OR','THE','OF','WITH','A'].includes(w));
+  if(!words.length) return '';
+  if(words.length===1) return words[0].slice(0,5);
+  return words.map(w=>w[0]).join('').slice(0,4);   // "Cups and Plates" -> "CP"
+}
+// Labels printed before the short-code change encode the long form. Map them so an
+// old label and a new one resolve to the SAME item instead of splitting its history.
+const LEGACY_PART_SLUGS={ CUPSANDPLATES:'CP', NONSILVERPIECES:'NSP' };
+function normalizeItemId(id){
+  const m=String(id||'').match(/^(T-\d+-\d+)-(.+)$/i);
+  if(!m) return id;
+  const short=LEGACY_PART_SLUGS[m[2].toUpperCase()];
+  return short ? m[1]+'-'+short : id;
+}
 const IDLE_ALERT_HOURS = 12;
 const MAX_SESSION_MS = 8*3600*1000;
 
@@ -607,11 +623,14 @@ window.addEventListener('hashchange', router);
 // ========================================================================
 // BOOTSTRAP
 // ========================================================================
-async function loadAllScans(){ scans=await sb('scans?select=*&order=created_at.desc&limit=5000'); }
+async function loadAllScans(){
+  const r=await sb('scans?select=*&order=created_at.desc&limit=5000');
+  scans=(Array.isArray(r)?r:[]).map(s=>({...s, item_id:normalizeItemId(s.item_id)}));
+}
 async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); }
 async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); }
 async function loadStageEvents(){ try{ const r=await sb('stage_events?select=*&order=created_at.asc&limit=8000'); stageEvents=Array.isArray(r)?r:[]; }catch(e){ stageEvents=[]; } }
-async function loadPipeLabels(){ try{ const r=await sb('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=Array.isArray(r)?r:[]; }catch(e){ pipeLabels=[]; } }
+async function loadPipeLabels(){ try{ const r=await sb('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=(Array.isArray(r)?r:[]).map(l=>({...l, item_id:normalizeItemId(l.item_id)})); }catch(e){ pipeLabels=[]; } }
 
 async function bootstrap(){
   startClock();
@@ -1533,7 +1552,7 @@ async function printSelected(){
     const idCls = idLen>18 ? 'o-sm' : (idLen>12 ? 'o-md' : 'o-lg');
     return `<div class="label">
       <div class="lt">
-        <div class="l-item">${escLbl(it.itemName)}${it.part?' — '+escLbl(it.part):''}</div>
+        <div class="l-item">${escLbl(it.itemName)}${it.part&&!String(it.itemName||'').toUpperCase().includes(String(it.part).toUpperCase())?' — '+escLbl(it.part):''}</div>
         ${it.services?`<div class="l-svc">${escLbl(it.services)}</div>`:''}
         <div class="l-row">${it.due?`<span>DUE: ${escLbl(it.due)}</span>`:''}${it.group?`<span>${escLbl(it.group)}</span>`:''}</div>
         ${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${escLbl(it.note)}${it.noteEs?`<br><span class="nl">ES</span> ${escLbl(it.noteEs)}`:''}</div>`:''}
@@ -1558,7 +1577,7 @@ body{background:#fff;font-family:Arial,sans-serif}
 .n-sm{font-size:7.5pt;line-height:1.2}
 .n-xs{font-size:6.5pt;line-height:1.15}
 .n-xxs{font-size:5.5pt;line-height:1.1}
-.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0;overflow:hidden;padding:1mm 0}
+.lb{display:flex;justify-content:center;align-items:center;flex:1;min-height:0;overflow:hidden;padding:1mm 0;margin:0 -2.5mm}
 .lb img{max-width:98%;max-height:100%;height:auto;object-fit:contain}
 .lf{text-align:center;border-top:.4mm dashed #999;padding-top:.7mm;flex-shrink:0}
 .l-part{font-size:8.5pt;font-weight:700;letter-spacing:.06em}
