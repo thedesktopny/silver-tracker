@@ -1806,18 +1806,13 @@ function prodDrillItems(m,kind,key){
 }
 let prodValueCache={}; // parent itemId -> value
 let prodValueSrc={};   // parent itemId -> 'item' | 'split' | 'default'
-let prodDefaultValue=0;
-let servicePrices={};        // "Polish" -> 120
-function hasServicePrices(){ return Object.values(servicePrices).some(v=>v>0); }
+// Prices come from RepairDesk only — nothing to configure here.
 // What one piece of work at this stage is worth.
 // A $400 item needing Polish + Lacquer books $200 when each stage completes,
 // so the stages add up to the item's real price instead of counting it twice.
 function pieceValue(role,itemId){
-  const manual=parseFloat(servicePrices[role]);
-  if(!isNaN(manual)&&manual>0) return manual;   // your own price wins if set
   const info=itemPriceInfo(itemId);
-  if(info.price>0) return info.price/info.nSvc;
-  return prodDefaultValue||0;
+  return info.price>0 ? info.price/info.nSvc : 0;
 }
 
 function prodRange(period, offset){
@@ -1903,7 +1898,6 @@ function itemValue(itemId){
   if(prodValueCache[base]!==undefined) return prodValueCache[base];
   const oid=orderIdOf(base);
   const idx=parseInt((base.split('-')[2]||'1'),10)||1;
-  let v=prodDefaultValue, src='default';
   const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
   if(t){
     const dev=t.devices&&t.devices[idx-1];
@@ -1994,16 +1988,8 @@ async function ensureTicketsLoaded(){
   }catch(e){}
 }
 async function renderProductionPage(){
-  prodDefaultValue=parseFloat(localStorage.getItem('glint_default_item_value')||'0')||0;
-  try{
-    const r=await sb("settings?key=eq.default_item_value&select=value");
-    if(r&&r[0]) prodDefaultValue=parseFloat(r[0].value)||0;
-  }catch(e){}
+
   prodValueCache={}; prodValueSrc={};
-  try{
-    const r=await sb("settings?key=eq.service_prices&select=value");
-    servicePrices=(r&&r[0]&&r[0].value)?JSON.parse(r[0].value):{};
-  }catch(e){ servicePrices={}; }
   document.getElementById('content').innerHTML='<div class="card"><div class="empty">Loading production data…</div></div>';
   await ensureTicketsLoaded();
   prodValueCache={}; prodValueSrc={};
@@ -2011,20 +1997,6 @@ async function renderProductionPage(){
 }
 function prodSet(period){ prodPeriod=period; prodOffset=0; drawProduction(); }
 function prodNav(d){ prodOffset+=d; if(prodOffset>0)prodOffset=0; drawProduction(); }
-async function prodSavePrices(){
-  const out={};
-  document.querySelectorAll('.svc-price').forEach(i=>{ const v=parseFloat(i.value); if(!isNaN(v)&&v>0) out[i.dataset.svc]=v; });
-  servicePrices=out;
-  await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({key:'service_prices',value:JSON.stringify(out)})});
-  prodValueCache={}; toast('✅ Prices saved'); drawProduction();
-}
-async function prodSaveDefault(){
-  const v=parseFloat(document.getElementById('prod-defval').value)||0;
-  prodDefaultValue=v; prodValueCache={}; prodValueSrc={};
-  localStorage.setItem('glint_default_item_value',String(v));
-  await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({key:'default_item_value',value:String(v)})});
-  toast('Saved'); drawProduction();
-}
 function drawProduction(){
   const {start,end}=prodRange(prodPeriod,prodOffset);
   let {start:pStart,end:pEnd}=prodRange(prodPeriod,prodOffset-1);
@@ -2039,7 +2011,7 @@ function drawProduction(){
   const fraction = inProgress ? Math.min(elapsed/(end-start),1) : 1;
   const pace = fraction>0.02 ? Math.round(cur.pieces/fraction) : null; // projected finish
   const cmpWord = inProgress ? ('same time last '+(prodPeriod==='day'?'day':prodPeriod)) : ('previous '+prodPeriod);
-  const hasValue = cur.value>0 || prev.value>0 || prodDefaultValue>0;
+  const hasValue = cur.value>0 || prev.value>0;
   const periodWord=prodPeriod==='day'?'day':(prodPeriod==='month'?'month':'week');
 
   // Daily bars across the period
@@ -2147,9 +2119,9 @@ function drawProduction(){
   <div class="stat-grid">
     <div class="stat-tile" style="border-left:4px solid var(--gold)"><div class="stat-num" style="color:var(--gold)">${cur.pieces}</div><div class="stat-label">Pieces ${inProgress?'So Far':'Processed'} ${prodDelta(cur.pieces,prev.pieces)}</div></div>
     <div class="stat-tile" style="border-left:4px solid var(--ink3)"><div class="stat-num">${fmtDur(cur.totalMs)}</div><div class="stat-label">Hands-On Time</div></div>
-    <div class="stat-tile" style="border-left:4px solid var(--green)" onclick="document.getElementById('prod-defval')&&document.getElementById('prod-defval').focus()">
+    <div class="stat-tile" style="border-left:4px solid var(--green)">
       <div class="stat-num" style="font-size:26px;color:var(--green)">${hasValue?fmtMoney(cur.value):'—'}</div>
-      <div class="stat-label">${hasValue?`Value ${inProgress?'So Far':'Processed'} ${prodDelta(cur.value,prev.value)}`:'Value · set a price below ›'}</div></div>
+      <div class="stat-label">Value ${inProgress?'So Far':'Processed'} ${hasValue?prodDelta(cur.value,prev.value):''}</div></div>
     <div class="stat-tile" style="border-left:4px solid var(--orange)"><div class="stat-num" style="color:var(--orange)">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
   </div>
 
@@ -2194,32 +2166,17 @@ function drawProduction(){
     ${workerRows?`<table><thead><tr><th>Worker</th><th>Pieces</th><th>Time</th><th>Stages</th><th>Value</th><th>vs their record</th></tr></thead><tbody>${workerRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
   </div>
 
-  <div class="card"><div class="card-label">What each service is worth</div>
-    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:12px">Enter what you charge for each service. This is the most reliable source — set these and every number above works, with no dependency on RepairDesk.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:12px">
-      ${WORK_STAGES.map(s=>`<div class="field"><label>${esc(s)} ($)</label><input class="svc-price" data-svc="${esc(s)}" type="number" value="${servicePrices[s]||''}" placeholder="0"></div>`).join('')}
-    </div>
-    <button class="btn btn-gold btn-sm" onclick="prodSavePrices()">Save Prices</button>
-    ${hasServicePrices()?'<span style="margin-left:10px;font-size:12px;color:var(--green)">✓ Using your service prices</span>':'<span style="margin-left:10px;font-size:12px;color:var(--orange)">Not set — falling back to RepairDesk</span>'}
-  </div>
-
-  <div class="card" style="max-width:520px"><div class="card-label">Fallback: RepairDesk pricing</div>
-    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Best source first: each piece's own RepairDesk service prices. If those are missing, the ticket total split across its items. If neither, the default below.</div>
-    <div style="font-size:12.5px;margin-bottom:10px">${(()=>{
+  <div class="card" style="max-width:560px"><div class="card-label">Where the money numbers come from</div>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Prices are pulled straight from RepairDesk — each item's own charge, split across the services it needs. Nothing to set up here.</div>
+    <div style="font-size:12.5px;margin-bottom:12px">${(()=>{
       const srcs=Object.values(prodValueSrc);
-      if(!srcs.length) return '<span style="color:var(--ink3)">Open Print Labels once to load ticket prices.</span>';
-      const n=k=>srcs.filter(x=>x===k).length;
-      return `<strong>Where this period's prices came from:</strong><br>
-        <span style="color:var(--green)">✓ ${n('item')} exact (per-piece)</span> ·
-        <span style="color:var(--orange)">≈ ${n('split')} estimated (ticket split)</span> ·
-        <span style="color:var(--ink3)">○ ${n('default')} default</span>`;
+      if(!srcs.length) return '<span style="color:var(--orange)">Ticket prices are still loading — reopen this page in a moment.</span>';
+      const priced=srcs.filter(x=>x==='item').length, missing=srcs.length-priced;
+      return `<span style="color:var(--green);font-weight:700">✓ ${priced} item${priced!==1?'s':''} priced from RepairDesk</span>`
+        + (missing?` · <span style="color:var(--ink3)">${missing} had no price on the ticket</span>`:'');
     })()}</div>
-    <div class="row"><div class="field"><label>Default value per item ($)</label><input id="prod-defval" type="number" value="${prodDefaultValue||''}" placeholder="e.g. 250"></div>
-    <button class="btn btn-sm" onclick="prodSaveDefault()">Save</button></div>
-    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-      <button class="btn btn-ghost btn-sm" onclick="prodProbePrices()">🔍 Check what RepairDesk sends</button>
-      <div id="prod-probe" style="margin-top:8px;font-size:12px;color:var(--ink3)"></div>
-    </div>
+    <button class="btn btn-ghost btn-sm" onclick="prodProbePrices()">🔍 Check a ticket</button>
+    <div id="prod-probe" style="margin-top:8px;font-size:12px;color:var(--ink3)"></div>
   </div>`;
 }
 // Plain-language read of the numbers — the "what am I looking at" line
