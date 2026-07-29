@@ -256,6 +256,12 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
     </div>
   </div>
 
+  <div class="card" id="open-sessions-panel" style="display:none;background:var(--orange-soft);border:2px solid var(--orange)">
+    <div style="font-size:10px;color:var(--orange);font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px">⏱️ Still Running</div>
+    <div style="font-size:12px;color:var(--ink2);margin-bottom:10px">These timers are still going. Tap Stop on anything you already finished.</div>
+    <div id="open-sessions-list"></div>
+  </div>
+
   <div class="card" id="active-work-panel" style="display:none;background:var(--green-soft);border:2px solid var(--green)">
     <div style="text-align:center">
       <div style="font-size:10px;color:var(--green);font-weight:700;letter-spacing:.12em;text-transform:uppercase">▶ Currently Working On</div>
@@ -499,6 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Keep this device in step with the server (e.g. admin force-stops an item)
   setInterval(() => { if (selectedWorker) syncActiveWorkFromServer(); }, 60000);
+  setInterval(() => { if (openSessions.length) renderOpenSessions(); }, 60000);
   // Re-check the moment the worker comes back to the app
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && selectedWorker) syncActiveWorkFromServer();
@@ -1002,6 +1009,19 @@ async function syncActiveWorkFromServer(){
     });
     const openList=Object.values(open).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
 
+    // Keep the FULL list — a worker can have several timers still running from
+    // earlier sessions. Only marking the newest meant scanning any of the others
+    // started yet another timer instead of stopping it.
+    openSessions = openList.map(s=>({
+      itemId: s.item_id,
+      name: s.item_desc || (itemCache[s.item_id]||{}).name || s.item_id,
+      task: s.role || '',
+      startedAt: new Date(s.created_at).getTime()
+    }));
+    localStorage.setItem('st_open_sessions', JSON.stringify(openSessions));
+    openList.forEach(s=>{ itemTaskState[s.item_id+'::'+(s.role||'')]='in_progress'; });
+    localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+
     if(openList.length){
       const s=openList[0];
       const info = itemCache[s.item_id]||{};
@@ -1012,8 +1032,7 @@ async function syncActiveWorkFromServer(){
         startedAt: new Date(s.created_at).getTime()
       };
       localStorage.setItem('st_active_work', JSON.stringify(activeWork));
-      itemTaskState[s.item_id+'::'+(s.role||'')]='in_progress';
-      localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+      renderOpenSessions();
       renderActiveWork();
       startActiveWorkTimer();
       if(!s.item_desc) resolveItemInfo(s.item_id).then(inf=>{
@@ -1023,12 +1042,16 @@ async function syncActiveWorkFromServer(){
           renderActiveWork();
         }
       });
-    } else if(activeWork){
-      // Server says nothing is running — clear a stale local panel
-      activeWork=null;
-      localStorage.setItem('st_active_work','null');
-      stopActiveWorkTimer();
-      renderActiveWork();
+    } else {
+      openSessions=[];
+      localStorage.setItem('st_open_sessions','[]');
+      renderOpenSessions();
+      if(activeWork){
+        activeWork=null;
+        localStorage.setItem('st_active_work','null');
+        stopActiveWorkTimer();
+        renderActiveWork();
+      }
     }
   }catch(e){ /* offline — keep whatever local state we have */ }
 }
@@ -1056,6 +1079,7 @@ function activateWorkerOnDevice(w) {
     document.getElementById('scan-card-label').textContent = 'Scan item — ' + selectedRole;
     renderScanRecent();
     renderActiveWork();
+    renderOpenSessions();
     if (activeWork) startActiveWorkTimer();
     syncActiveWorkFromServer();
     setTimeout(() => document.getElementById('scan-input').focus(), 150);
@@ -1078,6 +1102,7 @@ function selectRole(role) {
   });
   renderScanRecent();
   renderActiveWork();
+  renderOpenSessions();
   if (activeWork) startActiveWorkTimer();
   syncActiveWorkFromServer();
   setTimeout(() => document.getElementById('scan-input').focus(), 150);
@@ -1582,6 +1607,54 @@ function renderScanRecent() {
 }
 
 let activeInfoLoadedFor=null;
+let openSessions = JSON.parse(localStorage.getItem('st_open_sessions')||'[]');
+function renderOpenSessions(){
+  const panel=document.getElementById('open-sessions-panel');
+  const list=document.getElementById('open-sessions-list');
+  if(!panel||!list) return;
+  if(!openSessions.length){ panel.style.display='none'; list.innerHTML=''; return; }
+  panel.style.display='block';
+  list.innerHTML=openSessions.map((s,i)=>{
+    const mins=Math.floor((Date.now()-s.startedAt)/60000);
+    const dur=mins>=60?Math.floor(mins/60)+'h '+(mins%60)+'m':mins+'m';
+    const longRun=mins>=180;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px">${s.name||s.itemId}</div>
+        <div style="font-size:11.5px;color:var(--ink3)">${s.task||'—'} · ${s.itemId}</div>
+        <div style="font-size:12px;font-weight:700;color:${longRun?'var(--red)':'var(--orange)'};margin-top:2px">running ${dur}${longRun?' ⚠️':''}</div>
+      </div>
+      <button class="gen-btn" style="background:var(--red);color:#fff;border:none;padding:9px 16px;font-size:13px;font-weight:700;border-radius:8px;flex-shrink:0"
+        onclick="stopOpenSession(${i})">■ Stop</button>
+    </div>`;
+  }).join('');
+}
+// Stop a running timer directly — no scan needed, so a bad barcode can't block it
+async function stopOpenSession(i){
+  const s=openSessions[i]; if(!s) return;
+  if(!confirm('Stop the timer on "'+(s.name||s.itemId)+'"?')) return;
+  try{
+    const r = await fetch(SUPABASE_URL + '/rest/v1/scans', {
+      method:'POST',
+      headers:{ 'apikey':SUPABASE_KEY, 'Authorization':'Bearer '+SUPABASE_KEY, 'Content-Type':'application/json', 'Prefer':'return=minimal' },
+      body: JSON.stringify({ item_id:s.itemId, item_desc:s.name||'', status:(s.task||'')+' Stopped',
+                             worker:selectedWorker.name, role:s.task||'' })
+    });
+    if(!r.ok) throw new Error('save failed');
+    itemTaskState[s.itemId+'::'+(s.task||'')]='done';
+    localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+    openSessions.splice(i,1);
+    localStorage.setItem('st_open_sessions', JSON.stringify(openSessions));
+    if(activeWork && activeWork.itemId===s.itemId && activeWork.task===s.task){
+      activeWork=null; localStorage.setItem('st_active_work','null');
+      stopActiveWorkTimer(); renderActiveWork();
+    }
+    renderOpenSessions();
+    playBeep();
+    showToast('■ Stopped '+(s.name||s.itemId));
+    syncActiveWorkFromServer();
+  }catch(e){ showToast('Could not stop — check connection'); }
+}
 function renderActiveWork() {
   const panel = document.getElementById('active-work-panel');
   if (!panel) return;
