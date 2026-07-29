@@ -646,10 +646,11 @@ window.addEventListener('hashchange', router);
 async function loadAllScans(){
   const r=await sb('scans?select=*&order=created_at.desc&limit=5000');
   scans=(Array.isArray(r)?r:[]).map(s=>({...s, item_id:normalizeItemId(s.item_id)}));
+  _unitsIdx=null;
 }
 async function loadWorkers(){ workers=await sb('workers?select=*&order=name.asc'); }
 async function loadRoles(){ roles=await sb('roles?select=*&order=name.asc'); }
-async function loadStageEvents(){ try{ const r=await sb('stage_events?select=*&order=created_at.asc&limit=8000'); stageEvents=Array.isArray(r)?r:[]; }catch(e){ stageEvents=[]; } }
+async function loadStageEvents(){ try{ const r=await sb('stage_events?select=*&order=created_at.asc&limit=8000'); stageEvents=Array.isArray(r)?r:[]; }catch(e){ stageEvents=[]; } _unitsIdx=null; }
 async function loadPipeLabels(){ try{ const r=await sb('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=(Array.isArray(r)?r:[]).map(l=>({...l, item_id:normalizeItemId(l.item_id)})); }catch(e){ pipeLabels=[]; } }
 
 async function bootstrap(){
@@ -1850,7 +1851,34 @@ function money(v){
   const n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''));
   return isNaN(n)?0:n;
 }
-// The real charge for one item, plus how many services it covers
+// How many PAID work units an item is divided into.
+//  - the services RepairDesk billed for
+//  - PLUS any stage actually worked that wasn't on the ticket (e.g. Antique added later),
+//    so adding work automatically gives everyone a smaller share
+//  - PLUS one unit per rework the worker was NOT at fault for (redone through no
+//    fault of theirs = paid again; their own poor job = not paid again)
+let _unitsIdx=null;
+function buildUnitsIndex(){
+  const roles={}, paid={};
+  (scans||[]).forEach(s=>{
+    const b=parentItemId(s.item_id), r=(s.role||'').trim().toUpperCase();
+    if(!r) return; (roles[b]=roles[b]||new Set()).add(r);
+  });
+  (stageEvents||[]).forEach(e=>{
+    if(e.action!=='rework-paid') return;
+    const b=parentItemId(e.item_id); paid[b]=(paid[b]||0)+1;
+  });
+  _unitsIdx={roles,paid};
+}
+function paidUnits(baseId, rdServiceNames){
+  if(!_unitsIdx) buildUnitsIndex();
+  const set=new Set((rdServiceNames||[]).map(n=>String(n||'').trim().toUpperCase()).filter(Boolean));
+  const worked=_unitsIdx.roles[baseId];
+  if(worked) worked.forEach(r=>set.add(r));
+  return Math.max(set.size,1) + (_unitsIdx.paid[baseId]||0);
+}
+
+// The real charge for one item, plus how many paid units it covers
 function itemPriceInfo(itemId){
   const base=parentItemId(itemId);
   if(prodValueCache[base]!==undefined) return prodValueCache[base];
@@ -1861,8 +1889,8 @@ function itemPriceInfo(itemId){
   const dev=t&&t.devices&&t.devices[idx-1];
   if(dev){
     const net=money(dev.price)-money(dev.line_discount);
-    const svc=Array.isArray(dev.repairProdItems)?dev.repairProdItems.filter(s=>(s.name||'').trim()).length:1;
-    info={price:Math.max(net,0), nSvc:Math.max(svc,1), src:'item'};
+    const names=Array.isArray(dev.repairProdItems)?dev.repairProdItems.map(s=>s.name):[];
+    info={price:Math.max(net,0), nSvc:paidUnits(base,names), src:'item'};
     if(info.price===0 && money(dev.total)>0){ info.price=money(dev.total); }
   }
   prodValueSrc[base]=info.src;
@@ -1989,7 +2017,7 @@ async function ensureTicketsLoaded(){
 }
 async function renderProductionPage(){
 
-  prodValueCache={}; prodValueSrc={};
+  prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
   document.getElementById('content').innerHTML='<div class="card"><div class="empty">Loading production data…</div></div>';
   await ensureTicketsLoaded();
   prodValueCache={}; prodValueSrc={};
