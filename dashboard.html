@@ -1997,6 +1997,9 @@ function prodDelta(cur,prev){
   return `<span style="color:${col};font-size:11px;font-weight:700">${pct>=0?'▲':'▼'} ${Math.abs(pct)}%</span>`;
 }
 function fmtMoney(v){ return '$'+Math.round(v).toLocaleString(); }
+// Workers are measured in points: $100 of finished work = 1 point
+function toPoints(v){ return v/100; }
+function fmtPts(v){ return (v>=100?Math.round(v):(Math.round(v*10)/10)).toLocaleString()+' pts'; }
 
 // Production needs ticket prices, but loadTickets() only runs on the Print Labels page.
 async function ensureTicketsLoaded(){
@@ -2115,6 +2118,7 @@ function drawProduction(){
       <td>${fmtDur(ms)}</td>
       <td style="font-size:12px;color:var(--ink3)">${stages||'—'}</td>
       <td style="font-weight:700;color:var(--green)">${workerValue(cur,w)>0?fmtMoney(workerValue(cur,w)):'—'}</td>
+      <td style="font-weight:800;color:var(--gold);font-family:'Outfit',sans-serif">${workerValue(cur,w)>0?fmtPts(toPoints(workerValue(cur,w))):'—'}</td>
       <td style="min-width:150px">
         <div style="height:7px;background:var(--surface2);border-radius:4px;overflow:hidden">
           <div style="width:${Math.min(vsRec,100)}%;height:100%;background:${barCol};border-radius:4px"></div></div>
@@ -2150,6 +2154,7 @@ function drawProduction(){
     <div class="stat-tile" style="border-left:4px solid var(--green)">
       <div class="stat-num" style="font-size:26px;color:var(--green)">${hasValue?fmtMoney(cur.value):'—'}</div>
       <div class="stat-label">Value ${inProgress?'So Far':'Processed'} ${hasValue?prodDelta(cur.value,prev.value):''}</div></div>
+    <div class="stat-tile" style="border-left:4px solid var(--gold)"><div class="stat-num" style="color:var(--gold);font-size:28px">${hasValue?fmtPts(toPoints(cur.value)):'—'}</div><div class="stat-label">⭐ Points Earned</div></div>
     <div class="stat-tile" style="border-left:4px solid var(--orange)"><div class="stat-num" style="color:var(--orange)">${rec.recTotal}</div><div class="stat-label">Record ${periodWord} ${cur.pieces>=rec.recTotal&&cur.pieces>0?'· 🏆 matched!':''}</div></div>
   </div>
 
@@ -2176,13 +2181,14 @@ function drawProduction(){
           <button class="btn btn-ghost btn-sm" onclick="prodDrill=null;drawProduction()">✕ Close</button>
         </div>
       </div>
-      ${list.length?`<table><thead><tr><th>Item</th><th>Customer</th>${prodDrill.kind==='stage'?'<th>Worker</th>':'<th>Stage</th>'}<th>Time</th><th>Value</th><th>Finished</th></tr></thead><tbody>
+      ${list.length?`<table><thead><tr><th>Item</th><th>Customer</th>${prodDrill.kind==='stage'?'<th>Worker</th>':'<th>Stage</th>'}<th>Time</th><th>Value</th><th>⭐ Points</th><th>Finished</th></tr></thead><tbody>
         ${list.map(x=>`<tr class="clickable" onclick="navigate('${h('item',x.itemId).replace(/'/g,"\\'")}')">
           <td><strong>${x.desc&&x.desc!==x.itemId?esc(x.desc):esc(x.itemId)}</strong><div style="font-size:11px;color:var(--ink3)">${esc(x.itemId)}</div></td>
           <td style="font-size:12.5px">${x.customer&&x.customer!=='undefined'?esc(x.customer):'—'}</td>
           <td style="font-size:12.5px">${esc(prodDrill.kind==='stage'?x.worker:x.role)}</td>
           <td>${fmtDur(x.ms)}</td>
           <td style="font-weight:700;color:var(--green)">${x.value>0?fmtMoney(x.value):'—'}</td>
+          <td style="font-weight:800;color:var(--gold)">${x.value>0?fmtPts(toPoints(x.value)):'—'}</td>
           <td style="font-size:12px;color:var(--ink3)">${fmtDate(x.end)}</td>
         </tr>`).join('')}</tbody></table>
         <div style="font-size:11.5px;color:var(--ink3);margin-top:10px">Tap any row to open that item.</div>`
@@ -2191,7 +2197,7 @@ function drawProduction(){
   })():''}
 
   <div class="card"><div class="card-label">By Worker <span style="font-weight:600;text-transform:none">— 🟢 near their best · 🟡 below · 🔴 well below</span></div>
-    ${workerRows?`<table><thead><tr><th>Worker</th><th>Pieces</th><th>Time</th><th>Stages</th><th>Value</th><th>vs their record</th></tr></thead><tbody>${workerRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
+    ${workerRows?`<table><thead><tr><th>Worker</th><th>Pieces</th><th>Time</th><th>Stages</th><th>Value</th><th>⭐ Points</th><th>vs their record</th></tr></thead><tbody>${workerRows}</tbody></table>`:'<div class="empty">No completed work in this period</div>'}
   </div>
 
   <div class="card" style="max-width:560px"><div class="card-label">Where the money numbers come from</div>
