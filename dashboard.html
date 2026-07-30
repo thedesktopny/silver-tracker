@@ -209,12 +209,46 @@ tr.clickable:hover td{background:var(--surface2)}
 .pipe-track>div{height:100%;background:var(--gold)}
 .pipe-track.full>div{background:var(--green)}
 .mobile-topbar{display:none}
+/* Dim + tap-to-close backdrop behind the slide-out menu */
+.nav-scrim{display:none;position:fixed;inset:0;background:rgba(18,20,28,.5);z-index:45;backdrop-filter:blur(1px)}
+.nav-scrim.show{display:block}
+
 @media (max-width:880px){
-  .sidebar{transform:translateX(-100%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.3)}
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.35);width:270px}
   .sidebar.open{transform:translateX(0)}
   .main{margin-left:0}
-  .mobile-topbar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .stat-grid{grid-template-columns:repeat(2,1fr)}
+  .mobile-topbar{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:44}
+  .snav-link{padding:13px 14px;font-size:15px}   /* bigger tap targets */
+
+  .stat-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .stat-tile{padding:14px}
+  .stat-num{font-size:26px}
+  .stat-label{font-size:10px}
+
+  .content{padding:14px 12px 70px}
+  .topbar{padding:12px 14px;position:static}
+  .page-title{font-size:21px}
+  .card{padding:14px;border-radius:12px}
+  .page-head{gap:10px}
+  .head-actions{width:100%}
+  .head-actions .seg{flex:1}
+  .head-actions .seg button{flex:1;padding:9px 6px}
+  .search{max-width:100%}
+
+  /* Wide tables scroll sideways instead of squashing */
+  .card table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  th,td{padding:9px 8px;font-size:12.5px}
+
+  .worker-grid{grid-template-columns:1fr}
+  .live-split{grid-template-columns:1fr}
+  .bell-panel{width:calc(100vw - 28px);right:-6px}
+  .modal{padding:18px;border-radius:14px}
+  input,select,textarea{font-size:16px}   /* stops iOS zooming on focus */
+}
+@media (max-width:480px){
+  .stat-grid{grid-template-columns:1fr 1fr}
+  .page-title{font-size:19px}
+  .btn{padding:8px 12px;font-size:12.5px}
 }
 </style>
 </head>
@@ -245,9 +279,11 @@ tr.clickable:hover td{background:var(--surface2)}
     </div>
   </div>
 
+  <div class="nav-scrim" id="nav-scrim" onclick="closeNav()"></div>
+
   <div class="main">
     <div class="mobile-topbar">
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleNav()">☰</button>
       <div class="wordmark" style="font-size:18px"><span class="mark"></span>Glint</div>
     </div>
     <div class="topbar">
@@ -520,7 +556,7 @@ if(sessionStorage.getItem('glint_admin')==='1'){
 function renderSidebar(){
   const route=currentRoute();
   document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.map(n=>
-    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}"><span class="snav-icon">${n.icon}</span>${n.label}</a>`
+    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}</a>`
   ).join('');
 }
 function startClock(){
@@ -589,7 +625,37 @@ document.addEventListener('click', e=>{
 // ========================================================================
 // ROUTER
 // ========================================================================
-function navigate(hash){ location.hash=hash; }
+window.addEventListener('hashchange', ()=>{ if(typeof closeNav==='function') closeNav(); });
+function openNav(){
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('nav-scrim').classList.add('show');
+}
+function closeNav(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('nav-scrim').classList.remove('show');
+}
+function toggleNav(){
+  document.getElementById('sidebar').classList.contains('open') ? closeNav() : openNav();
+}
+// Swipe from the left edge to open, swipe left on the menu to close
+(function(){
+  let x0=null, y0=null;
+  document.addEventListener('touchstart', e=>{
+    if(window.innerWidth>880) return;
+    const t=e.touches[0]; x0=t.clientX; y0=t.clientY;
+  }, {passive:true});
+  document.addEventListener('touchend', e=>{
+    if(x0===null || window.innerWidth>880) return;
+    const t=e.changedTouches[0], dx=t.clientX-x0, dy=t.clientY-y0;
+    if(Math.abs(dx)>60 && Math.abs(dy)<50){
+      const open=document.getElementById('sidebar').classList.contains('open');
+      if(dx>0 && x0<32 && !open) openNav();
+      else if(dx<0 && open) closeNav();
+    }
+    x0=null; y0=null;
+  }, {passive:true});
+})();
+function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
@@ -962,7 +1028,7 @@ const PAUSE_DONE_HOURS=4; // a stop never resumed for this long means the step i
 function stageForRole(role){
   const r=(role||'').toLowerCase().trim();
   if(!r) return null;
-  if(/pack|deliver|driver|ship/.test(r)) return 'delivery';
+  if(!/unpack/.test(r) && /pack|deliver|driver|ship|on.?way|transit|route/.test(r)) return 'delivery';  // 'unpack' is intake, not delivery
   // 1. Exact match against the configured stage list
   for(let i=0;i<WORK_STAGES.length;i++){ if(r===WORK_STAGES[i].toLowerCase().trim()) return i; }
   // 2. Substring match either direction ("Gold Plating" role -> "Gold Plating" stage)
@@ -2865,20 +2931,31 @@ function renderEmployeeReportBody(name){
     (Object.entries(byDay).sort((a,b)=>new Date(b[0])-new Date(a[0])).map(([d,ms])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span>${esc(d)}</span><strong>${fmtDur(ms)}</strong></div>`).join('')||'<div class="empty">None</div>')+'</div>';
   html+='</div>';
 
-  html+='<div class="card"><div class="card-label">Work by Order</div>';
-  html+=orderList.length?orderList.map(([oid,o])=>{
-    const safe='emp-'+oid.replace(/[^a-zA-Z0-9]/g,'_');
-    return `<div style="border-bottom:1px solid var(--border);padding:12px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="const b=document.getElementById('${safe}');b.style.display=b.style.display==='none'?'block':'none'">
-        <div><span style="font-weight:700;color:var(--gold2)">${esc(oid)}</span> <span style="color:var(--ink3);font-size:12px">${o.items.size} item(s), ${o.sessions.length} session(s)</span></div>
-        <div style="display:flex;gap:8px;align-items:center"><strong style="color:var(--gold2)">${fmtDur(o.ms)}</strong>
-          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('${h('order',oid).replace(/'/g,"\\'")}')">Open order →</button></div>
+  // Pieces first — the ticket number is secondary, the object is what matters
+  const byPiece={};
+  orderList.forEach(([oid,o])=>o.sessions.forEach(s=>{
+    const k=s.item_id;
+    const p=byPiece[k]=byPiece[k]||{itemId:s.item_id, desc:s.item_desc, oid, roles:{}, ms:0, last:s.end, runaway:false};
+    p.ms+=s.ms; p.roles[s.role||'—']=(p.roles[s.role||'—']||0)+s.ms;
+    if(s.runaway) p.runaway=true;
+    if(new Date(s.end)>new Date(p.last)) p.last=s.end;
+  }));
+  const pieces=Object.values(byPiece).sort((a,b)=>new Date(b.last)-new Date(a.last));
+
+  html+='<div class="card"><div class="card-label">Pieces Worked On <span style="font-weight:600;text-transform:none;color:var(--ink3)">— '+pieces.length+' piece'+(pieces.length!==1?'s':'')+'</span></div>';
+  html+=pieces.length?pieces.map(p=>{
+    const stages=Object.entries(p.roles).sort((a,b)=>b[1]-a[1]).map(([r,ms])=>esc(r)+' '+fmtDur(ms)).join(' · ');
+    const name=p.desc&&p.desc!==p.itemId?esc(p.desc):esc(p.itemId);
+    return `<div class="clickable" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border)"
+      onclick="navigate('${h('item',p.itemId).replace(/'/g,"\\'")}')">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:15px">${name}</div>
+        <div style="font-size:12px;color:var(--ink3);margin-top:2px">${stages}</div>
+        <div style="font-size:11px;color:var(--ink3);margin-top:2px">${esc(p.itemId)} · ${fmtDate(p.last)}</div>
       </div>
-      <div id="${safe}" style="display:none;margin-top:8px;padding-left:12px">
-        ${o.sessions.sort((a,b)=>new Date(b.end)-new Date(a.end)).map(s=>`<div class="clickable" style="padding:6px 0;font-size:13px" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')">
-          <div style="display:flex;justify-content:space-between"><span>${s.item_desc&&s.item_desc!==s.item_id?esc(s.item_desc):esc(s.item_id)} <span style="color:var(--ink3);font-size:11px">${esc(s.item_id)}</span></span><span style="color:${s.runaway?'var(--red)':'var(--gold2)'};font-weight:700">${fmtDur(s.ms)}${s.runaway?' ⚠️':''}</span></div>
-          <div style="font-size:11px;color:var(--ink3)">${esc(s.role||'—')} · ${fmtDateFull(s.start)} → ${fmtDateFull(s.end)}${s.runaway?' · left running':''}</div>
-        </div>`).join('')}
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-weight:800;color:${p.runaway?'var(--red)':'var(--gold2)'};font-family:'Outfit',sans-serif;font-size:16px">${fmtDur(p.ms)}${p.runaway?' ⚠️':''}</div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:4px" onclick="event.stopPropagation();navigate('${h('order',p.oid).replace(/'/g,"\\'")}')">${esc(p.oid)} →</button>
       </div>
     </div>`;
   }).join(''):'<div class="empty">No work in this range</div>';
