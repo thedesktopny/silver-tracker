@@ -1541,6 +1541,31 @@ async function processScan(itemId) {
     }
   }
 
+  // PREVENTION: one running item per role per worker. Starting a new one closes the
+  // previous automatically, so a stop scan that fails can never leave a timer running
+  // for days. This stops runaway hours accumulating in the first place.
+  if (!isInProgress) {
+    const orphans = (openSessions||[]).filter(o => o.task === task && o.itemId !== itemId);
+    for (const o of orphans) {
+      try{
+        await fetch(SUPABASE_URL + '/rest/v1/scans', {
+          method:'POST',
+          headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+          body: JSON.stringify({ item_id:o.itemId, item_desc:o.name||'', status:(o.task||'')+' — Stopped (auto)',
+                                 worker:selectedWorker.name, role:o.task||'' })
+        });
+        itemTaskState[o.itemId+'::'+(o.task||'')]='done';
+      }catch(e){}
+    }
+    if (orphans.length) {
+      openSessions = (openSessions||[]).filter(o => !(o.task === task && o.itemId !== itemId));
+      localStorage.setItem('st_open_sessions', JSON.stringify(openSessions));
+      localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+      renderOpenSessions();
+      showToast('⏹️ Closed ' + orphans.length + ' timer' + (orphans.length!==1?'s':'') + ' you left running');
+    }
+  }
+
   const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
 
   // If STOPPING and this role REQUIRES a photo, capture it first before completing
