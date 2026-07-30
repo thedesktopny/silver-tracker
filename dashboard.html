@@ -364,6 +364,7 @@ const NAV_ITEMS = [
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
   {route:'production', label:'Production', icon:'📈'},
+  {route:'timeline', label:'Day Timeline', icon:'🕘'},
   {route:'orders', label:'Orders', icon:'▦'},
   {route:'history', label:'History', icon:'≡'},
   {route:'workers', label:'Workers', icon:'◐'},
@@ -659,7 +660,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',production:'Production',timeline:'Day Timeline',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -685,6 +686,7 @@ const ROUTE_RENDERERS={
   reports: renderReportsPage,
   insights: renderInsightsPage,
   production: renderProductionPage,
+  timeline: renderTimelinePage,
   orders: renderOrdersListPage,
   history: renderHistoryPage,
   workers: renderWorkersPage,
@@ -2084,6 +2086,157 @@ async function ensureTicketsLoaded(){
     localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
   }catch(e){}
 }
+
+// ========================================================================
+// DAY TIMELINE — every worker's day as one bar: what they worked on, and the gaps
+// ========================================================================
+let tlDate=new Date(); tlDate.setHours(0,0,0,0);
+let workerHours={};                       // "Daniel" -> {start:'09:00', end:'17:00'}
+const TL_DEFAULT={start:'09:00', end:'17:00'};
+const TL_HUES=['#4f46e5','#0ea5e9','#059669','#d97706','#db2777','#7c3aed','#0891b2','#ca8a04'];
+function tlHue(role){
+  let h=0; const s=String(role||'—');
+  for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0;
+  return TL_HUES[h%TL_HUES.length];
+}
+function tlMins(hhmm){ const m=/^(\d{1,2}):(\d{2})$/.exec(hhmm||''); return m?(+m[1]*60 + +m[2]):null; }
+function tlFmt(mins){
+  const h=Math.floor(mins/60), m=Math.round(mins%60);
+  const ap=h>=12?'PM':'AM', hh=((h+11)%12)+1;
+  return hh+(m?':'+String(m).padStart(2,'0'):'')+ap;
+}
+function tlHoursFor(name){
+  const w=workerHours[name]||{};
+  return { start: tlMins(w.start)??tlMins(TL_DEFAULT.start), end: tlMins(w.end)??tlMins(TL_DEFAULT.end) };
+}
+async function tlSaveHours(){
+  const out={};
+  document.querySelectorAll('.tl-hrs').forEach(i=>{
+    const n=i.dataset.worker, k=i.dataset.k;
+    (out[n]=out[n]||{})[k]=i.value;
+  });
+  workerHours=out;
+  await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({key:'worker_hours', value:JSON.stringify(out)})});
+  toast('✅ Hours saved'); drawTimeline();
+}
+function tlShiftDay(d){ tlDate=new Date(tlDate.getTime()+d*86400000); tlDate.setHours(0,0,0,0); drawTimeline(); }
+function tlPickDate(v){ if(!v) return; const [y,m,d]=v.split('-').map(Number); tlDate=new Date(y,m-1,d); drawTimeline(); }
+
+async function renderTimelinePage(){
+  try{
+    const r=await sb("settings?key=eq.worker_hours&select=value");
+    workerHours=(r&&r[0]&&r[0].value)?JSON.parse(r[0].value):{};
+  }catch(e){ workerHours={}; }
+  drawTimeline();
+}
+
+function drawTimeline(){
+  const dayStart=new Date(tlDate), dayEnd=new Date(tlDate); dayEnd.setDate(dayEnd.getDate()+1);
+  const {sessions}=pairSessions(t=>{ const e=new Date(t); return e>=dayStart && e<dayEnd; });
+  const isToday=tlDate.toDateString()===new Date().toDateString();
+
+  // Group each worker's sessions
+  const byWorker={};
+  sessions.forEach(s=>{ (byWorker[s.worker]=byWorker[s.worker]||[]).push(s); });
+  const names=workers.map(w=>w.name);
+  Object.keys(byWorker).forEach(n=>{ if(!names.includes(n)) names.push(n); });
+
+  const rows=names.map(name=>{
+    const hrs=tlHoursFor(name);
+    const list=(byWorker[name]||[]).slice().sort((a,b)=>new Date(a.start)-new Date(b.start));
+    // Widen the window if they worked outside their shift
+    let lo=hrs.start, hi=hrs.end;
+    list.forEach(s=>{
+      const a=new Date(s.start), b=new Date(s.end);
+      lo=Math.min(lo, a.getHours()*60+a.getMinutes());
+      hi=Math.max(hi, b.getHours()*60+b.getMinutes());
+    });
+    lo=Math.floor(lo/60)*60; hi=Math.ceil(hi/60)*60;
+    const span=Math.max(hi-lo,60);
+    let workedMs=0;
+    const segs=list.map(s=>{
+      const a=new Date(s.start), b=new Date(s.end);
+      const m0=a.getHours()*60+a.getMinutes(), m1=b.getHours()*60+b.getMinutes();
+      workedMs+=s.ms;
+      return { s, left:((m0-lo)/span)*100, width:Math.max(((m1-m0)/span)*100,0.7), m0, m1 };
+    });
+    return {name, hrs, lo, hi, span, segs, workedMs, list};
+  }).filter(r=>r.segs.length || workers.some(w=>w.name===r.name));
+
+  const ticks=(lo,hi)=>{
+    let out='';
+    for(let m=lo; m<=hi; m+=60){
+      out+=`<div style="position:absolute;left:${((m-lo)/Math.max(hi-lo,60))*100}%;top:0;bottom:0;width:1px;background:var(--border)"></div>`;
+    }
+    return out;
+  };
+
+  const iso=tlDate.getFullYear()+'-'+String(tlDate.getMonth()+1).padStart(2,'0')+'-'+String(tlDate.getDate()).padStart(2,'0');
+
+  let html=`
+  <div class="page-head">
+    <div><div class="page-title">Day Timeline</div><div class="page-sub">Every worker's day — what they were on, and when they weren't</div></div>
+    <div class="head-actions">
+      <button class="btn btn-ghost btn-sm" onclick="tlShiftDay(-1)">‹</button>
+      <input type="date" value="${iso}" onchange="tlPickDate(this.value)" style="max-width:170px">
+      <button class="btn btn-ghost btn-sm" ${isToday?'disabled style="opacity:.3"':''} onclick="tlShiftDay(1)">›</button>
+      ${isToday?'':'<button class="btn btn-ghost btn-sm" onclick="tlDate=new Date();tlDate.setHours(0,0,0,0);drawTimeline()">Today</button>'}
+    </div>
+  </div>
+  <div class="page-sub" style="margin:-10px 0 16px;font-weight:700;color:var(--ink)">${tlDate.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</div>`;
+
+  if(!rows.length){ html+='<div class="card"><div class="empty">No workers yet</div></div>'; }
+
+  html+=rows.map(r=>{
+    const shiftMins=Math.max(r.hrs.end-r.hrs.start,1);
+    const workedMin=Math.round(r.workedMs/60000);
+    const pct=Math.min(Math.round(workedMin/shiftMins*100),100);
+    const idle=Math.max(shiftMins-workedMin,0);
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div>
+          <div style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:700">${esc(r.name)}</div>
+          <div style="font-size:11.5px;color:var(--ink3)">shift ${tlFmt(r.hrs.start)}–${tlFmt(r.hrs.end)} · worked ${fmtDur(r.workedMs)} · idle ${Math.floor(idle/60)}h ${idle%60}m</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:800;color:${pct>=70?'var(--green)':(pct>=40?'var(--orange)':'var(--red)')}">${pct}%</div>
+          <div style="font-size:10.5px;color:var(--ink3)">of shift</div>
+        </div>
+      </div>
+      <div style="position:relative;height:44px;background:var(--surface2);border-radius:8px;overflow:hidden">
+        ${ticks(r.lo,r.hi)}
+        ${r.segs.map(g=>`<div title="${esc(g.s.item_desc||g.s.item_id)} · ${esc(g.s.role||'')} · ${tlFmt(g.m0)}–${tlFmt(g.m1)}"
+            onclick="navigate('${h('item',g.s.item_id).replace(/'/g,"\\'")}')"
+            style="position:absolute;left:${g.left}%;width:${g.width}%;top:5px;bottom:5px;background:${tlHue(g.s.role)};border-radius:5px;cursor:pointer;overflow:hidden;padding:0 5px;display:flex;align-items:center">
+            <span style="color:#fff;font-size:10.5px;font-weight:700;white-space:nowrap;text-overflow:ellipsis;overflow:hidden">${esc(g.s.item_desc||g.s.item_id)}</span>
+          </div>`).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink3);margin-top:4px">
+        <span>${tlFmt(r.lo)}</span><span>${tlFmt(r.hi)}</span>
+      </div>
+      ${r.segs.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">
+        ${[...new Set(r.list.map(s=>s.role||'—'))].map(role=>`<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink3)"><span style="width:9px;height:9px;border-radius:3px;background:${tlHue(role)}"></span>${esc(role)}</span>`).join('')}
+      </div>`:'<div style="font-size:12px;color:var(--ink3);margin-top:8px;font-style:italic">Nothing recorded this day</div>'}
+    </div>`;
+  }).join('');
+
+  // Shift hours, editable per worker
+  html+=`<div class="card"><div class="card-label">Working Hours <span style="font-weight:600;text-transform:none;color:var(--ink3)">— used to measure idle time</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:12px">
+      ${workers.map(w=>{ const hh=workerHours[w.name]||{};
+        return `<div style="display:flex;align-items:center;gap:6px">
+          <span style="flex:1;font-size:13px;font-weight:600">${esc(w.name)}</span>
+          <input class="tl-hrs" data-worker="${esc(w.name)}" data-k="start" type="time" value="${hh.start||TL_DEFAULT.start}" style="width:105px;padding:6px">
+          <input class="tl-hrs" data-worker="${esc(w.name)}" data-k="end" type="time" value="${hh.end||TL_DEFAULT.end}" style="width:105px;padding:6px">
+        </div>`; }).join('')||'<div class="empty">No workers</div>'}
+    </div>
+    <button class="btn btn-gold btn-sm" onclick="tlSaveHours()">Save Hours</button>
+  </div>`;
+
+  document.getElementById('content').innerHTML=html;
+}
+
 async function renderProductionPage(){
 
   prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
