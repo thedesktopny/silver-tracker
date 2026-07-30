@@ -417,10 +417,21 @@ function stageForRole(role){
   if(r.includes('polish')) return 2;
   if(r.includes('lacquer')||r.includes('laquer')||r.includes('lack')) return 4;
   if(r.includes('inspect')) return 3;
-  if(r.includes('pack')||r.includes('deliver')||r.includes('driver')||r.includes('ship')) return 'delivery';
+  // NB: 'unpack' also contains 'pack' but it's intake work, not delivery
+  if(!/unpack/.test(r) && /pack|deliver|driver|ship|on.?way|transit|route/.test(r)) return 'delivery';
   return null; // role with no pipeline step — time tracking still works normally
 }
 function isDeliveryRole(role){ return stageForRole(role)==='delivery'; }
+// If the role names the delivery step, just do it — no need to ask again.
+// Only a generic role (plain "Delivery") should get the three-way question.
+function deliveryStageForRole(role){
+  const r=(role||'').toLowerCase();
+  if(/unpack/.test(r)) return null;
+  if(/deliver(ed|y)?\b/.test(r) && !/on.?way/.test(r)) return 'Delivered';
+  if(/on.?way|driver|ship|transit|route/.test(r)) return 'On Way';
+  if(/pack/.test(r)) return 'Packed';
+  return null;
+}
 let skipFinishPrompt=false; // set while the Finish button is doing the stop itself
 // When an item comes back to a stage that was already finished, we must know WHY:
 //   not their fault  -> the item is split into one more paid unit (they get paid again)
@@ -1482,7 +1493,19 @@ async function processScan(itemId) {
   if (isDeliveryRole(task)) {
     playBeep(920,140);
     if (navigator.vibrate) navigator.vibrate(100);
-    openDeliveryChooser(itemId);
+    const direct = deliveryStageForRole(task);
+    const dinfo = itemCache[itemId] || {};
+    if (direct) {
+      // Role says exactly what this is — one confirmation, no menu
+      if (confirm('Mark "' + (dinfo.name || itemId) + '" as ' + direct.toUpperCase() + '?')) {
+        await deliveryMark(itemId, direct);
+      } else {
+        document.getElementById('scan-input').value = '';
+        setTimeout(() => document.getElementById('scan-input').focus(), 100);
+      }
+    } else {
+      openDeliveryChooser(itemId);
+    }
     return;
   }
 
@@ -1583,10 +1606,13 @@ function openImgModal(itemId, name, required){
   v.style.display='block';
   navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(s=>{ imgStream=s; v.srcObject=s; v.play(); }).catch(e=>{ showToast('⚠️ Camera error: '+e.message); });
 }
+const IMG_MAX_EDGE=1600;   // plenty of detail for silver, a fraction of the file size
 function imgCapture(){
   const v=document.getElementById('img-video'), c=document.getElementById('img-canvas');
-  c.width=v.videoWidth; c.height=v.videoHeight;
-  c.getContext('2d').drawImage(v,0,0);
+  let w=v.videoWidth, h=v.videoHeight;
+  const scale=Math.min(1, IMG_MAX_EDGE/Math.max(w,h));
+  c.width=Math.round(w*scale); c.height=Math.round(h*scale);
+  c.getContext('2d').drawImage(v,0,0,c.width,c.height);
   c.toBlob(b=>{ imgBlob=b;
     const url=URL.createObjectURL(b);
     const p=document.getElementById('img-preview'); p.src=url; p.style.display='block';
@@ -1605,9 +1631,23 @@ async function imgSave(){
   if(!imgBlob){ showToast('Take a photo first'); return; }
   document.getElementById('img-save-btn').textContent='Uploading…';
   const fname=imgTarget.itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+'.jpg';
+  const kb=Math.round((imgBlob.size||0)/1024);
   try{
-    const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'image/jpeg'},body:imgBlob});
-    if(!up.ok) throw new Error('upload failed');
+    const putPhoto=()=>fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'image/jpeg','x-upsert':'true'},
+      body:imgBlob});
+    let up=await putPhoto();
+    if(!up.ok){                       // one automatic retry — shop wifi drops a lot
+      document.getElementById('img-save-btn').textContent='Retrying…';
+      await new Promise(r=>setTimeout(r,1200));
+      up=await putPhoto();
+    }
+    if(!up.ok){
+      let detail='';
+      try{ const j=await up.json(); detail=j.message||j.error||''; }catch(_){ detail=await up.text().catch(()=>''); }
+      throw new Error('HTTP '+up.status+(detail?' · '+String(detail).slice(0,80):'')+' · '+kb+'KB');
+    }
     const publicUrl=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
     await fetch(SUPABASE_URL+'/rest/v1/item_images',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify({item_id:imgTarget.itemId,item_desc:imgTarget.name,image_url:publicUrl,worker:selectedWorker.name,role:selectedRole})});
@@ -1617,7 +1657,11 @@ async function imgSave(){
     showToast('✅ Photo saved');
     // If this photo was gating a required stop, complete it now
     if(pendingStop){ const ps=pendingStop; pendingStop=null; await completeScan(ps.itemId, ps.task, true); }
-  }catch(e){ showToast('⚠️ Upload failed'); document.getElementById('img-save-btn').textContent='✓ Save & Finish'; }
+  }catch(e){
+    // Say WHY, and keep the photo on screen so nothing has to be retaken
+    showToast('⚠️ Upload failed: '+(e.message||'no connection'));
+    document.getElementById('img-save-btn').textContent='✓ Save & Finish — try again';
+  }
 }
 function imgCancel(){
   if(imgRequired){ showToast('Photo is required to finish'); return; }
