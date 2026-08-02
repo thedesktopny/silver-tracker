@@ -363,6 +363,7 @@ const NAV_ITEMS = [
   {route:'print', label:'Print Labels', icon:'🏷'},
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
+  {route:'attention', label:'Needs Attention', icon:'⚠️'},
   {route:'production', label:'Production', icon:'📈'},
   {route:'orders', label:'Orders', icon:'▦'},
   {route:'history', label:'History', icon:'≡'},
@@ -555,8 +556,9 @@ if(sessionStorage.getItem('glint_admin')==='1'){
 // ========================================================================
 function renderSidebar(){
   const route=currentRoute();
+  try{ _attnCount = (typeof attentionCount==='function' && scans.length) ? attentionCount() : 0; }catch(e){ _attnCount=0; }
   document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.map(n=>
-    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}</a>`
+    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}${n.route==='attention'&&_attnCount?`<span style="margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">${_attnCount}</span>`:''}</a>`
   ).join('');
 }
 function startClock(){
@@ -659,7 +661,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',attention:'Needs Attention',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -684,6 +686,7 @@ const ROUTE_RENDERERS={
   print: renderPrintPage,
   reports: renderReportsPage,
   insights: renderInsightsPage,
+  attention: renderAttentionPage,
   production: renderProductionPage,
   orders: renderOrdersListPage,
   history: renderHistoryPage,
@@ -982,30 +985,107 @@ function renderStatDetailPage(kind){
       </div></div>`).join(''):'<div class="empty">Nothing left running</div>';
   } else if(kind==='rework'){
     let list=computeAllRework();
-    // Which stages have anything sent back to them
-    const stageCount={};
-    list.forEach(it=>it.reworks.forEach(r=>{ stageCount[r.role]=(stageCount[r.role]||0)+1; }));
+
+    // Date range
+    const now=new Date(), sod=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const ranges={
+      today:{label:'Today', from:sod, to:new Date(sod.getTime()+86400000)},
+      yesterday:{label:'Yesterday', from:new Date(sod.getTime()-86400000), to:sod},
+      week:{label:'Last 7 days', from:new Date(sod.getTime()-6*86400000), to:new Date(sod.getTime()+86400000)},
+      month:{label:'Last 30 days', from:new Date(sod.getTime()-29*86400000), to:new Date(sod.getTime()+86400000)},
+      all:{label:'All time', from:new Date(0), to:new Date(8640000000000000)}
+    };
+    if(reworkCustom.from){
+      const f=new Date(reworkCustom.from+'T00:00:00'), t=new Date(reworkCustom.to||reworkCustom.from);
+      t.setHours(23,59,59,999);
+      ranges.custom={label:'Custom', from:f, to:t};
+    }
+    const R=ranges[reworkRange]||ranges.week;
+    list=list.map(it=>({...it, reworks: it.reworks.filter(r=>{ const d=new Date(r.at); return d>=R.from && d<R.to; })}))
+             .filter(it=>it.reworks.length);
+
+    // Stage tallies within the range
+    const stageCount={}, workerCount={};
+    list.forEach(it=>it.reworks.forEach(r=>{
+      stageCount[r.role]=(stageCount[r.role]||0)+1;
+      workerCount[r.worker]=(workerCount[r.worker]||0)+1;
+    }));
     const stages=Object.entries(stageCount).sort((a,b)=>b[1]-a[1]);
     const totalBacks=stages.reduce((a,[,n])=>a+n,0);
-    html+=`<div class="card"><div class="card-label">Filter by stage</div>
-      <div style="display:flex;flex-wrap:wrap;gap:7px">
-        <button class="btn btn-sm ${!reworkFilter?'btn-gold':'btn-ghost'}" onclick="reworkFilter=null;renderStatDetailPage('rework')">All (${totalBacks})</button>
-        ${stages.map(([role,n])=>`<button class="btn btn-sm ${reworkFilter===role?'btn-gold':'btn-ghost'}" onclick="reworkFilter='${jsstr(role)}';renderStatDetailPage('rework')">${esc(role)} (${n})</button>`).join('')}
+    const maxStage=Math.max(1,...stages.map(([,n])=>n));
+    const HUES=['#dc2626','#d97706','#7c3aed','#0ea5e9','#059669','#db2777'];
+    const hueFor=i=>HUES[i%HUES.length];
+
+    // Controls
+    html+=`<div class="card">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
+        ${Object.entries(ranges).filter(([k])=>k!=='custom').map(([k,v])=>
+          `<button class="btn btn-sm ${reworkRange===k?'btn-gold':'btn-ghost'}" onclick="reworkCustom={};reworkRange='${k}';renderStatDetailPage('rework')">${v.label}</button>`).join('')}
+        <span style="display:flex;align-items:center;gap:5px;margin-left:auto;flex-wrap:wrap">
+          <input type="date" value="${reworkCustom.from||''}" onchange="reworkCustom.from=this.value;reworkRange='custom';renderStatDetailPage('rework')" style="width:auto;padding:6px 8px;font-size:12px">
+          <span style="color:var(--ink3);font-size:12px">to</span>
+          <input type="date" value="${reworkCustom.to||''}" onchange="reworkCustom.to=this.value;reworkRange='custom';renderStatDetailPage('rework')" style="width:auto;padding:6px 8px;font-size:12px">
+        </span>
       </div>
-      ${stages.length>1?`<div style="font-size:12px;color:var(--ink3);margin-top:10px">Most sent back to <strong style="color:var(--orange)">${esc(stages[0][0])}</strong> — ${stages[0][1]} of ${totalBacks} returns.</div>`:''}
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding-top:12px;border-top:1px solid var(--border)">
+        <div><div style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:800;color:var(--orange);line-height:1">${totalBacks}</div>
+          <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">returns · ${R.label.toLowerCase()}</div></div>
+        <div><div style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:800;line-height:1">${list.length}</div>
+          <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">pieces affected</div></div>
+        ${stages.length?`<div style="flex:1;min-width:200px">
+          <div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Worst step</div>
+          <div style="font-size:15px;font-weight:700;color:${hueFor(0)}">${esc(stages[0][0])} — ${stages[0][1]} return${stages[0][1]!==1?'s':''}</div>
+        </div>`:''}
+      </div>
     </div>`;
+
+    // Stage breakdown with bars, click to filter
+    if(stages.length){
+      html+=`<div class="card"><div class="card-label">Which step they came back to <span style="font-weight:600;text-transform:none;color:var(--ink3)">— tap to filter</span></div>
+        ${!reworkFilter?'':`<button class="btn btn-ghost btn-sm" style="margin-bottom:10px" onclick="reworkFilter=null;renderStatDetailPage('rework')">← Show all steps</button>`}
+        ${stages.map(([role,n],i)=>{
+          const on=reworkFilter===role;
+          return `<div class="clickable" onclick="reworkFilter=${on?'null':`'${jsstr(role)}'`};renderStatDetailPage('rework')"
+            style="display:flex;align-items:center;gap:12px;padding:9px 8px;border-radius:8px;${on?'background:var(--accent-soft)':''}">
+            <span style="width:11px;height:11px;border-radius:3px;background:${hueFor(i)};flex-shrink:0"></span>
+            <span style="font-weight:600;min-width:110px">${esc(role)}</span>
+            <span style="flex:1;height:10px;background:var(--surface2);border-radius:5px;overflow:hidden">
+              <span style="display:block;width:${Math.round(n/maxStage*100)}%;height:100%;background:${hueFor(i)};border-radius:5px"></span></span>
+            <strong style="font-family:'Outfit',sans-serif;font-size:16px;min-width:28px;text-align:right">${n}</strong>
+            <span style="color:var(--ink3);font-size:11px;min-width:38px;text-align:right">${Math.round(n/totalBacks*100)}%</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+
     if(reworkFilter){
       list=list.map(it=>({...it, reworks: it.reworks.filter(r=>r.role===reworkFilter)}))
                .filter(it=>it.reworks.length);
     }
+
+    // The pieces, newest first, as readable cards
+    list.sort((a,b)=>new Date(b.reworks[b.reworks.length-1].at)-new Date(a.reworks[a.reworks.length-1].at));
+    html+=`<div class="card"><div class="card-label">${reworkFilter?esc(reworkFilter)+' — ':''}${list.length} piece${list.length!==1?'s':''}</div>`;
     html+=list.length?list.map(it=>{
       const label=it.itemDesc&&it.itemDesc!==it.itemId?esc(it.itemDesc):esc(it.itemId);
-      return `<div class="timeline-row clickable" onclick="navigate('${h('item',it.itemId).replace(/'/g,"\\'")}')">
-      <div class="tl-dot" style="background:var(--orange)"></div>
-      <div style="flex:1"><strong>${label}</strong> <span style="color:var(--ink3);font-size:11px">${esc(it.itemId)}</span>${it.customer&&it.customer!=='undefined'?' · <span style="color:var(--ink3)">'+esc(it.customer)+'</span>':''}
-      <div style="font-size:12px;color:var(--orange);margin-top:2px">${it.reworks.map(r=>'↩️ back to '+esc(r.role)+' (round '+r.round+') — '+esc(r.worker)+' · '+fmtDate(r.at)).join('<br>')}</div></div>
-    </div>`;
-    }).join(''):'<div class="empty">No items have been sent back — good sign!</div>';
+      const times=it.reworks.length;
+      return `<div class="clickable" style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)"
+        onclick="navigate('${h('item',it.itemId).replace(/'/g,"\\'")}')">
+        <div style="width:34px;height:34px;border-radius:9px;background:${times>1?'var(--red)':'var(--orange)'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0">${times}×</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15px">${label}</div>
+          <div style="font-size:11.5px;color:var(--ink3)">${esc(it.itemId)}${it.customer&&it.customer!=='undefined'?' · '+esc(it.customer):''}</div>
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${it.reworks.map(r=>`<div style="font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+              <span style="background:var(--orange-soft);color:var(--orange);font-weight:700;padding:2px 7px;border-radius:5px;font-size:11px">↩️ ${esc(r.role)}</span>
+              <span style="color:var(--ink2)">round ${r.round}</span>
+              <span style="color:var(--ink3)">· ${esc(r.worker)} · ${fmtDate(r.at)}</span>
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>`;
+    }).join(''):'<div class="empty">Nothing sent back in this period — good sign!</div>';
+    html+='</div>';
   } else if(kind==='today'){
     const today=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     html+=today.length?today.map(s=>`<div class="timeline-row clickable" onclick="navigate('${h('item',s.item_id).replace(/'/g,"\\'")}')">
@@ -1166,6 +1246,9 @@ function buildPipelineItems(){
     it.events.push({t:s.created_at, kind:(s.status||'').includes('Started')?'start':'stop', idx, worker:s.worker});
   });
   (stageEvents||[]).forEach(e=>{
+    // Bookkeeping events (attention dismissals, rework reasons, blocks) are not
+    // pipeline movements — feeding them in would wrongly advance the item
+    if(['attn-ack','rework-paid','rework-free','blocked-unbooked','override-unbooked'].includes(e.action)) return;
     const it=ensure(e.item_id, e.item_desc, ''); if(!it) return;
     if(e.worker) it.workers.add(e.worker);
     it.events.push({t:e.created_at, kind:e.action==='override'?'override':'finish', stage:e.stage, worker:e.worker});
@@ -1898,6 +1981,7 @@ function normalizeItemType(desc){
 // PRODUCTION — shop capacity & throughput (pieces, not revenue)
 // ========================================================================
 let reworkFilter=null;   // stage selected on the Sent Back page
+let reworkRange='week', reworkCustom={};
 let prodPeriod='week', prodOffset=0; // 0=current, -1=previous...
 let prodDrill=null; // {kind:'stage'|'worker', key:'Polish'}
 function prodOpenDrill(kind,key){
@@ -2133,6 +2217,186 @@ async function ensureTicketsLoaded(){
     fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
     localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
   }catch(e){}
+}
+
+
+// ========================================================================
+// NEEDS ATTENTION — the problems worth chasing, not every scan
+// ========================================================================
+const STUCK_HOURS=24;                 // sitting at one step longer than this = a problem
+let attnFilter='all';
+let _attnCount=0;
+function attnAcks(){
+  // Dismissals are stored as stage_events: action 'attn-ack', reason kept in `stage`
+  const acks={};
+  (stageEvents||[]).forEach(e=>{
+    if(e.action!=='attn-ack') return;
+    acks[e.item_id+'::'+(e.item_desc||'')]=true;   // item_desc carries the issue type
+    acks['REASON::'+e.item_id+'::'+(e.item_desc||'')]=e.stage||'';
+    acks['WHEN::'+e.item_id+'::'+(e.item_desc||'')]=e.created_at;
+  });
+  return acks;
+}
+function attnIsAcked(acks, itemId, type){ return !!acks[itemId+'::'+type]; }
+
+function computeAttention(){
+  const {items}=buildPipelineItems();
+  const acks=attnAcks();
+  const all=Object.values(items);
+  const now=Date.now();
+  const issues=[];
+
+  // Group by order so we can see stragglers
+  const byOrder={};
+  all.forEach(it=>{ const o=orderIdOf(it.id); (byOrder[o]=byOrder[o]||[]).push(it); });
+
+  all.forEach(it=>{
+    if(it.col===DELIV_LAST) return;                       // delivered, nothing to chase
+    const sinceMs = it.since ? now-new Date(it.since).getTime() : 0;
+    const hours = sinceMs/3600000;
+
+    // 1. Stuck at one step for over a day
+    if(hours>=STUCK_HOURS && it.col!=='ready'){
+      issues.push({type:'stuck', item:it, hours,
+        title:'Sitting too long', detail:'No movement for '+Math.floor(hours/24)+'d '+Math.round(hours%24)+'h at '+colLabel(it.col),
+        sev: hours>=72?2:1});
+    }
+  });
+
+  // 2. Waiting for a set — the rest of the order is done, these are holding it up
+  Object.entries(byOrder).forEach(([oid,list])=>{
+    if(list.length<2) return;
+    const done=list.filter(x=>x.fin>=LASTW || x.col==='ready' || (typeof x.col==='number'&&x.col>=DELIV0));
+    const behind=list.filter(x=>!(x.fin>=LASTW || x.col==='ready' || (typeof x.col==='number'&&x.col>=DELIV0)));
+    if(done.length && behind.length && done.length>=list.length-behind.length && behind.length<=Math.max(2,Math.floor(list.length/2))){
+      behind.forEach(x=>{
+        issues.push({type:'set', item:x, oid,
+          title:'Holding up a set', detail:done.length+' of '+list.length+' pieces on '+oid+' are ready — this one is at '+colLabel(x.col),
+          sev: done.length===list.length-1?2:1});
+      });
+    }
+  });
+
+  // 3. Left behind — the rest of the order moved past this piece
+  Object.entries(byOrder).forEach(([oid,list])=>{
+    if(list.length<2) return;
+    const pos=list.map(x=>pipePos(x));
+    const maxPos=Math.max(...pos);
+    list.forEach((x,i)=>{
+      const gap=maxPos-pos[i];
+      if(gap>=3 && pipePos(x)<=LASTW){
+        issues.push({type:'behind', item:x, oid,
+          title:'Left behind', detail:'The rest of '+oid+' has moved '+gap+' steps ahead — this is still at '+colLabel(x.col),
+          sev:1});
+      }
+    });
+  });
+
+  // Collapse duplicates, keep the most severe reason per item
+  const best={};
+  issues.forEach(is=>{
+    const k=is.item.id+'::'+is.type;
+    is.acked=attnIsAcked(acks,is.item.id,is.type);
+    is.ackReason=acks['REASON::'+is.item.id+'::'+is.type]||'';
+    if(!best[k] || is.sev>best[k].sev) best[k]=is;
+  });
+  const out=Object.values(best);
+  out.sort((a,b)=> (a.acked-b.acked) || (b.sev-a.sev) || (b.hours||0)-(a.hours||0));
+  return out;
+}
+function attentionCount(){
+  try{ return computeAttention().filter(i=>!i.acked).length; }catch(e){ return 0; }
+}
+
+async function attnAck(itemId, type, desc){
+  const reason=prompt('Why is this OK to ignore?\n\n(e.g. "at the special repair place", "customer approved delay")');
+  if(reason===null) return;
+  const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, item_desc:type, stage:reason||'no reason given', action:'attn-ack', worker:'Admin'})});
+  if(r.ok){ toast('✓ Marked as handled'); await loadStageEvents(); renderAttentionPage(); }
+  else toast('Could not save');
+}
+async function attnUnack(itemId, type){
+  const r=await sb('stage_events?item_id=eq.'+encodeURIComponent(itemId)+'&item_desc=eq.'+encodeURIComponent(type)+'&action=eq.attn-ack',{method:'DELETE'});
+  if(r.ok){ toast('Reopened'); await loadStageEvents(); renderAttentionPage(); }
+  else toast('Could not reopen');
+}
+function attnSetFilter(f){ attnFilter=f; renderAttentionPage(); }
+
+function renderAttentionPage(){
+  const all=computeAttention();
+  const open=all.filter(i=>!i.acked), handled=all.filter(i=>i.acked);
+  const TYPES={
+    stuck:{label:'Sitting too long', icon:'⏳', hue:'var(--red)'},
+    set:{label:'Holding up a set', icon:'🧩', hue:'var(--orange)'},
+    behind:{label:'Left behind', icon:'🐢', hue:'var(--gold)'}
+  };
+  const counts={}; open.forEach(i=>counts[i.type]=(counts[i.type]||0)+1);
+  const shown=(attnFilter==='all'?open:open.filter(i=>i.type===attnFilter));
+
+  let html=`<div class="page-head">
+    <div><div class="page-title">Needs Attention</div><div class="page-sub">Only what's actually going wrong — everything else stays quiet</div></div>
+  </div>`;
+
+  html+=`<div class="stat-grid">
+    <div class="stat-tile ${open.length?'alert':''}" onclick="attnSetFilter('all')" style="border-left:4px solid ${open.length?'var(--red)':'var(--green)'}">
+      <div class="stat-num" style="color:${open.length?'var(--red)':'var(--green)'}">${open.length}</div>
+      <div class="stat-label">${open.length?'Open Issues':'All Clear ✓'}</div></div>
+    ${Object.entries(TYPES).map(([k,t])=>`
+      <div class="stat-tile" onclick="attnSetFilter('${k}')" style="border-left:4px solid ${t.hue};${attnFilter===k?'box-shadow:0 0 0 2px '+t.hue:''}">
+        <div class="stat-num" style="color:${t.hue}">${counts[k]||0}</div>
+        <div class="stat-label">${t.icon} ${t.label}</div></div>`).join('')}
+  </div>`;
+
+  if(attnFilter!=='all'){
+    html+=`<button class="btn btn-ghost btn-sm" style="margin-bottom:12px" onclick="attnSetFilter('all')">← Show everything</button>`;
+  }
+
+  if(!open.length){
+    html+=`<div class="card" style="text-align:center;padding:34px;border-color:var(--green);background:var(--green-soft)">
+      <div style="font-size:44px;line-height:1">✓</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:700;margin-top:6px">Nothing needs attention</div>
+      <div style="font-size:13px;color:var(--ink2);margin-top:4px">No pieces stuck over ${STUCK_HOURS}h, no sets waiting, nothing left behind.</div>
+    </div>`;
+  } else {
+    html+=shown.map(i=>{
+      const t=TYPES[i.type];
+      const label=i.item.desc&&i.item.desc!==i.item.id?esc(i.item.desc):esc(i.item.id);
+      return `<div class="card" style="border-left:4px solid ${t.hue}">
+        <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+          <div style="font-size:26px;line-height:1">${t.icon}</div>
+          <div style="flex:1;min-width:200px">
+            <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${t.hue}">${i.sev>1?'⚠️ ':''}${esc(i.title)}</div>
+            <div class="clickable" style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:700;margin-top:2px"
+              onclick="navigate('${h('item',i.item.id).replace(/'/g,"\\'")}')">${label}</div>
+            <div style="font-size:12px;color:var(--ink3)">${esc(i.item.id)}${i.item.customer?' · '+esc(i.item.customer):''}</div>
+            <div style="font-size:13px;color:var(--ink2);margin-top:6px">${esc(i.detail)}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+            <button class="btn btn-ghost btn-sm" onclick="navigate('${h('order',orderIdOf(i.item.id)).replace(/'/g,"\\'")}')">View order</button>
+            <button class="btn btn-sm" onclick="attnAck('${jsstr(i.item.id)}','${jsstr(i.type)}','${jsstr(i.item.desc||'')}')">✓ Handled / ignore</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')||'<div class="card"><div class="empty">Nothing in this category</div></div>';
+  }
+
+  if(handled.length){
+    html+=`<div class="card"><div class="card-label">Marked as handled (${handled.length})</div>
+      ${handled.map(i=>{
+        const label=i.item.desc&&i.item.desc!==i.item.id?esc(i.item.desc):esc(i.item.id);
+        return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:13.5px">${label} <span style="color:var(--ink3);font-size:11px">${esc(i.item.id)}</span></div>
+            <div style="font-size:12px;color:var(--ink3)">${esc(i.title)} — <em>${esc(i.ackReason||'no reason given')}</em></div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="attnUnack('${jsstr(i.item.id)}','${jsstr(i.type)}')">Reopen</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  document.getElementById('content').innerHTML=html;
 }
 
 async function renderProductionPage(){
@@ -2828,6 +3092,13 @@ function renderRolesList(){
         <span style="font-weight:700;font-size:15px">${esc(r.name)}</span>
         <button class="btn btn-danger btn-sm" onclick="deleteRole(${r.id})">✕ Remove</button>
       </div>
+      <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        Scan behaviour:
+        <select onchange="updateRoleSetting(${r.id},'track_mode',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
+          <option value="timed" ${(!r.track_mode||r.track_mode==='timed')?'selected':''}>⏱️ Timed — start &amp; stop</option>
+          <option value="status" ${r.track_mode==='status'?'selected':''}>✓ Status only — one tap, no timer</option>
+        </select>
+      </label>
       <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">
         Photo after work:
         <select onchange="updateRoleSetting(${r.id},'image_capture',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
