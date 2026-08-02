@@ -422,6 +422,42 @@ function stageForRole(role){
   return null; // role with no pipeline step — time tracking still works normally
 }
 function isDeliveryRole(role){ return stageForRole(role)==='delivery'; }
+
+// Is this role one of the mid-process steps we guard? (Inspection through Final Inspection)
+function isGuardedStage(role){
+  const i=stageForRole(role);
+  return typeof i==='number' && i>=3;   // Inspection, Lacquer, Final Inspection...
+}
+// Does the ticket actually include this service for this item?
+function serviceIsBooked(role, services){
+  if(!Array.isArray(services) || !services.length) return null;   // unknown — don't block
+  const r=String(role||'').toLowerCase().trim();
+  const norm=s=>String(s||'').toLowerCase().trim();
+  if(services.some(s=>norm(s)===r)) return true;
+  // Loose match so "Inspection & Lacquer Prep" counts against a "Lacquer" line
+  const keyword=r.split(/[^a-z]+/).filter(w=>w.length>3)[0]||r;
+  return services.some(s=>norm(s).includes(keyword) || r.includes(norm(s)));
+}
+// Warn (and require deliberate confirmation) before doing work that wasn't ordered
+function askUnbookedService(itemName, stageName, services){
+  return new Promise(resolve=>{
+    const bg=document.createElement('div');
+    bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.8);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    bg.innerHTML=`<div style="background:var(--surface);border-radius:16px;padding:24px;max-width:400px;width:100%;text-align:center">
+      <div style="font-size:40px;line-height:1;margin-bottom:8px">⛔</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--red)">Service not scheduled</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:700;margin:8px 0 4px">${itemName}</div>
+      <div style="font-size:14px;color:var(--ink);margin-bottom:6px"><strong>${stageName}</strong> is not on this ticket.</div>
+      <div style="font-size:13px;color:var(--ink3);margin-bottom:14px">This item is booked for:<br><strong style="color:var(--ink2)">${services.join(' · ')||'—'}</strong></div>
+      <div style="font-size:13.5px;font-weight:600;color:var(--red);margin-bottom:18px">Speak to the manager, or place the piece in the correct station.</div>
+      <button id="ub-stop" style="width:100%;padding:14px;border:none;border-radius:10px;background:var(--red);color:#fff;font-size:15px;font-weight:700;margin-bottom:10px;cursor:pointer">OK — I won't do it</button>
+      <button id="ub-go" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink3);font-size:13px;cursor:pointer">Manager approved — continue anyway</button>
+    </div>`;
+    document.body.appendChild(bg);
+    bg.querySelector('#ub-stop').onclick=()=>{ bg.remove(); resolve(false); };
+    bg.querySelector('#ub-go').onclick=()=>{ bg.remove(); resolve(true); };
+  });
+}
 // If the role names the delivery step, just do it — no need to ask again.
 // Only a generic role (plain "Delivery") should get the three-way question.
 function deliveryStageForRole(role){
@@ -542,7 +578,9 @@ async function resolveItemInfo(itemId){
       const name=partMatch?(baseName+' — '+partMatch[1]):baseName;
       const customer=t.summary&&t.summary.customer?(t.summary.customer.fullName||'').trim():'';
       const city=t.summary&&t.summary.customer?(t.summary.customer.city||''):'';
-      const info={name, customer, city};
+      const services=(dev&&Array.isArray(dev.repairProdItems))
+        ? dev.repairProdItems.map(s=>String(s.name||'').trim()).filter(Boolean) : [];
+      const info={name, customer, city, services};
       itemCache[itemId]={...itemCache[itemId], ...info};
       itemNameCache[itemId]=info;
       localStorage.setItem('st_item_names', JSON.stringify(itemNameCache));
@@ -1541,6 +1579,47 @@ async function processScan(itemId) {
     }
   }
 
+  // Status-only roles: one scan records the step and finishes — no timer
+  if (curRoleSetting().track_mode === 'status') {
+    const si = itemCache[itemId] || {};
+    try{
+      await fetch(SUPABASE_URL + '/rest/v1/scans', {
+        method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body: JSON.stringify({ item_id:itemId, item_desc:si.name||'', status:task+' Started',
+                               worker:selectedWorker.name, role:task, customer:si.customer||'' })
+      });
+      await fetch(SUPABASE_URL + '/rest/v1/scans', {
+        method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body: JSON.stringify({ item_id:itemId, item_desc:si.name||'', status:task+' Stopped',
+                               worker:selectedWorker.name, role:task, customer:si.customer||'' })
+      });
+      playBeep(920,140);
+      showToast('✓ ' + task + ' recorded — ' + (si.name || itemId));
+    }catch(e){ showToast('⚠️ Could not save — check connection'); }
+    document.getElementById('scan-input').value = '';
+    setTimeout(() => document.getElementById('scan-input').focus(), 100);
+    return;
+  }
+
+  // Guard: don't let someone do a service the ticket never ordered
+  if (!isInProgress && isGuardedStage(task)) {
+    const gi = itemCache[itemId] || {};
+    const booked = serviceIsBooked(task, gi.services);
+    if (booked === false) {
+      const proceed = await askUnbookedService(gi.name || itemId, task, gi.services || []);
+      if (!proceed) {
+        playErrorBeep();
+        await postStageEvent(itemId, task, 'blocked-unbooked', gi.name || '');
+        document.getElementById('scan-input').value = '';
+        setTimeout(() => document.getElementById('scan-input').focus(), 100);
+        return;
+      }
+      await postStageEvent(itemId, task, 'override-unbooked', gi.name || '');
+    }
+  }
+
   // PREVENTION: one running item per role per worker. Starting a new one closes the
   // previous automatically, so a stop scan that fails can never leave a timer running
   // for days. This stops runaway hours accumulating in the first place.
@@ -2512,8 +2591,23 @@ async function toggleCamera() {
 
 let lastFailedScan = '';
 let cameraScanHandled = false;   // one accepted read per camera session
+// A bad decode produces a DIFFERENT wrong string each frame, while a good decode
+// repeats identically. Requiring two matching reads kills nearly all misreads.
+let scanCandidate=null, scanCandidateHits=0;
+function confirmedRead(code){
+  if(!code) return null;
+  if(code===scanCandidate){
+    scanCandidateHits++;
+    if(scanCandidateHits>=2) return code;   // seen twice — trust it
+  } else {
+    scanCandidate=code; scanCandidateHits=1;
+  }
+  return null;
+}
+function resetConfirm(){ scanCandidate=null; scanCandidateHits=0; }
 async function startCamera() {
   cameraScanHandled = false;
+  resetConfirm();
   const container = document.getElementById('camera-container');
   const btn = document.getElementById('camera-btn');
   const video = document.getElementById('camera-video');
@@ -2585,8 +2679,9 @@ async function startCamera() {
           const barcodes = await detector.detect(video);
           if (!cameraActive || cameraScanHandled) return;   // re-check after the await
           if (barcodes.length > 0) {
+            const code = confirmedRead(barcodes[0].rawValue);
+            if (!code) return;                 // wait for a matching second read
             cameraScanHandled = true;
-            const code = barcodes[0].rawValue;
             if (navigator.vibrate) navigator.vibrate(100);
             stopCamera();
             document.getElementById('scan-input').value = code;
@@ -2599,13 +2694,25 @@ async function startCamera() {
     else if (typeof ZXingBrowser !== 'undefined' || typeof ZXing !== 'undefined') {
       const ZX = (typeof ZXingBrowser !== 'undefined') ? ZXingBrowser : ZXing;
       try {
-        codeReader = new ZX.BrowserMultiFormatReader();
+        // Only our own CODE128 labels — scanning every format invites misreads
+        let zxHints=null;
+        try{
+          const F=ZX.BarcodeFormat||(typeof ZXing!=='undefined'&&ZXing.BarcodeFormat);
+          const H=ZX.DecodeHintType||(typeof ZXing!=='undefined'&&ZXing.DecodeHintType);
+          if(F&&H){
+            zxHints=new Map();
+            zxHints.set(H.POSSIBLE_FORMATS,[F.CODE_128]);
+            zxHints.set(H.TRY_HARDER,true);
+          }
+        }catch(_){}
+        codeReader = zxHints ? new ZX.BrowserMultiFormatReader(zxHints) : new ZX.BrowserMultiFormatReader();
         // decodeFromStream is more reliable on iOS than decodeFromVideoElement
         if (codeReader.decodeFromStream) {
           codeReader.decodeFromStream(stream, video, (result, err) => {
             if (result && !cameraScanHandled) {
+              const code = confirmedRead(result.getText ? result.getText() : result.text);
+              if (!code) return;               // wait for a matching second read
               cameraScanHandled = true;
-              const code = result.getText ? result.getText() : result.text;
               if (navigator.vibrate) navigator.vibrate(100);
               stopCamera();
               document.getElementById('scan-input').value = code;
@@ -2615,8 +2722,9 @@ async function startCamera() {
         } else {
           codeReader.decodeFromVideoElement(video, (result, err) => {
             if (result && !cameraScanHandled) {
+              const code = confirmedRead(result.getText ? result.getText() : result.text);
+              if (!code) return;               // wait for a matching second read
               cameraScanHandled = true;
-              const code = result.getText ? result.getText() : result.text;
               if (navigator.vibrate) navigator.vibrate(100);
               stopCamera();
               document.getElementById('scan-input').value = code;
