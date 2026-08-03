@@ -275,7 +275,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-07-30-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-02-b</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -681,9 +681,23 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-07-30-a';
+const APP_VERSION='2026-08-02-b';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
+function showDataWarning(parts){
+  try{
+    let b=document.getElementById('data-warning');
+    if(!b){
+      b=document.createElement('div'); b.id='data-warning';
+      b.style.cssText='position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:9998;'+
+        'background:#d97706;color:#fff;padding:11px 16px;border-radius:10px;font:12.5px/1.45 system-ui,sans-serif;'+
+        'box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:92vw;text-align:center';
+      document.body.appendChild(b);
+    }
+    b.innerHTML='⚠️ Couldn\'t load: '+parts.join(', ')+
+      ' — showing what did load.<br><button onclick="location.reload()" style="margin-top:7px;background:#fff;color:#d97706;border:none;border-radius:6px;padding:6px 14px;font-weight:700;cursor:pointer">Retry</button>';
+  }catch(_){}
+}
 function showFatal(msg, where){
   try{
     let box=document.getElementById('fatal-banner');
@@ -700,7 +714,12 @@ function showFatal(msg, where){
   }catch(_){}
 }
 window.addEventListener('error', e=>showFatal(e.message+(e.filename?' @ line '+e.lineno:''),'script'));
-window.addEventListener('unhandledrejection', e=>showFatal((e.reason&&e.reason.message)||e.reason,'data'));
+window.addEventListener('unhandledrejection', e=>{
+  const msg=String((e.reason&&e.reason.message)||e.reason||'');
+  // A dropped request is a connection issue, not a broken app — don't alarm over it
+  if(/Failed to fetch|NetworkError|Load failed|ERR_NETWORK|aborted/i.test(msg)) return;
+  showFatal(msg,'data');
+});
 
 const ROUTE_RENDERERS={
   live: renderLivePage,
@@ -756,12 +775,39 @@ async function loadPipeLabels(){ try{ const r=await sb('labels?select=item_id,it
 async function bootstrap(){
   startClock();
   if(!location.hash) location.hash='#/live';
-  await Promise.all([loadAllScans(), loadWorkers(), loadRoles(), loadStageEvents(), loadPipeLabels(), loadPipeStages()]);
-  checkForNewScans();
-  router();
+
+  // THE WHITE-PAGE BUG: this used to be Promise.all, so ONE failed request (a flaky
+  // moment on mobile data, Supabase blinking) rejected the whole thing, router() never
+  // ran, and the page stayed blank. allSettled lets each load fail on its own and the
+  // dashboard still draws with whatever arrived.
+  const loaders=[
+    ['scans', loadAllScans], ['workers', loadWorkers], ['roles', loadRoles],
+    ['stage events', loadStageEvents], ['labels', loadPipeLabels], ['stages', loadPipeStages]
+  ];
+  const results=await Promise.allSettled(loaders.map(([,fn])=>fn()));
+  const failed=results.map((r,i)=>r.status==='rejected'?loaders[i][0]:null).filter(Boolean);
+
+  try{ checkForNewScans(); }catch(e){}
+  router();                                  // ALWAYS render, even on partial data
+
+  if(failed.length){
+    // One quiet retry — most of these are momentary
+    setTimeout(async ()=>{
+      const again=await Promise.allSettled(loaders.map(([,fn])=>fn()));
+      const still=again.map((r,i)=>r.status==='rejected'?loaders[i][0]:null).filter(Boolean);
+      if(still.length){
+        showDataWarning(still);
+      } else {
+        const b=document.getElementById('data-warning'); if(b) b.remove();
+        router();
+      }
+    }, 4000);
+    showDataWarning(failed);
+  }
+
   setInterval(async ()=>{
-    await Promise.all([loadAllScans(), loadStageEvents()]);
-    checkForNewScans();
+    await Promise.allSettled([loadAllScans(), loadStageEvents()]);
+    try{ checkForNewScans(); }catch(e){}
     if(currentRoute()==='live') renderLivePage();
     if(currentRoute()==='pipeline') renderPipeBody();
   }, 15000);
@@ -3099,7 +3145,7 @@ function renderWorkersPage(){
   loadWorkersAndRoles();
 }
 async function loadWorkersAndRoles(){
-  await Promise.all([loadWorkers(), loadRoles()]);
+  await Promise.allSettled([loadWorkers(), loadRoles()]);   // never let one failure blank the page
   renderNwRoles(); renderRolesList(); renderWorkersTable();
 }
 function renderNwRoles(){
