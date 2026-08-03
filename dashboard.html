@@ -276,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-d</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-e</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -701,7 +701,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-d';
+const APP_VERSION='2026-08-03-e';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -790,7 +790,15 @@ async function loadAllScans(){
   scans=(Array.isArray(r)?r:[]).map(s=>({...s, item_id:normalizeItemId(s.item_id)}));
   _unitsIdx=null;
 }
-async function loadWorkers(){ workers=await sbList('workers?select=*&order=name.asc'); }
+async function loadWorkers(){
+  // Some setups reject the ordered query (missing column, RLS on sort). Fall back to a
+  // plain select and sort locally rather than losing the whole worker list.
+  try{ workers=await sbList('workers?select=*&order=name.asc', 2); }
+  catch(e){
+    const rows=await sbList('workers?select=*', 2);
+    workers=(rows||[]).slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')));
+  }
+}
 async function loadRoles(){ roles=await sbList('roles?select=*&order=name.asc'); }
 async function loadStageEvents(){ try{ const r=await sbList('stage_events?select=*&order=created_at.asc&limit=8000'); stageEvents=Array.isArray(r)?r:[]; }catch(e){ stageEvents=[]; } _unitsIdx=null; }
 async function loadPipeLabels(){ try{ const r=await sbList('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=(Array.isArray(r)?r:[]).map(l=>({...l, item_id:normalizeItemId(l.item_id)})); }catch(e){ pipeLabels=[]; } }
