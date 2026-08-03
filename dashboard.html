@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
 <style>
 :root{
   --bg:#f6f7fb; --ink:#12141c; --ink2:#4b5165; --ink3:#8b90a3;
@@ -275,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-02-g</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-d</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -496,15 +497,19 @@ async function resolveTicketId(oid){
     const hit=allTickets.find(x=>getOrderId(x)===oid);
     if(hit&&hit.summary&&hit.summary.id){ oidMap[oid]=hit.summary.id; localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); return oidMap[oid]; }
   }
+  // Older tickets sit beyond the first pages. Keep paging until we find it or run out —
+  // the map is cached, so this deep scan only happens once per unknown order.
   try{
-    for(let page=1; page<=4; page++){
+    let pages=99;
+    for(let page=1; page<=pages && page<=40; page++){
       const d=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
       const batch=(d.data&&d.data.ticketData)||[];
       batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
-      localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
-      if(oidMap[oid]) return oidMap[oid];
       const pg=d.data&&d.data.pagination;
-      if(!pg || page>=parseInt(pg.total_pages)) break;
+      if(pg&&pg.total_pages) pages=parseInt(pg.total_pages)||1;
+      try{ localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); }catch(_){}
+      if(oidMap[oid]) return oidMap[oid];
+      if(!batch.length) break;
     }
   }catch(e){}
   return null; // never guess — wrong data is worse than no data
@@ -696,7 +701,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-02-g';
+const APP_VERSION='2026-08-03-d';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1357,6 +1362,16 @@ function buildPipelineItems(){
     if(typeof idx!=='number') return;
     it.events.push({t:s.created_at, kind:(s.status||'').includes('Started')?'start':'stop', idx, worker:s.worker});
   });
+  // RepairDesk is the authority on delivery. If a piece is marked Delivered / Picked up /
+  // On way over there, reflect it here so the two systems agree without extra scanning.
+  Object.entries(rdStatus||{}).forEach(([itemId,name])=>{
+    const stage=rdStatusToStage(name);
+    if(!stage) return;
+    const it=items[itemId]; if(!it) return;
+    it.events.push({t:new Date().toISOString(), kind:'override', stage, worker:'RepairDesk'});
+    it.rdStatus=name;
+  });
+
   (stageEvents||[]).forEach(e=>{
     // Bookkeeping events (attention dismissals, rework reasons, blocks) are not
     // pipeline movements — feeding them in would wrongly advance the item
@@ -1419,7 +1434,7 @@ function renderPipelinePage(){
           <button class="${pipeView==='board'?'on':''}" onclick="pipeSetView('board')">Board</button>
           <button class="${pipeView==='order'?'on':''}" onclick="pipeSetView('order')">By Order</button>
         </div>
-        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()">
+        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
         <select id="pipe-stage" onchange="pipeStage=this.value;renderPipeBody()" style="width:auto;padding:8px 10px;font-size:12.5px">
           <option value="all">All steps</option>
           ${PIPE_COLS.map(c=>`<option value="${c.k}">${c.l}</option>`).join('')}
@@ -1623,7 +1638,7 @@ function renderPrintPage(){
     <div class="page-head">
       <div><div class="page-title">Print Labels</div><div class="page-sub">Load a ticket, pick items, print barcodes</div></div>
       <div class="head-actions">
-        <input class="search" id="tickets-search" placeholder="Search ticket # or customer..." oninput="filterTickets()">
+        <input class="search" id="tickets-search" placeholder="Search ticket # or customer..." oninput="filterTickets()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
         <button class="btn btn-ghost btn-sm" onclick="loadTickets()">↻ Reload</button>
       </div>
     </div>
@@ -1650,6 +1665,15 @@ async function loadTickets(){
     allTickets=fetched;
     // Warm the order_id -> internal ticket id map while we have the list
     fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+    // RepairDesk's own per-item status — used to auto-close delivered pieces
+    rdStatus={};
+    fetched.forEach(t=>{
+      const o=t.summary&&t.summary.order_id; if(!o) return;
+      (t.devices||[]).forEach((d,i)=>{
+        const nm=d.status&&d.status.name; if(nm) rdStatus[o+'-'+(i+1)]=nm;
+      });
+    });
+    try{ localStorage.setItem('glint_rd_status', JSON.stringify(rdStatus)); }catch(e){}
     localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
     renderTickets(allTickets);
   }catch(err){
@@ -2339,6 +2363,7 @@ let STUCK_HOURS=parseInt(localStorage.getItem('glint_stuck_hours')||'48',10);
 function attnSetStuck(h){ STUCK_HOURS=h; localStorage.setItem('glint_stuck_hours',String(h)); renderAttentionPage(); }
 let attnFilter='all';
 let _attnCount=0;
+let rdStatus=JSON.parse(localStorage.getItem('glint_rd_status')||'{}');   // itemId -> RepairDesk status
 let workersDerived=false;   // true when the workers list came from scans, not the table
 function attnAcks(){
   // Dismissals are stored as stage_events: action 'attn-ack', reason kept in `stage`
@@ -2534,6 +2559,10 @@ function renderAttentionPage(){
 // DAY TIMELINE — the shape of the day in the bar, the detail in a list beside it
 // ========================================================================
 let tlDate=new Date(); tlDate.setHours(0,0,0,0);
+let tlOpen=new Set();          // which workers are expanded
+function tlToggle(name){ tlOpen.has(name)?tlOpen.delete(name):tlOpen.add(name); drawTimeline(); }
+function tlExpandAll(){ (window._tlNames||[]).forEach(n=>tlOpen.add(n)); drawTimeline(); }
+function tlCollapseAll(){ tlOpen.clear(); drawTimeline(); }
 let workerHours={};
 const TL_DEFAULT={start:'09:00', end:'17:00'};
 let TL_TIPS=[];
@@ -2550,19 +2579,55 @@ function tlFmt(mins){
   return hh+(m?':'+String(m).padStart(2,'0'):'')+ap;
 }
 function tlDur(m){ const h=Math.floor(m/60), mm=Math.round(m%60); return (h?h+'h ':'')+((mm||!h)?mm+'m':''); }
-function tlHoursFor(name){
-  const w=workerHours[name]||{};
-  const s=tlMins(w.start), e=tlMins(w.end);
-  return { start: s===null?tlMins(TL_DEFAULT.start):s, end: e===null?tlMins(TL_DEFAULT.end):e };
+const TL_DAYS=[['sun','Sun'],['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat']];
+// Hours are kept per weekday: {Daniel:{mon:{start,end},sat:{off:true},…}}.
+// The old single start/end format is still understood and treated as every day.
+function tlSchedFor(name){
+  const w=workerHours[name];
+  if(!w) return null;
+  if(w.start||w.end){                       // legacy flat format
+    const s={}; TL_DAYS.forEach(([k])=>{ s[k]={start:w.start,end:w.end}; });
+    return s;
+  }
+  return w;
+}
+function tlHoursFor(name, dateObj){
+  const d=dateObj||tlDate;
+  const key=TL_DAYS[d.getDay()][0];
+  const sched=tlSchedFor(name)||{};
+  const day=sched[key]||{};
+  if(day.off) return { start:0, end:0, off:true };
+  const s=tlMins(day.start), e=tlMins(day.end);
+  return { start: s===null?tlMins(TL_DEFAULT.start):s, end: e===null?tlMins(TL_DEFAULT.end):e, off:false };
 }
 async function tlSaveHours(){
   const out={};
-  document.querySelectorAll('.tl-hrs').forEach(i=>{ (out[i.dataset.worker]=out[i.dataset.worker]||{})[i.dataset.k]=i.value; });
+  document.querySelectorAll('.tl-hrs').forEach(i=>{
+    const w=i.dataset.worker, day=i.dataset.day, k=i.dataset.k;
+    const rec=((out[w]=out[w]||{})[day]=out[w][day]||{});
+    if(k==='off') rec.off=i.checked; else rec[k]=i.value;
+  });
   workerHours=out;
-  await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+  const r=await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
     body:JSON.stringify({key:'worker_hours', value:JSON.stringify(out)})});
-  toast('✅ Hours saved'); drawTimeline();
+  if(r.ok){ toast('✅ Schedule saved'); } else { toast('Could not save'); }
+  drawTimeline();
 }
+// Copy one day's times to the rest of that worker's week
+function tlCopyDay(worker, day){
+  const g=(d,k)=>document.querySelector('.tl-hrs[data-worker="'+CSS.escape(worker)+'"][data-day="'+d+'"][data-k="'+k+'"]');
+  const s=g(day,'start'), e=g(day,'end');
+  if(!s||!e) return;
+  TL_DAYS.forEach(([k])=>{
+    if(k===day) return;
+    const ts=g(k,'start'), te=g(k,'end');
+    if(ts) ts.value=s.value;
+    if(te) te.value=e.value;
+  });
+  toast('Copied to the whole week — press Save');
+}
+let tlSchedOpen=null;
+function tlSchedToggle(name){ tlSchedOpen = (tlSchedOpen===name?null:name); drawTimeline(); }
 function tlShiftDay(d){ tlDate=new Date(tlDate.getTime()+d*86400000); tlDate.setHours(0,0,0,0); drawTimeline(); }
 function tlPickDate(v){ if(!v) return; const [y,m,d]=v.split('-').map(Number); tlDate=new Date(y,m-1,d); drawTimeline(); }
 function tlToday(){ tlDate=new Date(); tlDate.setHours(0,0,0,0); drawTimeline(); }
@@ -2666,12 +2731,28 @@ function drawTimeline(){
     </div>
   </div>`;
 
+  window._tlNames=rows.map(r=>r.name);
+  if(rows.length){
+    const totalMs=rows.reduce((a,r)=>a+r.workedMs,0);
+    const totalJobs=rows.reduce((a,r)=>a+r.segs.length,0);
+    const active=rows.filter(r=>r.segs.length).length;
+    html+=`<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 16px">
+      <div style="font-size:13px;color:var(--ink2)">
+        <strong>${active}</strong> of ${rows.length} worked · <strong>${totalJobs}</strong> job${totalJobs!==1?'s':''} · <strong>${fmtDur(totalMs)}</strong> hands-on
+      </div>
+      <div style="display:flex;gap:7px">
+        <button class="btn btn-ghost btn-sm" onclick="tlExpandAll()">Expand all</button>
+        <button class="btn btn-ghost btn-sm" onclick="tlCollapseAll()">Collapse all</button>
+      </div>
+    </div>`;
+  }
+
   if(!rows.length){ html+='<div class="card"><div class="empty">No workers or no scans for this day</div></div>'; }
 
   html+=rows.map(r=>{
     const shiftMins=Math.max(r.hrs.end-r.hrs.start,1);
     const workedMin=Math.round(r.workedMs/60000);
-    const pct=Math.min(Math.round(workedMin/shiftMins*100),100);
+    const pct=r.hrs.off?0:Math.min(Math.round(workedMin/shiftMins*100),100);
     const idle=Math.max(shiftMins-workedMin,0);
     const pctCol=pct>=70?'var(--green)':(pct>=40?'var(--orange)':'var(--red)');
 
@@ -2701,26 +2782,33 @@ function drawTimeline(){
         style="position:absolute;left:${gp.left}%;width:${gp.width}%;top:6px;bottom:6px;cursor:help"></div>`;
     }).join('');
 
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:11px">
-          <span style="width:34px;height:34px;border-radius:50%;background:${pctCol};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px">${esc(r.name).trim().charAt(0).toUpperCase()}</span>
-          <div>
-            <div style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:700">${esc(r.name)}</div>
-            <div style="font-size:11.5px;color:var(--ink3)">shift ${tlFmt(r.hrs.start)}–${tlFmt(r.hrs.end)} · worked ${fmtDur(r.workedMs)} · idle ${tlDur(idle)}</div>
+    const isOpen=tlOpen.has(r.name);
+    return `<div class="card" style="padding:14px 16px;margin-bottom:10px">
+      <div class="clickable" onclick="tlToggle('${jsstr(r.name)}')"
+        style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:${isOpen?'12px':'8px'}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0">
+          <span style="color:var(--ink3);font-size:12px;width:12px;flex-shrink:0">${isOpen?'▾':'▸'}</span>
+          <span style="width:30px;height:30px;border-radius:50%;background:${pctCol};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0">${esc(r.name).trim().charAt(0).toUpperCase()}</span>
+          <div style="min-width:0">
+            <div style="font-family:'Outfit',sans-serif;font-size:15.5px;font-weight:700">${esc(r.name)}</div>
+            <div style="font-size:11px;color:var(--ink3)">${r.hrs.off?'<span style="color:var(--ink3);font-style:italic">scheduled off</span> · ':''}${r.segs.length} job${r.segs.length!==1?'s':''} · worked ${fmtDur(r.workedMs)}${r.hrs.off?'':' · idle '+tlDur(idle)}</div>
           </div>
         </div>
-        <div style="text-align:right">
-          <div style="font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:${pctCol};line-height:1">${pct}%</div>
-          <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">of shift</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="text-align:right">
+            <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:800;color:${r.hrs.off?'var(--ink3)':pctCol};line-height:1">${r.hrs.off?'—':pct+'%'}</div>
+            <div style="font-size:9.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">${r.hrs.off?'day off':'of shift'}</div>
+          </div>
         </div>
       </div>
 
-      <div style="position:relative;height:40px;background:var(--surface2);border-radius:8px;margin-bottom:24px">
-        ${ruler}${gapDivs}${blocks}
+      <div style="position:relative;height:${isOpen?'40px':'26px'};background:var(--surface2);border-radius:${isOpen?'8px':'6px'};margin-bottom:${isOpen?'24px':'0'}">
+        ${isOpen?ruler:''}${gapDivs}${blocks}
       </div>
+      ${isOpen?'':`<div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink3);margin-top:3px"><span>${tlFmt(r.lo)}</span><span>${tlFmt(r.hi)}</span></div>`}
+      ${isOpen?'':''}
 
-      ${(()=>{
+      ${!isOpen?'':(()=>{
         if(!r.segs.length) return '<div style="font-size:12.5px;color:var(--ink3);font-style:italic">Nothing recorded this day</div>';
         // Route view: the day as turn-by-turn steps, with the waits shown between them
         const steps=[];
@@ -2766,19 +2854,134 @@ function drawTimeline(){
     </div>`;
   }).join('');
 
-  html+=`<div class="card"><div class="card-label">Working Hours <span style="font-weight:600;text-transform:none;color:var(--ink3)">— what idle time is measured against</span></div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:12px">
-      ${(workers||[]).map(w=>{ const hh=workerHours[w.name]||{};
-        return `<div style="display:flex;align-items:center;gap:6px">
-          <span style="flex:1;font-size:13px;font-weight:600">${esc(w.name)}</span>
-          <input class="tl-hrs" data-worker="${esc(w.name)}" data-k="start" type="time" value="${hh.start||TL_DEFAULT.start}" style="width:110px;padding:6px">
-          <input class="tl-hrs" data-worker="${esc(w.name)}" data-k="end" type="time" value="${hh.end||TL_DEFAULT.end}" style="width:110px;padding:6px">
-        </div>`; }).join('')||'<div class="empty">No workers</div>'}
-    </div>
-    <button class="btn btn-gold btn-sm" onclick="tlSaveHours()">Save Hours</button>
-  </div>`;
-
+  html+=tlScheduleCard();
   document.getElementById('content').innerHTML=html;
+}
+function tlScheduleCard(){
+  return `<div class="card"><div class="card-label">Weekly Schedule <span style="font-weight:600;text-transform:none;color:var(--ink3)">— sets what idle time is measured against</span></div>
+    ${(workers||[]).map(w=>{
+      const sched=tlSchedFor(w.name)||{};
+      const open=tlSchedOpen===w.name;
+      // Compact summary of the week
+      const summary=TL_DAYS.map(([k,lbl])=>{
+        const d=sched[k]||{};
+        return d.off ? `<span style="color:var(--ink3);opacity:.55">${lbl}</span>`
+                     : `<span style="color:var(--ink2)">${lbl} <strong>${(d.start||TL_DEFAULT.start)}–${(d.end||TL_DEFAULT.end)}</strong></span>`;
+      }).join('<span style="color:var(--border)"> · </span>');
+      return `<div style="border-bottom:1px solid var(--border);padding:10px 0">
+        <div class="clickable" onclick="tlSchedToggle('${jsstr(w.name)}')" style="display:flex;align-items:center;gap:10px">
+          <span style="color:var(--ink3);font-size:12px;width:12px">${open?'▾':'▸'}</span>
+          <span style="font-weight:700;font-size:13.5px;min-width:110px">${esc(w.name)}</span>
+          <span style="font-size:11px;flex:1;min-width:0">${summary}</span>
+        </div>
+        ${open?`<div style="margin:10px 0 4px 22px;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:7px">
+          ${TL_DAYS.map(([k,lbl])=>{
+            const d=sched[k]||{};
+            return `<div style="display:flex;align-items:center;gap:7px;background:var(--surface2);padding:7px 10px;border-radius:8px">
+              <span style="width:34px;font-size:12px;font-weight:700">${lbl}</span>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--ink3)">
+                <input class="tl-hrs" data-worker="${esc(w.name)}" data-day="${k}" data-k="off" type="checkbox" ${d.off?'checked':''} style="width:14px;height:14px"> off</label>
+              <input class="tl-hrs" data-worker="${esc(w.name)}" data-day="${k}" data-k="start" type="time" value="${d.start||TL_DEFAULT.start}" style="width:96px;padding:5px;font-size:12px">
+              <input class="tl-hrs" data-worker="${esc(w.name)}" data-day="${k}" data-k="end" type="time" value="${d.end||TL_DEFAULT.end}" style="width:96px;padding:5px;font-size:12px">
+              <button class="btn btn-ghost btn-sm" style="padding:4px 8px;font-size:10.5px" title="Copy these times to the whole week" onclick="tlCopyDay('${jsstr(w.name)}','${k}')">⇊ all</button>
+            </div>`;
+          }).join('')}
+        </div>`:''}
+      </div>`;
+    }).join('')||'<div class="empty">No workers</div>'}
+    <button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="tlSaveHours()">Save Schedule</button>
+    <span style="font-size:11.5px;color:var(--ink3);margin-left:10px">Tap a name to set each day. "⇊ all" copies that day's times across the week.</span>
+  </div>`;
+}
+
+
+// ========================================================================
+// SCAN TO SEARCH — point the camera at a label to jump straight to the item
+// ========================================================================
+let scanSearchReader=null, scanSearchStream=null;
+function openScanSearch(){
+  let ov=document.getElementById('scan-search-ov');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='scan-search-ov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML=`<div style="color:#fff;font-family:'Outfit',sans-serif;font-size:18px;font-weight:700;margin-bottom:4px">Scan a Glint label</div>
+      <div style="color:rgba(255,255,255,.7);font-size:12.5px;margin-bottom:14px">Point the camera at the barcode</div>
+      <video id="scan-search-video" playsinline style="width:100%;max-width:460px;border-radius:14px;background:#000"></video>
+      <div id="scan-search-msg" style="color:rgba(255,255,255,.85);font-size:13px;margin-top:12px;min-height:20px"></div>
+      <button onclick="closeScanSearch()" style="margin-top:12px;background:#fff;color:#12141c;border:none;border-radius:10px;padding:11px 26px;font-weight:700;font-size:15px;cursor:pointer">Cancel</button>`;
+    document.body.appendChild(ov);
+  }
+  ov.style.display='flex';
+  startScanSearch();
+}
+function closeScanSearch(){
+  const ov=document.getElementById('scan-search-ov'); if(ov) ov.style.display='none';
+  try{ if(scanSearchReader&&scanSearchReader.reset) scanSearchReader.reset(); }catch(e){}
+  try{ if(scanSearchStream) scanSearchStream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  scanSearchReader=null; scanSearchStream=null;
+}
+function scanSearchMsg(m){ const el=document.getElementById('scan-search-msg'); if(el) el.textContent=m; }
+// Same confirmation rule as the worker app: accept only a code read twice
+let ssCand=null, ssHits=0;
+function ssConfirm(code){
+  if(code===ssCand){ ssHits++; if(ssHits>=2) return code; }
+  else { ssCand=code; ssHits=1; }
+  return null;
+}
+async function startScanSearch(){
+  ssCand=null; ssHits=0;
+  const video=document.getElementById('scan-search-video');
+  try{
+    scanSearchStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    video.srcObject=scanSearchStream; await video.play();
+  }catch(e){ scanSearchMsg('Camera unavailable — '+(e.message||e)); return; }
+
+  const handle=(raw)=>{
+    const code=ssConfirm(String(raw||'').toUpperCase().replace(/\][A-Z][0-9]/g,'').replace(/[^A-Z0-9\-]/g,''));
+    if(!code) return;
+    const m=code.match(/T-?(\d+)-(\d+)(-[A-Z0-9]+)?/);
+    if(!m){ scanSearchMsg('Not a Glint label: '+code.slice(0,24)); ssCand=null; ssHits=0; return; }
+    const itemId='T-'+m[1]+'-'+m[2]+(m[3]||'');
+    closeScanSearch();
+    toast('🔍 '+itemId);
+    navigate(h('item', itemId));
+  };
+
+  if('BarcodeDetector' in window){
+    try{
+      const det=new BarcodeDetector({formats:['code_128','code_39','qr_code']});
+      const loop=async()=>{
+        const ov=document.getElementById('scan-search-ov');
+        if(!ov||ov.style.display==='none') return;
+        try{ const bc=await det.detect(video); if(bc.length) handle(bc[0].rawValue); }catch(e){}
+        setTimeout(loop,200);
+      };
+      loop(); return;
+    }catch(e){}
+  }
+  if(typeof ZXingBrowser!=='undefined'){
+    try{
+      scanSearchReader=new ZXingBrowser.BrowserMultiFormatReader();
+      scanSearchReader.decodeFromVideoElement(video,(res)=>{ if(res) handle(res.getText?res.getText():res.text); });
+      return;
+    }catch(e){}
+  }
+  scanSearchMsg('Barcode scanning not supported on this browser — type the ID instead');
+}
+
+// ========================================================================
+// REPAIRDESK STATUS — their status per item, mapped to our pipeline
+// ========================================================================
+// Real values seen on this account: Delivered · Payment Received & Delivered · Picked up
+// · Delivery on way · Scanovator Delivery · Ready · Lacquering · Cleaning · Estimate · Issue …
+function rdStatusToStage(name){
+  const s=String(name||'').toLowerCase();
+  if(!s) return null;
+  if(/on way|scanovator|in transit|out for/.test(s)) return 'On Way';   // courier has it, not delivered yet
+  if(/deliver|picked up/.test(s)) return 'Delivered';
+  if(/pack/.test(s)) return 'Packed';
+  if(/ready|done/.test(s)) return 'READY';
+  return null;   // in-progress or admin statuses — our own scans are more accurate
 }
 
 async function renderProductionPage(){
@@ -3118,7 +3321,7 @@ function renderOrdersListPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head">
       <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time</div></div>
-      <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()">
+      <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
     </div>
     <div id="orders-list"></div>
   `;
@@ -3339,7 +3542,7 @@ async function renderItemDetailPage(itemId){
   try{
     const tid=await resolveTicketId(oid);
     const num=parseInt(itemId.split('-')[2])||1;
-    if(!tid) throw new Error('could not match '+oid+' to a RepairDesk ticket');
+    if(!tid) throw new Error(oid+' was not found in RepairDesk (searched all tickets). It may have been deleted, or the order number changed.');
     const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
     const dev=d&&d.data&&d.data.devices?d.data.devices[num-1]:null;
     if(!dev) throw new Error('item '+num+' not found on ticket '+tid);
@@ -3424,7 +3627,7 @@ function renderHistoryPage(){
     <div class="page-head">
       <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first — admins can edit or delete entries</div></div>
       <div class="head-actions">
-        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistoryTable()">
+        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistoryTable()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
           <input type="date" id="hist-from" onchange="renderHistoryTable()" style="padding:6px 8px;font-size:12px;width:auto">
           <span>→</span>
@@ -3756,9 +3959,14 @@ function exportLabels(){
 // ========================================================================
 // PAGE: SETTINGS
 // ========================================================================
-function renderSettingsPage(){
+async function renderSettingsPage(){
+  try{
+    const wr=await sb("settings?key=eq.worker_hours&select=value");
+    workerHours=(wr&&wr[0]&&wr[0].value)?JSON.parse(wr[0].value):workerHours;
+  }catch(e){}
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
+    ${tlScheduleCard()}
     <div class="card" style="max-width:460px">
       <div class="card-label">Pipeline Stages</div>
       <div class="page-sub" style="margin-bottom:12px">The ordered work steps items move through. Name a stage the same as a worker role and scans move items automatically. Packed / On Way / Delivered always come after.</div>
