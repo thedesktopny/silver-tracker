@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-b</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -734,7 +734,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-04-a';
+const APP_VERSION='2026-08-04-b';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -3522,8 +3522,10 @@ async function scanovFindReference(){
   if(el) el.innerHTML='Trying every reference this order might use…';
   const oid = /^T-/i.test(v) ? v.toUpperCase() : 'T-'+v.replace(/\D/g,'');
   const plain = oid.replace(/^T-/,'');
-  const cands=[{label:'your order number', id:oid},
-               {label:'order number without T-', id:plain}];
+  // Try exactly what was typed FIRST — it may already be Scanovator's own reference
+  const cands=[{label:'exactly what you typed', id:v}];
+  if(oid!==v) cands.push({label:'as our order number', id:oid});
+  if(plain!==v && plain!==oid) cands.push({label:'without the T- prefix', id:plain});
   try{
     const tid=await resolveTicketId(oid);
     if(tid) cands.push({label:'RepairDesk internal ticket id', id:String(tid)});
@@ -3560,7 +3562,11 @@ async function scanovFindReference(){
            status: <strong>${esc(String(scanovFindStatus(hit.found)||'—'))}</strong> → <strong>${esc(String(scanovToStage(scanovFindStatus(hit.found))||'not mapped'))}</strong><br>
            Send me this and I'll switch the sync to use it.</div>`
       : `<div style="margin-top:10px;padding:10px;background:var(--orange-soft);border-radius:8px;font-size:13px">
-           None of these matched. Open this order in Scanovator's own portal and copy the reference they show — then type that exact value above and press "Look up".</div>`)
+           <strong>None of these matched.</strong> The token and store are accepted (we get a proper reply, not an auth error), so the likely causes are:<br>
+           • the <strong>store_id / store_code</strong> point at a different store than the one holding these orders<br>
+           • Scanovator indexes by a reference we haven't tried<br>
+           • these orders simply aren't in Scanovator yet<br>
+           Ask Scanovator which field <code>order_ids</code> matches on, and confirm store_id <strong>229</strong> is the right store.</div>`)
     + `<textarea readonly style="width:100%;height:170px;font-family:monospace;font-size:11px;margin-top:8px" onclick="this.select()">${esc(raw)}</textarea>`;
 }
 
