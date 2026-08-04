@@ -276,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-f</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-g</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -719,7 +719,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-f';
+const APP_VERSION='2026-08-03-g';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -3785,10 +3785,23 @@ async function renderItemDetailPage(itemId){
     const pre=window._itemPreImgs||[];
     if(ours.length||pre.length){
       photosHtml='<div class="card">';
-      if(ours.length){
-        photosHtml+=`<div class="card-label">Our Photos (${ours.length})</div><div class="photo-grid">`+
-          ours.map(i=>`<div><img src="${i.image_url}" onclick="lightbox('${jsstr(i.image_url)}')">
+      const isVid=u=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(u||'');
+      const vids=ours.filter(i=>isVid(i.image_url));
+      const pics=ours.filter(i=>!isVid(i.image_url));
+      if(pics.length){
+        photosHtml+=`<div class="card-label">Our Photos (${pics.length})</div><div class="photo-grid">`+
+          pics.map(i=>`<div><img src="${i.image_url}" onclick="lightbox('${jsstr(i.image_url)}')">
             <div style="font-size:10px;color:var(--ink3);margin-top:3px;text-align:center">${esc(i.role||'')}${i.worker?'<br>'+esc(i.worker):''}</div></div>`).join('')+'</div>';
+      }
+      if(vids.length){
+        // Nothing downloads until play is pressed, so the page stays fast
+        photosHtml+=`<div class="card-label" style="margin-top:${pics.length?'14px':'0'}">🎥 Videos (${vids.length})</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">`+
+          vids.map(i=>`<div>
+            <video src="${i.image_url}" controls preload="none" playsinline
+              style="width:100%;border-radius:8px;background:#000;aspect-ratio:4/3;object-fit:cover"></video>
+            <div style="font-size:10.5px;color:var(--ink3);margin-top:3px;text-align:center">${esc(i.role||'')}${i.worker?' · '+esc(i.worker):''}${i.created_at?'<br>'+fmtDate(i.created_at):''}</div>
+          </div>`).join('')+'</div>';
       }
       if(pre.length){
         photosHtml+=`<div class="card-label" style="margin-top:14px">Intake Photos — RepairDesk (${pre.length})</div><div class="photo-grid">`+
