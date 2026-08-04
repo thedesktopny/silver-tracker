@@ -1527,9 +1527,15 @@ async function processScan(itemId) {
   // Resolve item name/customer if we don't have it yet (fixes blank item names on regular scans)
   await resolveItemInfo(itemId);
 
-  // Delivery-type roles (Packing / Driver / Delivery) don't run a timer —
-  // scanning asks which delivery step happened instead
-  if (isDeliveryRole(task)) {
+  // The role's own setting decides how a scan behaves. Guessing from the name was
+  // wrong — "Pack up" is real timed work here, even though the word looks like delivery.
+  //   timed    -> start / stop timer (default)
+  //   status   -> one scan, recorded, no timer
+  //   delivery -> mark a delivery step, no timer
+  const mode = curRoleSetting().track_mode || '';
+  const treatAsDelivery = mode ? (mode === 'delivery') : isDeliveryRole(task);
+
+  if (treatAsDelivery) {
     playBeep(920,140);
     if (navigator.vibrate) navigator.vibrate(100);
     const direct = deliveryStageForRole(task);
