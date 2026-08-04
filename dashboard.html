@@ -184,7 +184,23 @@ tr.clickable:hover td{background:var(--surface2)}
 .note-box .nb-es{font-size:12.5px;font-style:italic;color:var(--ink2);margin-top:4px}
 
 /* ===== PIPELINE BOARD ===== */
-.pipe-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start}
+.pipe-wrap{position:relative}
+.pipe-jump{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px;scrollbar-width:none}
+.pipe-jump::-webkit-scrollbar{display:none}
+.pipe-jump-btn{flex:0 0 auto;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 12px;
+  font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.pipe-jump-btn:hover{border-color:var(--gold);color:var(--gold)}
+.pipe-jump-btn.empty{opacity:.45}
+.pj-n{background:var(--surface2);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800}
+.pipe-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start;scroll-behavior:smooth;cursor:grab;scrollbar-width:thin}
+.pipe-board::-webkit-scrollbar{height:10px}
+.pipe-board::-webkit-scrollbar-thumb{background:var(--ink3);border-radius:5px}
+.pipe-arrow{position:sticky;top:40vh;z-index:30;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
+  background:var(--surface);color:var(--ink);font-size:22px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(18,20,28,.18);
+  display:flex;align-items:center;justify-content:center;padding:0}
+.pipe-arrow:hover{background:var(--gold);color:#fff;border-color:var(--gold)}
+.pipe-arrow.left{float:left;margin-right:-40px;left:4px}
+.pipe-arrow.right{float:right;margin-left:-40px;right:4px}
 .pipe-col{min-width:212px;width:212px;flex-shrink:0;background:var(--surface2);border-radius:12px;padding:10px 9px}
 .pipe-col-head{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink2);display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;padding:0 4px}
 .pipe-col-head .cnt{background:var(--surface);border-radius:12px;padding:1px 8px;font-size:10.5px;color:var(--ink3)}
@@ -276,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-q</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-r</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -718,7 +734,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-q';
+const APP_VERSION='2026-08-03-r';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1569,10 +1585,15 @@ function renderPipeBody(){
   const dsum=deliverySummaryHtml();
   if(pipeView==='board') box.innerHTML=dsum+renderPipeBoard(list);
   else box.innerHTML=dsum+renderPipeByOrder(list);
+  setTimeout(pipeBoardSetup,0);
 }
 function renderPipeBoard(list){
   const cols=PIPE_COLS.filter(c=>pipeShowDelivered || c.k!==DELIV_LAST || list.some(it=>it.col===DELIV_LAST));
-  return `<div class="pipe-board">`+cols.map(c=>{
+  return `<div class="pipe-jump">`+cols.map((c,ci)=>{
+    const n=list.filter(it=>String(it.col)===String(c.k)).length;
+    return `<button class="pipe-jump-btn${n?'':' empty'}" onclick="pipeJump(${ci})">${esc(c.l)}<span class="pj-n">${n}</span></button>`;
+  }).join('')+`</div>
+  <div class="pipe-wrap"><button class="pipe-arrow left" onclick="pipeScroll(-1)" aria-label="Scroll left">‹</button><button class="pipe-arrow right" onclick="pipeScroll(1)" aria-label="Scroll right">›</button><div class="pipe-board" id="pipe-board">`+cols.map(c=>{
     const its=list.filter(it=>it.col===c.k).sort((a,b)=>new Date(a.since||0)-new Date(b.since||0));
     return `<div class="pipe-col">
       <div class="pipe-col-head"><span>${c.l}</span><span class="cnt">${its.length}</span></div>
@@ -1587,7 +1608,47 @@ function renderPipeBoard(list){
         </div>`;
       }).join('')||'<div style="font-size:11px;color:var(--ink3);text-align:center;padding:10px 0">—</div>'}
     </div>`;
-  }).join('')+`</div>`;
+  }).join('')+`</div></div>`;
+}
+// Arrow buttons, drag-to-pan and keyboard — so the board can be moved without
+// reaching for the scrollbar at the very bottom of a long page
+function pipeJump(i){
+  const el=document.getElementById('pipe-board'); if(!el) return;
+  const col=el.children[i]; if(!col) return;
+  el.scrollTo({left: col.offsetLeft - el.offsetLeft - 8, behavior:'smooth'});
+}
+function pipeScroll(dir){
+  const el=document.getElementById('pipe-board'); if(!el) return;
+  el.scrollBy({left: dir*Math.max(el.clientWidth*0.8, 260), behavior:'smooth'});
+}
+function pipeBoardSetup(){
+  const el=document.getElementById('pipe-board'); if(!el || el._setup) return;
+  el._setup=true;
+  // Shift + wheel scrolls sideways, and a plain wheel does too when the board has focus
+  el.addEventListener('wheel', e=>{
+    if(e.shiftKey || Math.abs(e.deltaX)>Math.abs(e.deltaY)) return;   // browser handles it
+  }, {passive:true});
+  // Click and drag to pan, like a map
+  let down=false, sx=0, sl=0, moved=false;
+  el.addEventListener('mousedown', e=>{
+    if(e.target.closest('button')) return;
+    down=true; moved=false; sx=e.pageX; sl=el.scrollLeft; el.style.cursor='grabbing';
+  });
+  window.addEventListener('mouseup', ()=>{ down=false; el.style.cursor=''; });
+  el.addEventListener('mousemove', e=>{
+    if(!down) return;
+    const dx=e.pageX-sx;
+    if(Math.abs(dx)>4){ moved=true; e.preventDefault(); el.scrollLeft=sl-dx; }
+  });
+  // Suppress the click that ends a drag, so panning doesn't open an item
+  el.addEventListener('click', e=>{ if(moved){ e.stopPropagation(); e.preventDefault(); moved=false; } }, true);
+  // Left/right arrow keys
+  document.addEventListener('keydown', e=>{
+    if(currentRoute()!=='pipeline') return;
+    if(['INPUT','TEXTAREA','SELECT'].includes((e.target.tagName||''))) return;
+    if(e.key==='ArrowRight') pipeScroll(1);
+    if(e.key==='ArrowLeft') pipeScroll(-1);
+  });
 }
 function renderPipeByOrder(list){
   const byOrder={};
