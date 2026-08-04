@@ -276,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-m</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-n</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -460,11 +460,7 @@ let edgeProxyOk=null;
 async function fetchRD(path){
   if(edgeProxyOk!==false){
     try{
-      const r=await fetch(SUPABASE_URL+'/functions/v1/api-proxy',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
-        body:JSON.stringify({action:'repairdesk', path})
-      });
+      const r=await edgeCall({action:'repairdesk', path});
       if(r.ok){ edgeProxyOk=true; return await r.json(); }
       if(r.status===404) edgeProxyOk=false;      // function not deployed
     }catch(e){ edgeProxyOk=false; }
@@ -719,7 +715,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-m';
+const APP_VERSION='2026-08-03-n';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -3097,7 +3093,29 @@ function rdStatusToStage(name){
 // ========================================================================
 // ASK GLINT — plain-language questions answered from live shop data
 // ========================================================================
-const EDGE_URL = SUPABASE_URL + '/functions/v1/api-proxy';
+const EDGE_NAMES = ['api-proxy', 'api-proxy.ts', 'apiproxy', 'api_proxy'];
+let EDGE_NAME = localStorage.getItem('glint_edge_name') || EDGE_NAMES[0];
+const EDGE_URL = SUPABASE_URL + '/functions/v1/' + EDGE_NAME;   // kept for older references
+function edgeUrl(name){ return SUPABASE_URL + '/functions/v1/' + (name || EDGE_NAME); }
+// Supabase names the function after what you typed — "api-proxy.ts" and "api-proxy" are
+// different URLs. Try the likely spellings once, then remember the one that works.
+async function edgeCall(payload){
+  const tryNames = [EDGE_NAME, ...EDGE_NAMES.filter(n=>n!==EDGE_NAME)];
+  let lastErr=null;
+  for(const name of tryNames){
+    try{
+      const r=await fetch(edgeUrl(name),{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
+        body:JSON.stringify(payload)
+      });
+      if(r.status===404){ lastErr=new Error('404 at '+name); continue; }
+      if(EDGE_NAME!==name){ EDGE_NAME=name; localStorage.setItem('glint_edge_name',name); }
+      return r;
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('Edge function not reachable');
+}
 let askLog = [];
 
 // Build a compact snapshot of the shop. Sending every raw scan would be slow and
@@ -3211,11 +3229,7 @@ async function askSend(preset){
   askLog.push({role:'glint', text:'…thinking', pending:true});
   askRenderLog();
   try{
-    const r=await fetch(EDGE_URL,{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
-      body:JSON.stringify({action:'ask', question:q, context:askBuildContext()})
-    });
+    const r=await edgeCall({action:'ask', question:q, context:askBuildContext()});
     const d=await r.json();
     askLog.pop();
     askLog.push({role:'glint', text: d.answer || ('⚠️ '+(d.error||'no answer')) });
@@ -3347,18 +3361,15 @@ async function edgeDiagnose(){
   const el=document.getElementById('edge-diag');
   const say=h=>{ if(el) el.innerHTML=h; };
   say('Testing…');
-  const url=SUPABASE_URL+'/functions/v1/api-proxy';
   const line=(icon,txt)=>`<div style="margin:3px 0">${icon} ${txt}</div>`;
   let out='';
-  // 1. Is the function reachable at all?
+  // 1. Is the function reachable under any of the likely names?
   try{
-    const r=await fetch(url,{method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
-      body:JSON.stringify({action:'ping'})});
-    out+=line('✅','Reached the function (HTTP '+r.status+')');
+    const r=await edgeCall({action:'ping'});
+    out+=line('✅','Reached the function as <code>'+esc(EDGE_NAME)+'</code> (HTTP '+r.status+')');
     let d={}; try{ d=await r.json(); }catch(_){}
     if(r.status===404){
-      say(out+line('❌','<strong>Function not found.</strong> In Supabase → Edge Functions, check one is named exactly <code>api-proxy</code> and has been deployed.'));
+      say(out+line('❌','<strong>Function not found under any name tried:</strong> '+EDGE_NAMES.join(', ')+'.<br>Rename it to <code>api-proxy</code> in Supabase → Edge Functions.'));
       return;
     }
     if(r.status===401){
@@ -3368,8 +3379,11 @@ async function edgeDiagnose(){
     if(d.error && /unknown action/i.test(d.error)) out+=line('✅','Function code is running correctly');
     else if(d.error) out+=line('⚠️','Function replied: '+esc(d.error));
   }catch(e){
-    say(out+line('❌','<strong>Could not reach the function.</strong> Either it was never deployed, or it failed to start (a syntax error stops it responding, which the browser reports as "Failed to fetch").<br>'+
-      'Check Supabase → Edge Functions → api-proxy → <strong>Logs</strong> for a boot error.<br><span style="opacity:.7">Browser said: '+esc(e.message||String(e))+'</span>'));
+    say(out+line('❌','<strong>Could not reach the function.</strong> Tried these names: '+EDGE_NAMES.join(', ')+'.<br><br>'+
+      '<strong>1.</strong> In Supabase → Edge Functions → your function → <strong>Details/Settings</strong>, turn <strong>OFF "Verify JWT"</strong>. This is the most common cause — it blocks the browser before your code runs.<br>'+
+      '<strong>2.</strong> Check the function\'s <strong>Logs</strong> tab for a startup error.<br>'+
+      '<strong>3.</strong> Confirm the function name — it should be <code>api-proxy</code>, not <code>api-proxy.ts</code>.<br>'+
+      '<span style="opacity:.7">Browser said: '+esc(e.message||String(e))+'</span>'));
     return;
   }
   // 2. Are the secrets present?
@@ -3379,9 +3393,7 @@ async function edgeDiagnose(){
     ['scanovator','Scanovator keys',{action:'scanovator',order_ids:['1']}]
   ]){
     try{
-      const r=await fetch(url,{method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
-        body:JSON.stringify(body)});
+      const r=await edgeCall(body);
       const d=await r.json().catch(()=>({}));
       if(d.error && /not set|secrets/i.test(d.error)) out+=line('❌',label+' — <strong>secret missing</strong>');
       else if(r.ok) out+=line('✅',label+' — working');
@@ -3392,11 +3404,7 @@ async function edgeDiagnose(){
   say(out);
 }
 async function scanovFetch(orderIds){
-  const r=await fetch(SUPABASE_URL+'/functions/v1/api-proxy',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
-    body:JSON.stringify({action:'scanovator', order_ids:orderIds})
-  });
+  const r=await edgeCall({action:'scanovator', order_ids:orderIds});
   const d=await r.json();
   if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
   return d;
