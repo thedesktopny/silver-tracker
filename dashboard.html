@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-b</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-c</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -734,7 +734,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-04-b';
+const APP_VERSION='2026-08-04-c';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1771,7 +1771,11 @@ function itemPipeCardHtml(itemId){
     </div>
     <div class="pipe-track ${pipePos(it)===PIPE_MAXPOS?'full':''}" style="margin-bottom:14px"><div style="width:${Math.max(Math.round(pipePos(it)/PIPE_MAXPOS*100),3)}%"></div></div>
     ${(it.scanovStatus||it.rdStatus)?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-      ${it.scanovStatus?`<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 Scanovator: ${esc(it.scanovStatus)}</span>`:''}
+      ${it.scanovStatus?(()=>{
+        const m=scanovMeta[orderIdOf(it.id)]||{};
+        return `<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 Scanovator: ${esc(it.scanovStatus)}${m.driver?' · '+esc(m.driver):''}${m.when?' · '+fmtDate(m.when):''}</span>`
+          + (m.receipt?` <a href="${esc(m.receipt)}" target="_blank" style="font-size:11.5px;font-weight:700;color:var(--gold);padding:5px 0">Delivery receipt ↗</a>`:'');
+      })():''}
       ${it.rdStatus?`<span style="background:var(--surface2);color:var(--ink2);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">RepairDesk: ${esc(it.rdStatus)}</span>`:''}
     </div>`:''}
     <div class="row"><div class="field"><label>Admin Override — move item to</label>
@@ -3368,28 +3372,44 @@ function renderAskPage(){
 // ========================================================================
 // SCANOVATOR — delivery status pulled in and applied to the pipeline
 // ========================================================================
-let scanovStatus=JSON.parse(localStorage.getItem('glint_scanov')||'{}');   // orderId -> status text
+let scanovStatus=JSON.parse(localStorage.getItem('glint_scanov')||'{}');
+let scanovMeta=JSON.parse(localStorage.getItem('glint_scanov_meta')||'{}');   // driver, receipt link, timestamps   // orderId -> status text
 
 // Their field names aren't documented in what we've seen, so find the status
 // wherever it sits rather than assuming one shape.
+// Scanovator sends no status text. Their real shape is:
+//   actually_delivered "2026-08-04 10:30:46"  route_started "2026-08-04 10:13:25"
+//   driver_name "driver1gui"  picked 1  returned 0  eta ""
+// so the state has to be read from those.
 function scanovFindStatus(obj){
   if(!obj||typeof obj!=='object') return null;
+  const has=v=>v!==null&&v!==undefined&&String(v).trim()!=='';
+  if(Number(obj.returned)>0) return 'Returned';
+  if(has(obj.actually_delivered)) return 'Delivered';
+  if(has(obj.route_started)) return 'On Way';
+  if(Number(obj.picked)>0 || has(obj.driver_name)) return 'Picked Up';
+  if(has(obj.createdAtIso)) return 'Packed';
+  // fall back to a status field if they ever add one
   const KEYS=/^(status|order_status|delivery_status|state|current_status)$/i;
   for(const k of Object.keys(obj)){
     const v=obj[k];
     if(KEYS.test(k)){
-      if(typeof v==='string') return v;
+      if(typeof v==='string'&&v.trim()) return v;
       if(v&&typeof v==='object'&&typeof v.name==='string') return v.name;
-    }
-  }
-  for(const k of Object.keys(obj)){                 // one level deeper
-    const v=obj[k];
-    if(v&&typeof v==='object'&&!Array.isArray(v)){
-      const f=scanovFindStatus(v); if(f) return f;
     }
   }
   return null;
 }
+// When it was delivered / collected, so timings are real rather than "when we noticed"
+function scanovFindWhen(obj){
+  if(!obj) return null;
+  const t=obj.actually_delivered||obj.route_started||obj.createdAtIso;
+  if(!t) return null;
+  const d=new Date(String(t).replace(' ','T'));
+  return isNaN(d)?null:d.toISOString();
+}
+function scanovFindDriver(obj){ return (obj&&obj.driver_name)||''; }
+function scanovFindReceipt(obj){ return (obj&&obj.receipt_url)||''; }
 function scanovFindOrderId(obj){
   for(const k of ['order_id','orderId','external_id','reference','order_number','id']){
     if(obj&&obj[k]!=null) return String(obj[k]);
@@ -3401,6 +3421,7 @@ function scanovToStage(name){
   const s=String(name||'').toLowerCase();
   if(!s) return null;
   // Order matters: several of these words overlap, so test the most specific first.
+  if(/returned|refused|failed/.test(s)) return null;   // came back — do NOT mark delivered
   if(/delivered|completed|dropped ?off|received by|signed by|signature/.test(s)) return 'Delivered';
   if(/out for|on way|en route|in transit|on route|delivering/.test(s)) return 'On Way';
   if(/picked ?up|collected|scanned in|driver assigned|dispatch|accepted|at facility|in depot/.test(s)) return 'Picked Up';
@@ -3408,15 +3429,28 @@ function scanovToStage(name){
   return null;
 }
 
-// Scanovator may hold the order as "T-1103" or just "1103" — ask for both spellings
+// Scanovator uses its own reference, e.g. PI1162P1 = "PI" + a ticket number + "P" + package.
+// We ask for our own numbering too, in case some orders were entered that way.
+let scanovRefMap=JSON.parse(localStorage.getItem('glint_scanov_refs')||'{}');   // theirRef -> our T-####
+function scanovRefsFor(oid){
+  const plain=String(oid).replace(/^T-?/i,'');
+  const tid=oidMap[oid];                       // RepairDesk internal id, e.g. T-1160 -> 1162
+  const refs=[String(oid), plain];
+  [plain, tid].filter(Boolean).forEach(n=>{
+    for(let pkg=1; pkg<=2; pkg++) refs.push('PI'+n+'P'+pkg);
+  });
+  return [...new Set(refs.filter(Boolean))];
+}
 function scanovIdVariants(oids){
   const out=[];
   oids.forEach(o=>{
-    out.push(String(o));
-    const n=String(o).replace(/^T-?/i,'');
-    if(n && n!==String(o)) out.push(n);
+    scanovRefsFor(o).forEach(r=>{
+      out.push(r);
+      scanovRefMap[r]=String(o);              // remember which of ours each ref belongs to
+    });
   });
-  return [...new Set(out)].slice(0,150);
+  try{ localStorage.setItem('glint_scanov_refs', JSON.stringify(scanovRefMap)); }catch(e){}
+  return [...new Set(out)].slice(0,200);
 }
 // Match a returned id back to our T-#### order
 function scanovMatchOurOrder(returnedId, ourOrders){
@@ -3424,6 +3458,13 @@ function scanovMatchOurOrder(returnedId, ourOrders){
   if(ourOrders.has(r)) return r;
   const withT='T-'+r.replace(/^T-?/i,'');
   if(ourOrders.has(withT)) return withT;
+  if(scanovRefMap[r] && ourOrders.has(scanovRefMap[r])) return scanovRefMap[r];   // PI1162P1 -> T-1160
+  // Last resort: pull the digits out of PI1162P1 and match on the internal ticket id
+  const m=/^PI(\d+)P\d+$/i.exec(r);
+  if(m){
+    const n=m[1];
+    for(const o of ourOrders){ if(String(oidMap[o])===n || o.replace(/^T-?/i,'')===n) return o; }
+  }
   return null;
 }
 // Tells apart: function missing, function crashed, secrets missing, network blocked
@@ -3504,9 +3545,13 @@ async function scanovSync(silent){
       const raw=scanovFindOrderId(o), st=scanovFindStatus(o);
       if(!raw||!st) return;
       const ours=scanovMatchOurOrder(raw, ourSet);
-      if(ours){ scanovStatus[ours]=st; found++; }
+      if(ours){
+        scanovStatus[ours]=st; found++;
+        scanovMeta[ours]={ref:raw, driver:scanovFindDriver(o), receipt:scanovFindReceipt(o), when:scanovFindWhen(o)};
+      }
     });
     localStorage.setItem('glint_scanov',JSON.stringify(scanovStatus));
+    try{ localStorage.setItem('glint_scanov_meta',JSON.stringify(scanovMeta)); }catch(e){}
     if(!silent) toast(found?('✓ Updated '+found+' order'+(found!==1?'s':'')+' from Scanovator'):'No matching orders came back');
     if(currentRoute()==='pipeline') renderPipeBody();
   }catch(e){ if(!silent) toast('Scanovator: '+(e.message||e)); }
