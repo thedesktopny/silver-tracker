@@ -276,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-e</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-f</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -365,6 +365,7 @@ const NAV_ITEMS = [
   {route:'print', label:'Print Labels', icon:'🏷'},
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
+  {route:'ask', label:'Ask Glint', icon:'✨'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
   {route:'timeline', label:'Day Timeline', icon:'🕘'},
   {route:'production', label:'Production', icon:'📈'},
@@ -453,6 +454,23 @@ const PROXIES = [
   u => 'https://thingproxy.freeboard.io/fetch/' + u,
   u => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(u)
 ];
+// Route RepairDesk through our own Edge Function so the key lives on the server.
+// Falls back to the old public proxies if the function isn't deployed yet.
+let edgeProxyOk=null;
+async function fetchRD(path){
+  if(edgeProxyOk!==false){
+    try{
+      const r=await fetch(SUPABASE_URL+'/functions/v1/api-proxy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
+        body:JSON.stringify({action:'repairdesk', path})
+      });
+      if(r.ok){ edgeProxyOk=true; return await r.json(); }
+      if(r.status===404) edgeProxyOk=false;      // function not deployed
+    }catch(e){ edgeProxyOk=false; }
+  }
+  return fetchViaProxy(`${RD_BASE}/${path}${path.includes('?')?'&':'?'}api_key=${RD_KEY}`);
+}
 async function fetchViaProxy(targetUrl){
   let lastErr=null;
   for(const make of PROXIES){
@@ -502,7 +520,7 @@ async function resolveTicketId(oid){
   try{
     let pages=99;
     for(let page=1; page<=pages && page<=40; page++){
-      const d=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      const d=await fetchRD(`tickets?per_page=250&page=${page}&default_order=1`);
       const batch=(d.data&&d.data.ticketData)||[];
       batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
       const pg=d.data&&d.data.pagination;
@@ -682,7 +700,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -701,7 +719,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-e';
+const APP_VERSION='2026-08-03-f';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -749,6 +767,7 @@ const ROUTE_RENDERERS={
   print: renderPrintPage,
   reports: renderReportsPage,
   insights: renderInsightsPage,
+  ask: renderAskPage,
   attention: renderAttentionPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
@@ -1664,7 +1683,7 @@ async function loadTickets(){
   try{
     let fetched=[]; let page=1, totalPages=1;
     do{
-      const data=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      const data=await fetchRD(`tickets?per_page=250&page=${page}&default_order=1`);
       const batch=(data.data&&data.data.ticketData)||[];
       fetched=fetched.concat(batch);
       const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
@@ -1726,7 +1745,7 @@ async function toggleTicket(oid){
     box.innerHTML='<div class="empty" style="padding:16px">Loading details…</div>';
     try{
       const tid=(t.summary&&t.summary.id)||await resolveTicketId(oid);
-      const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
+      const d=await fetchRD(`tickets/${tid}`);
       if(d&&d.data){ d.data._full=true; allTickets[idx0]=d.data; t=d.data; }
     }catch(e){}
   }
@@ -2253,7 +2272,7 @@ async function prodProbePrices(){
     const oid=getOrderId(t);
     const tid=(t.summary&&t.summary.id)||await resolveTicketId(oid);
     let full=t;
-    try{ const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`); if(d&&d.data) full=d.data; }catch(e){}
+    try{ const d=await fetchRD(`tickets/${tid}`); if(d&&d.data) full=d.data; }catch(e){}
     // Dump EVERY field so the real price field can't hide
     const dump=o=>Object.entries(o||{}).filter(([k,v])=>v===null||typeof v!=='object')
       .map(([k,v])=>k+': '+String(v).slice(0,40)).join('\n');
@@ -2351,7 +2370,7 @@ async function ensureTicketsLoaded(){
   try{
     let fetched=[]; let page=1, totalPages=1;
     do{
-      const data=await fetchViaProxy(`${RD_BASE}/tickets?api_key=${RD_KEY}&per_page=250&page=${page}&default_order=1`);
+      const data=await fetchRD(`tickets?per_page=250&page=${page}&default_order=1`);
       const batch=(data.data&&data.data.ticketData)||[];
       fetched=fetched.concat(batch);
       const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
@@ -2992,6 +3011,174 @@ function rdStatusToStage(name){
   return null;   // in-progress or admin statuses — our own scans are more accurate
 }
 
+
+// ========================================================================
+// ASK GLINT — plain-language questions answered from live shop data
+// ========================================================================
+const EDGE_URL = SUPABASE_URL + '/functions/v1/api-proxy';
+let askLog = [];
+
+// Build a compact snapshot of the shop. Sending every raw scan would be slow and
+// costly, so this summarises: totals, per-worker, per-stage, pipeline position,
+// problems, and the most recent activity.
+function askBuildContext(){
+  const now=Date.now(), lines=[];
+  const {sessions, open}=pairSessions(()=>true);
+  const day=86400000;
+  const since=d=>new Date(now-d*day);
+
+  const win=(d)=>sessions.filter(s=>new Date(s.end)>=since(d));
+  const sum=a=>a.reduce((x,y)=>x+y,0);
+  const fmtH=ms=>(ms/3600000).toFixed(1)+'h';
+
+  lines.push('## TOTALS');
+  [['today',1],['last 7 days',7],['last 30 days',30]].forEach(([lbl,d])=>{
+    const w=win(d);
+    const pieces=new Set(w.map(s=>(s.role||'')+'::'+parentItemId(s.item_id))).size;
+    lines.push(`${lbl}: ${pieces} pieces finished, ${fmtH(sum(w.map(s=>s.ms)))} hands-on, ${w.length} work sessions`);
+  });
+
+  lines.push('\n## PER WORKER (last 7 days)');
+  const byW={};
+  win(7).forEach(s=>{ (byW[s.worker]=byW[s.worker]||[]).push(s); });
+  Object.entries(byW).sort((a,b)=>b[1].length-a[1].length).forEach(([w,ss])=>{
+    const pieces=new Set(ss.map(s=>(s.role||'')+'::'+parentItemId(s.item_id))).size;
+    const roles=[...new Set(ss.map(s=>s.role))].join(', ');
+    let pts=0; const seen={};
+    ss.forEach(s=>{ const k=(s.role||'')+'::'+parentItemId(s.item_id); if(seen[k])return; seen[k]=1; pts+=pieceValue(s.role||'',s.item_id)/100; });
+    lines.push(`${w}: ${pieces} pieces, ${fmtH(sum(ss.map(s=>s.ms)))}, ${pts.toFixed(1)} points — ${roles}`);
+  });
+
+  lines.push('\n## PER STAGE (last 7 days)');
+  const byR={};
+  win(7).forEach(s=>{ (byR[s.role||'—']=byR[s.role||'—']||[]).push(s); });
+  Object.entries(byR).sort((a,b)=>b[1].length-a[1].length).forEach(([r,ss])=>{
+    const pieces=new Set(ss.map(s=>parentItemId(s.item_id))).size;
+    lines.push(`${r}: ${pieces} pieces, ${fmtH(sum(ss.map(s=>s.ms)))}, avg ${(sum(ss.map(s=>s.ms))/Math.max(pieces,1)/60000).toFixed(0)}min per piece`);
+  });
+
+  lines.push('\n## CURRENTLY BEING WORKED ON');
+  if(open.length) open.forEach(o=>{
+    const h=((now-new Date(o.created_at).getTime())/3600000).toFixed(1);
+    lines.push(`${o.worker} on ${o.item_desc||o.item_id} (${o.item_id}) — ${o.role}, running ${h}h`);
+  }); else lines.push('nobody is scanned in right now');
+
+  try{
+    const {items}=buildPipelineItems();
+    const cols={};
+    Object.values(items).forEach(it=>{ const k=colLabel(it.col); cols[k]=(cols[k]||0)+1; });
+    lines.push('\n## PIPELINE — how many pieces sit at each step');
+    Object.entries(cols).forEach(([k,v])=>lines.push(`${k}: ${v}`));
+
+    const stuck=Object.values(items)
+      .filter(it=>it.since && (now-new Date(it.since).getTime())>2*day && it.col!==DELIV_LAST)
+      .sort((a,b)=>new Date(a.since)-new Date(b.since)).slice(0,25);
+    if(stuck.length){
+      lines.push('\n## PIECES STUCK OVER 2 DAYS (oldest first)');
+      stuck.forEach(it=>{
+        const d=Math.floor((now-new Date(it.since).getTime())/day);
+        lines.push(`${it.desc||it.id} (${it.id})${it.customer?' — '+it.customer:''}: ${d} days at ${colLabel(it.col)}`);
+      });
+    }
+  }catch(e){}
+
+  try{
+    const rw=computeAllRework().slice(0,20);
+    if(rw.length){
+      lines.push('\n## SENT BACK A STEP (most recent)');
+      rw.forEach(it=>lines.push(`${it.itemDesc||it.itemId} (${it.itemId}): ${it.reworks.map(r=>'back to '+r.role+' round '+r.round).join('; ')}`));
+    }
+  }catch(e){}
+
+  lines.push('\n## RECENT ACTIVITY (last 60 scans)');
+  [...scans].slice(0,60).forEach(s=>{
+    lines.push(`${fmtDate(s.created_at)} — ${s.worker} ${(s.status||'').includes('Started')?'started':'stopped'} ${s.item_desc||s.item_id} (${s.item_id}) at ${s.role||'—'}`);
+  });
+
+  lines.push('\n## WORKERS ON STAFF');
+  (workers||[]).forEach(w=>lines.push(`${w.name} — roles: ${(w.roles||[]).join(', ')||'none set'}`));
+
+  return lines.join('\n');
+}
+
+async function askSend(preset){
+  const inp=document.getElementById('ask-input');
+  const q=(preset||(inp?inp.value:'')||'').trim();
+  if(!q) return;
+  if(inp) inp.value='';
+  askLog.push({role:'you', text:q});
+  askLog.push({role:'glint', text:'…thinking', pending:true});
+  askRenderLog();
+  try{
+    const r=await fetch(EDGE_URL,{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
+      body:JSON.stringify({action:'ask', question:q, context:askBuildContext()})
+    });
+    const d=await r.json();
+    askLog.pop();
+    askLog.push({role:'glint', text: d.answer || ('⚠️ '+(d.error||'no answer')) });
+  }catch(e){
+    askLog.pop();
+    askLog.push({role:'glint', text:'⚠️ Could not reach the assistant. Has the api-proxy function been deployed? ('+(e.message||e)+')'});
+  }
+  askRenderLog();
+}
+function askRenderLog(){
+  const el=document.getElementById('ask-log'); if(!el) return;
+  el.innerHTML=askLog.map(m=>m.role==='you'
+    ? `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><div style="background:var(--gold);color:#fff;padding:10px 14px;border-radius:14px 14px 4px 14px;max-width:80%;font-size:14px">${esc(m.text)}</div></div>`
+    : `<div style="display:flex;margin-bottom:10px"><div style="background:var(--surface2);padding:10px 14px;border-radius:14px 14px 14px 4px;max-width:88%;font-size:14px;line-height:1.55;white-space:pre-wrap${m.pending?';opacity:.6':''}">${esc(m.text)}</div></div>`
+  ).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function askClear(){ askLog=[]; askRenderLog(); }
+
+function renderAskPage(){
+  const suggestions=[
+    'How many pieces did we finish this week?',
+    'Which pieces are stuck the longest?',
+    'Who did the most work in the last 7 days?',
+    'Which stage is our bottleneck right now?',
+    'Which orders are nearly done but waiting on one piece?',
+    'How many points did each worker earn this week?'
+  ];
+  document.getElementById('content').innerHTML=`
+  <div class="page-head">
+    <div><div class="page-title">Ask Glint</div><div class="page-sub">Ask anything about the shop — it reads your live data</div></div>
+    <button class="btn btn-ghost btn-sm" onclick="askClear()">Clear</button>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden">
+    <div id="ask-log" style="min-height:220px;max-height:52vh;overflow-y:auto;padding:16px"></div>
+    <div style="border-top:1px solid var(--border);padding:12px 14px;background:var(--surface2)">
+      <div class="row">
+        <div class="field" style="flex:1">
+          <input id="ask-input" placeholder="Ask a question…" onkeydown="if(event.key==='Enter')askSend()">
+        </div>
+        <button class="btn btn-gold" onclick="askSend()">Ask</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-label">Try one of these</div>
+    <div style="display:flex;flex-wrap:wrap;gap:7px">
+      ${suggestions.map(s=>`<button class="btn btn-ghost btn-sm" onclick="askSend('${jsstr(s)}')">${esc(s)}</button>`).join('')}
+    </div>
+  </div>
+
+  <div class="card" style="max-width:640px">
+    <div class="card-label">How this works</div>
+    <div style="font-size:12.5px;color:var(--ink3);line-height:1.6">
+      Your question goes to a small function on your own Supabase project, which holds the API keys.
+      Nothing sensitive is stored in this page. It sends a summary of your shop data — totals, workers,
+      stages, pipeline, stuck pieces and recent scans — never customer contact details.
+    </div>
+  </div>`;
+  askRenderLog();
+}
+
 async function renderProductionPage(){
 
   prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
@@ -3400,7 +3587,7 @@ async function renderOrderDetailPage(oid){
 
   // Fetch RepairDesk detail (customer info, service, notes, intake photos)
   let t=null;
-  try{ const tid=await resolveTicketId(oid); if(tid){ const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`); if(d&&d.data) t=d.data; } }catch(e){}
+  try{ const tid=await resolveTicketId(oid); if(tid){ const d=await fetchRD(`tickets/${tid}`); if(d&&d.data) t=d.data; } }catch(e){}
 
   let html=`<div class="page-head"><div><div class="page-title">${esc(oid)}</div><div class="page-sub">${esc(customer||(t?getCustomerName(t):'—'))}</div></div>
     <button class="btn btn-ghost btn-sm" onclick="navigate('${h('orders')}')">← Back to Orders</button></div>`;
@@ -3551,7 +3738,7 @@ async function renderItemDetailPage(itemId){
     const tid=await resolveTicketId(oid);
     const num=parseInt(itemId.split('-')[2])||1;
     if(!tid) throw new Error(oid+' was not found in RepairDesk (searched all tickets). It may have been deleted, or the order number changed.');
-    const d=await fetchViaProxy(`${RD_BASE}/tickets/${tid}?api_key=${RD_KEY}`);
+    const d=await fetchRD(`tickets/${tid}`);
     const dev=d&&d.data&&d.data.devices?d.data.devices[num-1]:null;
     if(!dev) throw new Error('item '+num+' not found on ticket '+tid);
 
