@@ -276,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-n</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-p</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -457,7 +457,10 @@ const PROXIES = [
 // Route RepairDesk through our own Edge Function so the key lives on the server.
 // Falls back to the old public proxies if the function isn't deployed yet.
 let edgeProxyOk=null;
-async function fetchRD(path){
+async function fetchRD(path, fresh){
+  // Public CORS proxies cache aggressively, so anything added to a ticket after the
+  // first fetch would keep showing the old version. A changing parameter defeats that.
+  if(fresh){ path += (path.includes('?')?'&':'?') + '_t=' + Date.now(); }
   if(edgeProxyOk!==false){
     try{
       const r=await edgeCall({action:'repairdesk', path});
@@ -715,7 +718,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-n';
+const APP_VERSION='2026-08-03-p';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -866,6 +869,12 @@ async function bootstrap(){
     }, 4000);
     showDataWarning(failed);
   }
+
+  // RepairDesk changes after a ticket is created (added services, new notes), so pull
+  // the ticket list again periodically rather than trusting the copy from page load.
+  setInterval(async ()=>{
+    try{ allTickets=[]; await ensureTicketsLoaded(); }catch(e){}
+  }, 15*60*1000);
 
   // Keep courier status fresh without anyone pressing a button
   setTimeout(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 3000);
@@ -3093,7 +3102,7 @@ function rdStatusToStage(name){
 // ========================================================================
 // ASK GLINT — plain-language questions answered from live shop data
 // ========================================================================
-const EDGE_NAMES = ['api-proxy', 'api-proxy.ts', 'apiproxy', 'api_proxy'];
+const EDGE_NAMES = ['api-proxy', 'quick-responder', 'api-proxy.ts', 'apiproxy', 'api_proxy'];
 let EDGE_NAME = localStorage.getItem('glint_edge_name') || EDGE_NAMES[0];
 const EDGE_URL = SUPABASE_URL + '/functions/v1/' + EDGE_NAME;   // kept for older references
 function edgeUrl(name){ return SUPABASE_URL + '/functions/v1/' + (name || EDGE_NAME); }
@@ -3357,6 +3366,13 @@ function scanovMatchOurOrder(returnedId, ourOrders){
   return null;
 }
 // Tells apart: function missing, function crashed, secrets missing, network blocked
+function saveEdgeName(){
+  const v=(document.getElementById('edge-name-input').value||'').trim().replace(/\.ts$/,'');
+  if(!v){ toast('Enter the function name'); return; }
+  EDGE_NAME=v; localStorage.setItem('glint_edge_name', v);
+  toast('Saved — testing '+v);
+  edgeDiagnose();
+}
 async function edgeDiagnose(){
   const el=document.getElementById('edge-diag');
   const say=h=>{ if(el) el.innerHTML=h; };
@@ -3369,7 +3385,7 @@ async function edgeDiagnose(){
     out+=line('✅','Reached the function as <code>'+esc(EDGE_NAME)+'</code> (HTTP '+r.status+')');
     let d={}; try{ d=await r.json(); }catch(_){}
     if(r.status===404){
-      say(out+line('❌','<strong>Function not found under any name tried:</strong> '+EDGE_NAMES.join(', ')+'.<br>Rename it to <code>api-proxy</code> in Supabase → Edge Functions.'));
+      say(out+line('❌','<strong>Function not found under any name tried:</strong> '+EDGE_NAMES.join(', ')+'.<br>Type its exact name in the box above and press Save.'));
       return;
     }
     if(r.status===401){
@@ -3382,7 +3398,8 @@ async function edgeDiagnose(){
     say(out+line('❌','<strong>Could not reach the function.</strong> Tried these names: '+EDGE_NAMES.join(', ')+'.<br><br>'+
       '<strong>1.</strong> In Supabase → Edge Functions → your function → <strong>Details/Settings</strong>, turn <strong>OFF "Verify JWT"</strong>. This is the most common cause — it blocks the browser before your code runs.<br>'+
       '<strong>2.</strong> Check the function\'s <strong>Logs</strong> tab for a startup error.<br>'+
-      '<strong>3.</strong> Confirm the function name — it should be <code>api-proxy</code>, not <code>api-proxy.ts</code>.<br>'+
+      '<strong>3.</strong> The file inside the function must be named <code>index.ts</code> — Supabase will not deploy it otherwise ("Entrypoint path does not exist").<br>'+
+      '<strong>4.</strong> Type the function\'s exact name in the box above and press Save.<br>'+
       '<span style="opacity:.7">Browser said: '+esc(e.message||String(e))+'</span>'));
     return;
   }
@@ -3938,7 +3955,10 @@ async function renderItemDetailPage(itemId){
   if(name) subParts.push(itemId);
   if(evts[0]&&evts[0].customer&&evts[0].customer!=='undefined') subParts.push(esc(evts[0].customer));
   let html=`<div class="page-head"><div><div class="page-title">${esc(name||itemId)}</div>${subParts.length?`<div class="page-sub">${subParts.join(' · ')}</div>`:''}</div>
-    <button class="btn btn-ghost btn-sm" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 View full order (${esc(oid)})</button></div>`;
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="refreshItemFromRD('${jsstr(itemId)}')" title="Pull the latest services, notes and photos from RepairDesk">↻ Refresh from RepairDesk</button>
+      <button class="btn btn-ghost btn-sm" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 View full order (${esc(oid)})</button>
+    </div></div>`;
 
   html+=`<div class="card" style="text-align:center">
     <div class="card-label" style="margin-bottom:4px">Total Time Worked</div>
@@ -4014,7 +4034,7 @@ async function renderItemDetailPage(itemId){
     const tid=await resolveTicketId(oid);
     const num=parseInt(itemId.split('-')[2])||1;
     if(!tid) throw new Error(oid+' was not found in RepairDesk (searched all tickets). It may have been deleted, or the order number changed.');
-    const d=await fetchRD(`tickets/${tid}`);
+    const d=await fetchRD(`tickets/${tid}`, true);   // always current on the item page
     const dev=d&&d.data&&d.data.devices?d.data.devices[num-1]:null;
     if(!dev) throw new Error('item '+num+' not found on ticket '+tid);
 
@@ -4100,6 +4120,33 @@ async function renderItemDetailPage(itemId){
     ? '<div class="card"><div class="empty">No notes or photos recorded for this piece yet</div></div>' : '';
 
   if(box) box.innerHTML = ticketBlock + notesHtml + photosHtml + problemBlock + nothing;
+}
+// Wipes every cached RepairDesk value and pulls the whole lot again
+async function refreshAllFromRD(){
+  if(!confirm('Reload everything from RepairDesk?\n\nClears cached item names, statuses and prices, then fetches them fresh.')) return;
+  itemNameCache={}; rdStatus={}; allTickets=[]; oidMap={};
+  prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
+  ['glint_item_names','glint_rd_status','glint_oid_map'].forEach(k=>{ try{ localStorage.removeItem(k); }catch(e){} });
+  toast('↻ Reloading from RepairDesk…');
+  try{
+    await ensureTicketsLoaded();
+    toast('✅ Reloaded '+ (allTickets.length||0) +' tickets');
+  }catch(e){ toast('Could not reload: '+(e.message||e)); }
+  router();
+}
+// Clears everything remembered about one item, then reloads it from RepairDesk
+async function refreshItemFromRD(itemId){
+  try{
+    const base=parentItemId(itemId);
+    delete itemNameCache[base]; delete itemNameCache[itemId];
+    localStorage.setItem('glint_item_names', JSON.stringify(itemNameCache));
+    delete rdStatus[base]; delete rdStatus[itemId];
+    localStorage.setItem('glint_rd_status', JSON.stringify(rdStatus));
+    allTickets=[];                 // force the ticket list to reload too
+    prodValueCache={}; prodValueSrc={};
+    toast('↻ Reloading from RepairDesk…');
+  }catch(e){}
+  renderItemDetailPage(itemId);
 }
 function lightbox(url){ window.open(url,'_blank'); }
 
@@ -4451,7 +4498,18 @@ async function renderSettingsPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
     <div class="card" style="max-width:640px">
+      <div class="card-label">RepairDesk Data</div>
+      <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Item names, services, notes and statuses are remembered to keep pages fast. If you changed something in RepairDesk and it isn't showing here, reload it.</div>
+      <button class="btn btn-gold btn-sm" onclick="refreshAllFromRD()">↻ Reload everything from RepairDesk</button>
+    </div>
+
+    <div class="card" style="max-width:640px">
       <div class="card-label">Connection Check</div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field"><label>Edge Function name (as shown in Supabase)</label>
+          <input id="edge-name-input" value="${esc(EDGE_NAME)}" placeholder="api-proxy"></div>
+        <button class="btn btn-sm" onclick="saveEdgeName()">Save</button>
+      </div>
       <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Tests the Edge Function and each API key, and says exactly what's wrong if something isn't working.</div>
       <button class="btn btn-gold btn-sm" onclick="edgeDiagnose()">🔧 Test connections</button>
       <div id="edge-diag" style="margin-top:10px;font-size:12.5px"></div>
