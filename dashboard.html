@@ -276,7 +276,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-g</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-l</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -719,7 +719,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-g';
+const APP_VERSION='2026-08-03-l';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -870,6 +870,10 @@ async function bootstrap(){
     }, 4000);
     showDataWarning(failed);
   }
+
+  // Keep courier status fresh without anyone pressing a button
+  setTimeout(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 3000);
+  setInterval(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 10*60*1000);
 
   setInterval(async ()=>{
     await Promise.allSettled([loadAllScans(), loadStageEvents()]);
@@ -1262,7 +1266,7 @@ function renderStatDetailPage(kind){
 // Work stages are CONFIGURABLE (Settings -> Pipeline Stages, stored in the settings table).
 // Delivery stages are fixed — they're logistics, not services.
 const DEFAULT_WORK_STAGES=['Cleaning','Antique','Polish','Inspection','Lacquer','Final Inspection'];
-const DELIVERY_STAGES=['Packed','On Way','Delivered'];
+const DELIVERY_STAGES=['Packed','Picked Up','On Way','Delivered'];   // 'Picked Up' = courier has collected it
 let WORK_STAGES=[...DEFAULT_WORK_STAGES];
 let STAGE_NAMES=[], PIPE_COLS=[], LASTW=5, DELIV0=6, DELIV_LAST=8, PIPE_MAXPOS=10;
 function applyPipeStages(){
@@ -1389,14 +1393,36 @@ function buildPipelineItems(){
     if(typeof idx!=='number') return;
     it.events.push({t:s.created_at, kind:(s.status||'').includes('Started')?'start':'stop', idx, worker:s.worker});
   });
+  // Scanovator is the courier — their confirmation is the strongest signal a piece
+  // actually reached the customer. Applied per order, so every item on it moves.
+  // An external status may only push an item FORWARD. Without this, a stale courier or
+  // RepairDesk value could drag a delivered piece back to Packed.
+  const externalMove=(it, stage, who, raw)=>{
+    const target=stageIdxByName(stage);
+    if(target<0) return;
+    const now0=derivePipeState(it.events);
+    const cur=(now0.col==='shop')?-1:(now0.col==='ready'?LASTW:now0.col);
+    if(typeof cur==='number' && cur>=target) { if(who==='Scanovator') it.scanovStatus=raw; else it.rdStatus=raw; return; }
+    it.events.push({t:new Date().toISOString(), kind:'override', stage, worker:who});
+    if(who==='Scanovator') it.scanovStatus=raw; else it.rdStatus=raw;
+  };
+
+  Object.entries(scanovStatus||{}).forEach(([oid,name])=>{
+    const stage=scanovToStage(name);
+    if(!stage) return;
+    Object.values(items).forEach(it=>{
+      if(orderIdOf(it.id)!==oid) return;
+      externalMove(it, stage, 'Scanovator', name);
+    });
+  });
+
   // RepairDesk is the authority on delivery. If a piece is marked Delivered / Picked up /
   // On way over there, reflect it here so the two systems agree without extra scanning.
   Object.entries(rdStatus||{}).forEach(([itemId,name])=>{
     const stage=rdStatusToStage(name);
     if(!stage) return;
     const it=items[itemId]; if(!it) return;
-    it.events.push({t:new Date().toISOString(), kind:'override', stage, worker:'RepairDesk'});
-    it.rdStatus=name;
+    externalMove(it, stage, 'RepairDesk', name);
   });
 
   (stageEvents||[]).forEach(e=>{
@@ -1505,13 +1531,39 @@ function pipeFilteredItems(){
     return true;
   });
 }
+function deliverySummaryHtml(){
+  try{
+    const {items}=buildPipelineItems();
+    const P=stageIdxByName('Packed'), PU=stageIdxByName('Picked Up'), OW=stageIdxByName('On Way');
+    const all=Object.values(items);
+    const at=i=>all.filter(x=>x.col===i);
+    const packed=at(P), picked=at(PU), onway=at(OW), delivered=at(DELIV_LAST);
+    const waiting=packed.filter(x=>x.since&&(Date.now()-new Date(x.since).getTime())>24*3600000).length;
+    if(!packed.length&&!picked.length&&!onway.length) return '';
+    return `<div class="card" style="border-left:4px solid var(--blue)">
+      <div class="card-label">🚚 Scanovator — pickup &amp; delivery</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px">
+        <div><div style="font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;line-height:1;color:${waiting?'var(--orange)':'var(--ink)'}">${packed.length}</div>
+          <div style="font-size:11px;color:var(--ink3)">packed, awaiting pickup${waiting?` · <span style="color:var(--orange)">${waiting} over 24h</span>`:''}</div></div>
+        <div><div style="font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;line-height:1;color:var(--blue)">${picked.length}</div>
+          <div style="font-size:11px;color:var(--ink3)">picked up by courier</div></div>
+        <div><div style="font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;line-height:1;color:var(--blue)">${onway.length}</div>
+          <div style="font-size:11px;color:var(--ink3)">on the way</div></div>
+        <div><div style="font-family:'Outfit',sans-serif;font-size:26px;font-weight:800;line-height:1;color:var(--green)">${delivered.length}</div>
+          <div style="font-size:11px;color:var(--ink3)">delivered</div></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="scanovSync()">↻ Refresh from Scanovator</button>
+    </div>`;
+  }catch(e){ return ''; }
+}
 function renderPipeBody(){
   const box=document.getElementById('pipe-body');
   if(!box) return;
   const list=pipeFilteredItems();
   if(!list.length){ box.innerHTML='<div class="card"><div class="empty">No items match — items appear here once a label is printed or the first scan happens</div></div>'; return; }
-  if(pipeView==='board') box.innerHTML=renderPipeBoard(list);
-  else box.innerHTML=renderPipeByOrder(list);
+  const dsum=deliverySummaryHtml();
+  if(pipeView==='board') box.innerHTML=dsum+renderPipeBoard(list);
+  else box.innerHTML=dsum+renderPipeByOrder(list);
 }
 function renderPipeBoard(list){
   const cols=PIPE_COLS.filter(c=>pipeShowDelivered || c.k!==DELIV_LAST || list.some(it=>it.col===DELIV_LAST));
@@ -1525,6 +1577,7 @@ function renderPipeBoard(list){
           <div class="pc-name">${esc(it.desc||it.id)}</div>
           <div class="pc-id">${esc(it.id)} · ${esc(orderIdOf(it.id))}</div>
           ${it.customer?`<div class="pc-cust">${esc(it.customer)}</div>`:''}
+          ${it.scanovStatus?`<div style="font-size:10.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${esc(it.scanovStatus)}</div>`:''}
           <div class="pc-foot">${pipeBadge(it)}${pipeTimeHtml(it,lvl)}</div>
         </div>`;
       }).join('')||'<div style="font-size:11px;color:var(--ink3);text-align:center;padding:10px 0">—</div>'}
@@ -1651,6 +1704,10 @@ function itemPipeCardHtml(itemId){
       ${pipeTimeHtml(it,pipeStuckLevel(it))}
     </div>
     <div class="pipe-track ${pipePos(it)===PIPE_MAXPOS?'full':''}" style="margin-bottom:14px"><div style="width:${Math.max(Math.round(pipePos(it)/PIPE_MAXPOS*100),3)}%"></div></div>
+    ${(it.scanovStatus||it.rdStatus)?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      ${it.scanovStatus?`<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 Scanovator: ${esc(it.scanovStatus)}</span>`:''}
+      ${it.rdStatus?`<span style="background:var(--surface2);color:var(--ink2);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">RepairDesk: ${esc(it.rdStatus)}</span>`:''}
+    </div>`:''}
     <div class="row"><div class="field"><label>Admin Override — move item to</label>
       <select id="pipe-ov-sel">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select></div>
       <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(itemId)}')">Move</button></div>
@@ -2459,9 +2516,31 @@ function computeAttention(){
     });
   });
 
+  // Delivery leg problems — Scanovator is the pickup and delivery system, so a piece
+  // sitting too long between Packed and Delivered is a real, chaseable issue.
+  const PACKED_I=stageIdxByName('Packed'), PICKED_I=stageIdxByName('Picked Up'), ONWAY_I=stageIdxByName('On Way');
+  all.forEach(it=>{
+    if(it.col===DELIV_LAST) return;
+    if(typeof it.col!=='number' || it.col<PACKED_I) return;
+    const hrs=it.since?(now-new Date(it.since).getTime())/3600000:0;
+    if(it.col===PACKED_I && hrs>=24){
+      issues.push({type:'delivery', item:it, hours:hrs,
+        title:'Packed but not collected',
+        detail:'Boxed '+Math.floor(hrs/24)+'d '+Math.round(hrs%24)+'h ago and the courier hasn\'t picked it up'
+               +(it.scanovStatus?' (Scanovator says: '+it.scanovStatus+')':''),
+        sev: hrs>=72?2:1});
+    } else if((it.col===PICKED_I||it.col===ONWAY_I) && hrs>=48){
+      issues.push({type:'delivery', item:it, hours:hrs,
+        title:'With the courier too long',
+        detail:'At '+colLabel(it.col)+' for '+Math.floor(hrs/24)+'d '+Math.round(hrs%24)+'h'
+               +(it.scanovStatus?' (Scanovator says: '+it.scanovStatus+')':''),
+        sev: hrs>=96?2:1});
+    }
+  });
+
   // ONE row per item — the most important reason only. An item that's stuck AND
   // behind AND holding a set is a single problem to chase, not three.
-  const PRIORITY={set:3, stuck:2, behind:1};
+  const PRIORITY={delivery:4, set:3, stuck:2, behind:1};
   const best={};
   issues.forEach(is=>{
     is.acked=attnIsAcked(acks,is.item.id,is.type);
@@ -2499,7 +2578,8 @@ function renderAttentionPage(){
   const TYPES={
     stuck:{label:'Sitting too long', icon:'⏳', hue:'var(--red)'},
     set:{label:'Holding up a set', icon:'🧩', hue:'var(--orange)'},
-    behind:{label:'Left behind', icon:'🐢', hue:'var(--gold)'}
+    behind:{label:'Left behind', icon:'🐢', hue:'var(--gold)'},
+    delivery:{label:'Delivery stuck', icon:'🚚', hue:'var(--blue)'}
   };
   const counts={}; open.forEach(i=>counts[i.type]=(counts[i.type]||0)+1);
   const shown=(attnFilter==='all'?open:open.filter(i=>i.type===attnFilter));
@@ -3005,9 +3085,11 @@ function rdStatusToStage(name){
   const s=String(name||'').toLowerCase();
   if(!s) return null;
   if(/on way|scanovator|in transit|out for/.test(s)) return 'On Way';   // courier has it, not delivered yet
+  if(/picked up by|collected/.test(s)) return 'Picked Up';
   if(/deliver|picked up/.test(s)) return 'Delivered';
   if(/pack/.test(s)) return 'Packed';
-  if(/ready|done/.test(s)) return 'READY';
+  // Deliberately NOT mapping "Ready" / "Done - Wait. Spec." — those are set by whoever
+  // edits the ticket and were jumping items past work that hadn't happened. Our scans win.
   return null;   // in-progress or admin statuses — our own scans are more accurate
 }
 
@@ -3095,6 +3177,25 @@ function askBuildContext(){
     lines.push(`${fmtDate(s.created_at)} — ${s.worker} ${(s.status||'').includes('Started')?'started':'stopped'} ${s.item_desc||s.item_id} (${s.item_id}) at ${s.role||'—'}`);
   });
 
+  try{
+    const {items}=buildPipelineItems();
+    const P=stageIdxByName('Packed'), D=DELIV_LAST;
+    const inDelivery=Object.values(items).filter(it=>typeof it.col==='number'&&it.col>=P&&it.col<D);
+    lines.push('\n## DELIVERY (Scanovator is our pickup & delivery courier)');
+    if(inDelivery.length){
+      const byCol={};
+      inDelivery.forEach(it=>{ const k=colLabel(it.col); byCol[k]=(byCol[k]||0)+1; });
+      Object.entries(byCol).forEach(([k,v])=>lines.push(`${k}: ${v} pieces`));
+      lines.push('pieces currently in the delivery leg:');
+      inDelivery.slice(0,30).forEach(it=>{
+        const d=it.since?Math.floor((now-new Date(it.since).getTime())/day):0;
+        lines.push(`  ${it.desc||it.id} (${it.id})${it.customer?' — '+it.customer:''}: ${colLabel(it.col)}, ${d} days${it.scanovStatus?', courier says "'+it.scanovStatus+'"':''}`);
+      });
+    } else lines.push('nothing is currently out for delivery');
+    const delivered=Object.values(items).filter(it=>it.col===D).length;
+    lines.push(`delivered and closed: ${delivered} pieces`);
+  }catch(e){}
+
   lines.push('\n## WORKERS ON STAFF');
   (workers||[]).forEach(w=>lines.push(`${w.name} — roles: ${(w.roles||[]).join(', ')||'none set'}`));
 
@@ -3177,6 +3278,123 @@ function renderAskPage(){
     </div>
   </div>`;
   askRenderLog();
+}
+
+
+// ========================================================================
+// SCANOVATOR — delivery status pulled in and applied to the pipeline
+// ========================================================================
+let scanovStatus=JSON.parse(localStorage.getItem('glint_scanov')||'{}');   // orderId -> status text
+
+// Their field names aren't documented in what we've seen, so find the status
+// wherever it sits rather than assuming one shape.
+function scanovFindStatus(obj){
+  if(!obj||typeof obj!=='object') return null;
+  const KEYS=/^(status|order_status|delivery_status|state|current_status)$/i;
+  for(const k of Object.keys(obj)){
+    const v=obj[k];
+    if(KEYS.test(k)){
+      if(typeof v==='string') return v;
+      if(v&&typeof v==='object'&&typeof v.name==='string') return v.name;
+    }
+  }
+  for(const k of Object.keys(obj)){                 // one level deeper
+    const v=obj[k];
+    if(v&&typeof v==='object'&&!Array.isArray(v)){
+      const f=scanovFindStatus(v); if(f) return f;
+    }
+  }
+  return null;
+}
+function scanovFindOrderId(obj){
+  for(const k of ['order_id','orderId','external_id','reference','order_number','id']){
+    if(obj&&obj[k]!=null) return String(obj[k]);
+  }
+  return null;
+}
+// Their wording -> our pipeline step
+function scanovToStage(name){
+  const s=String(name||'').toLowerCase();
+  if(!s) return null;
+  // Order matters: several of these words overlap, so test the most specific first.
+  if(/delivered|completed|dropped ?off|received by|signed by|signature/.test(s)) return 'Delivered';
+  if(/out for|on way|en route|in transit|on route|delivering/.test(s)) return 'On Way';
+  if(/picked ?up|collected|scanned in|driver assigned|dispatch|accepted|at facility|in depot/.test(s)) return 'Picked Up';
+  if(/packed|ready|label|created|pending pickup|awaiting/.test(s)) return 'Packed';
+  return null;
+}
+
+// Scanovator may hold the order as "T-1103" or just "1103" — ask for both spellings
+function scanovIdVariants(oids){
+  const out=[];
+  oids.forEach(o=>{
+    out.push(String(o));
+    const n=String(o).replace(/^T-?/i,'');
+    if(n && n!==String(o)) out.push(n);
+  });
+  return [...new Set(out)].slice(0,150);
+}
+// Match a returned id back to our T-#### order
+function scanovMatchOurOrder(returnedId, ourOrders){
+  const r=String(returnedId||'');
+  if(ourOrders.has(r)) return r;
+  const withT='T-'+r.replace(/^T-?/i,'');
+  if(ourOrders.has(withT)) return withT;
+  return null;
+}
+async function scanovFetch(orderIds){
+  const r=await fetch(SUPABASE_URL+'/functions/v1/api-proxy',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
+    body:JSON.stringify({action:'scanovator', order_ids:orderIds})
+  });
+  const d=await r.json();
+  if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+  return d;
+}
+
+// Pull status for orders that aren't finished yet
+async function scanovSync(silent){
+  try{
+    const {items}=buildPipelineItems();
+    const oids=[...new Set(Object.values(items)
+      .filter(it=>it.col!==DELIV_LAST)
+      .map(it=>orderIdOf(it.id)))].filter(Boolean).slice(0,75);
+    if(!oids.length){ if(!silent) toast('Nothing open to check'); return; }
+    const d=await scanovFetch(scanovIdVariants(oids));
+    const list=Array.isArray(d)?d:(d.data||d.orders||d.results||[]);
+    const ourSet=new Set(oids);
+    let found=0;
+    (Array.isArray(list)?list:[]).forEach(o=>{
+      const raw=scanovFindOrderId(o), st=scanovFindStatus(o);
+      if(!raw||!st) return;
+      const ours=scanovMatchOurOrder(raw, ourSet);
+      if(ours){ scanovStatus[ours]=st; found++; }
+    });
+    localStorage.setItem('glint_scanov',JSON.stringify(scanovStatus));
+    if(!silent) toast(found?('✓ Updated '+found+' order'+(found!==1?'s':'')+' from Scanovator'):'No matching orders came back');
+    if(currentRoute()==='pipeline') renderPipeBody();
+  }catch(e){ if(!silent) toast('Scanovator: '+(e.message||e)); }
+}
+
+// Shows the raw response so the status field can be mapped exactly
+async function scanovProbe(){
+  const el=document.getElementById('scanov-probe');
+  if(el) el.innerHTML='Checking…';
+  try{
+    const {items}=buildPipelineItems();
+    const sample=[...new Set(Object.values(items).map(it=>orderIdOf(it.id)))].filter(Boolean).slice(0,3);
+    if(!sample.length) throw new Error('no orders to test with');
+    const d=await scanovFetch(scanovIdVariants(sample));
+    const txt=JSON.stringify(d,null,2).slice(0,4000);
+    const list=Array.isArray(d)?d:(d.data||d.orders||d.results||[]);
+    const first=Array.isArray(list)?list[0]:null;
+    if(el) el.innerHTML=
+      `<div style="font-size:12.5px;margin-bottom:8px">Asked for: <strong>${sample.map(esc).join(', ')}</strong><br>`+
+      `Detected order id: <strong>${esc(String(first?scanovFindOrderId(first):'—'))}</strong> · `+
+      `status: <strong>${esc(String(first?scanovFindStatus(first):'—'))}</strong> → maps to <strong>${esc(String(scanovToStage(first?scanovFindStatus(first):'')||'not mapped'))}</strong></div>`+
+      `<textarea readonly style="width:100%;height:220px;font-family:monospace;font-size:11px" onclick="this.select()">${esc(txt)}</textarea>`;
+  }catch(e){ if(el) el.innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; }
 }
 
 async function renderProductionPage(){
@@ -3554,6 +3772,7 @@ function renderOrdersList(){
           <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${isJunk?' · <span style="color:var(--orange)">⚠️ NOT A GLINT LABEL</span>':''}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
           <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700${hasName?'':';color:var(--ink3)'}">${hasName?esc(o.customer):'Name not recorded'}</div>
           <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done${anyRunaway?' · <span style="color:var(--orange)">⚠️ includes capped time</span>':''}</div>
+          ${scanovStatus[oid]?`<div style="font-size:11.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${esc(scanovStatus[oid])}</div>`:''}
         </div>
         <div style="text-align:right">
           <div style="font-size:12px;font-weight:700">${doneCount}/${items.length} done</div>
@@ -4174,6 +4393,15 @@ async function renderSettingsPage(){
   }catch(e){}
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
+    <div class="card" style="max-width:640px">
+      <div class="card-label">Scanovator Delivery</div>
+      <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Pulls delivery status from your courier and moves those pieces to On&nbsp;Way / Delivered automatically. Needs SCANOVATOR_TOKEN, SCANOVATOR_STORE_ID and SCANOVATOR_STORE_CODE set as Edge&nbsp;Function secrets.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-gold btn-sm" onclick="scanovSync()">↻ Sync delivery status now</button>
+        <button class="btn btn-ghost btn-sm" onclick="scanovProbe()">🔍 Check what Scanovator sends</button>
+      </div>
+      <div id="scanov-probe" style="margin-top:10px;font-size:12px;color:var(--ink3)"></div>
+    </div>
     ${tlScheduleCard()}
     <div class="card" style="max-width:460px">
       <div class="card-label">Pipeline Stages</div>
