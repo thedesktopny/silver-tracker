@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-03-r</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-a</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -734,7 +734,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-03-r';
+const APP_VERSION='2026-08-04-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -3513,6 +3513,57 @@ async function scanovSync(silent){
 }
 
 // Shows the raw response so the status field can be mapped exactly
+// Try every reference this order could plausibly be stored under, and report which
+// one Scanovator recognises. Saves guessing one at a time.
+async function scanovFindReference(){
+  const el=document.getElementById('scanov-probe');
+  const v=(document.getElementById('scanov-test-id').value||'').trim();
+  if(!v){ toast('Enter an order number'); return; }
+  if(el) el.innerHTML='Trying every reference this order might use…';
+  const oid = /^T-/i.test(v) ? v.toUpperCase() : 'T-'+v.replace(/\D/g,'');
+  const plain = oid.replace(/^T-/,'');
+  const cands=[{label:'your order number', id:oid},
+               {label:'order number without T-', id:plain}];
+  try{
+    const tid=await resolveTicketId(oid);
+    if(tid) cands.push({label:'RepairDesk internal ticket id', id:String(tid)});
+    const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+    const inv=t&&t.summary&&t.summary.invoice&&t.summary.invoice.id;
+    if(inv) cands.push({label:'RepairDesk invoice number', id:String(inv)});
+    const cust=t&&t.summary&&t.summary.customer&&t.summary.customer.id;
+    if(cust) cands.push({label:'RepairDesk customer id', id:String(cust)});
+  }catch(e){}
+
+  let rows='', hit=null, raw='';
+  for(const cand of cands){
+    try{
+      const d=await scanovFetch([cand.id]);
+      const list=Array.isArray(d)?d:(d.data||d.orders||d.results||[]);
+      const found=Array.isArray(list)&&list.length?list[0]:null;
+      if(!raw) raw=JSON.stringify(d,null,2).slice(0,2000);
+      if(found){
+        hit={cand, found};
+        raw=JSON.stringify(d,null,2).slice(0,3000);
+        rows+=`<div style="color:var(--green);font-weight:700">✅ ${esc(cand.label)}: <code>${esc(cand.id)}</code> — FOUND</div>`;
+        break;
+      }
+      rows+=`<div style="color:var(--ink3)">✕ ${esc(cand.label)}: <code>${esc(cand.id)}</code> — not found</div>`;
+    }catch(e){
+      rows+=`<div style="color:var(--red)">⚠️ ${esc(cand.label)}: ${esc(e.message||String(e))}</div>`;
+    }
+    if(el) el.innerHTML=rows;
+  }
+  if(el) el.innerHTML = rows +
+    (hit
+      ? `<div style="margin-top:10px;padding:10px;background:var(--green-soft);border-radius:8px;font-size:13px">
+           <strong>Scanovator identifies orders by the ${esc(hit.cand.label)}.</strong><br>
+           status: <strong>${esc(String(scanovFindStatus(hit.found)||'—'))}</strong> → <strong>${esc(String(scanovToStage(scanovFindStatus(hit.found))||'not mapped'))}</strong><br>
+           Send me this and I'll switch the sync to use it.</div>`
+      : `<div style="margin-top:10px;padding:10px;background:var(--orange-soft);border-radius:8px;font-size:13px">
+           None of these matched. Open this order in Scanovator's own portal and copy the reference they show — then type that exact value above and press "Look up".</div>`)
+    + `<textarea readonly style="width:100%;height:170px;font-family:monospace;font-size:11px;margin-top:8px" onclick="this.select()">${esc(raw)}</textarea>`;
+}
+
 // Query one specific order — the fastest way to learn what reference they store
 async function scanovTestOne(){
   const el=document.getElementById('scanov-probe');
@@ -4342,6 +4393,7 @@ function renderRolesList(){
         <select onchange="updateRoleSetting(${r.id},'track_mode',this.value)" style="width:auto;padding:5px 8px;font-size:12px">
           <option value="timed" ${(!r.track_mode||r.track_mode==='timed')?'selected':''}>⏱️ Timed — start &amp; stop</option>
           <option value="status" ${r.track_mode==='status'?'selected':''}>✓ Status only — one tap, no timer</option>
+          <option value="delivery" ${r.track_mode==='delivery'?'selected':''}>🚚 Delivery step — mark Packed / On Way / Delivered</option>
         </select>
       </label>
       <label style="font-size:11px;color:var(--ink3);display:flex;align-items:center;gap:6px">
@@ -4608,6 +4660,7 @@ async function renderSettingsPage(){
         <div class="field"><label>Test one order you know is in Scanovator</label>
           <input id="scanov-test-id" placeholder="e.g. 1143 or T-1143"></div>
         <button class="btn btn-sm" onclick="scanovTestOne()">Look up</button>
+        <button class="btn btn-gold btn-sm" onclick="scanovFindReference()">🔎 Find the reference</button>
       </div>
       <div id="scanov-probe" style="margin-top:10px;font-size:12px;color:var(--ink3)"></div>
     </div>
