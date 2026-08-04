@@ -274,7 +274,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
       <div id="active-work-info" style="margin-top:12px"></div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button onclick="openNoteBox()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📝 Add Note</button>
-        <button onclick="addPhotoNow()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📸 Add Photo</button>
+        <button onclick="addPhotoNow()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">📸 Photo</button>
+        <button onclick="addVideoNow()" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🎥 Video</button>
         <button onclick="viewItemImages()" id="view-imgs-btn" style="flex:1;background:var(--surface);border:2px solid var(--border);border-radius:8px;color:var(--ink2);font-family:'Inter',sans-serif;font-size:11px;font-weight:700;padding:9px;cursor:pointer">🖼️ All Photos</button>
       </div>
       <div id="note-box" style="display:none;margin-top:10px">
@@ -1695,6 +1696,49 @@ function addPhotoNow(){
   if(!activeWork){ showToast('No active item'); return; }
   pendingStop = null; // this is a voluntary photo, not gating a stop
   openImgModal(activeWork.itemId, activeWork.name || activeWork.itemId, false);
+}
+
+// ===== VIDEO =====
+// Uses the phone's own camera app rather than recording in the browser — better
+// quality, no battery drain, and it works identically on iOS and Android.
+const VIDEO_MAX_MB=25;      // a clip this size is roughly 20-40 seconds
+function addVideoNow(){
+  if(!activeWork){ showToast('No active item'); return; }
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='video/*'; inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) uploadVideo(f, activeWork.itemId, activeWork.name||activeWork.itemId); };
+  inp.click();
+}
+async function uploadVideo(file, itemId, name){
+  const mb=file.size/1024/1024;
+  if(mb>VIDEO_MAX_MB){
+    showToast('⚠️ Video too big ('+mb.toFixed(0)+'MB). Record about 20 seconds or less.');
+    return;
+  }
+  showToast('⬆️ Uploading video… '+mb.toFixed(1)+'MB');
+  const ext=(file.name.match(/\.(mp4|mov|webm|m4v)$/i)||['.mp4'])[0];
+  const fname='vid_'+itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+ext;
+  try{
+    const put=()=>fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':file.type||'video/mp4','x-upsert':'true'},
+      body:file});
+    let up=await put();
+    if(!up.ok){ await new Promise(r=>setTimeout(r,1500)); up=await put(); }
+    if(!up.ok){
+      let detail=''; try{ const j=await up.json(); detail=j.message||j.error||''; }catch(_){}
+      throw new Error('HTTP '+up.status+(detail?' · '+String(detail).slice(0,60):''));
+    }
+    const url=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
+    await fetch(SUPABASE_URL+'/rest/v1/item_images',{
+      method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:itemId, item_desc:name, image_url:url,
+                           worker:selectedWorker?selectedWorker.name:'', role:selectedRole||''})
+    });
+    playBeep(920,140);
+    showToast('🎥 Video saved');
+  }catch(e){ showToast('⚠️ Video upload failed: '+(e.message||e)); }
 }
 
 function openImgModal(itemId, name, required){
