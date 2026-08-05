@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-d</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-04-f</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -383,6 +383,7 @@ const NAV_ITEMS = [
   {route:'insights', label:'Insights', icon:'◆'},
   {route:'ask', label:'Ask Glint', icon:'✨'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
+  {route:'hold', label:'On Hold', icon:'⏸️'},
   {route:'timeline', label:'Day Timeline', icon:'🕘'},
   {route:'production', label:'Production', icon:'📈'},
   {route:'orders', label:'Orders', icon:'▦'},
@@ -715,7 +716,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -734,7 +735,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-04-d';
+const APP_VERSION='2026-08-04-f';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -784,6 +785,7 @@ const ROUTE_RENDERERS={
   insights: renderInsightsPage,
   ask: renderAskPage,
   attention: renderAttentionPage,
+  hold: renderHoldPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
   orders: renderOrdersListPage,
@@ -1067,6 +1069,7 @@ function renderLivePage(){
   const workingCount=Object.keys(active).length;
   const todayScans=scans.filter(s=>new Date(s.created_at).toDateString()===new Date().toDateString()).length;
   const reworkItems=computeAllRework();
+  const holdCount=Object.keys(computeHolds()).length;
 
   // Working entries sorted longest-running first — the ones most likely to need a look
   const workingEntries=Object.entries(active).sort((a,b)=>new Date(a[1].startedAt)-new Date(b[1].startedAt));
@@ -1081,6 +1084,7 @@ function renderLivePage(){
     <div class="stat-tile" onclick="navigate('${h('stat','today')}')"><div class="stat-num">${todayScans}</div><div class="stat-label">Scans Today ›</div></div>
     <div class="stat-tile ${stale.length?'alert':''}" onclick="navigate('${h('stat','stale')}')"><div class="stat-num">${stale.length}</div><div class="stat-label">Left Running ${IDLE_ALERT_HOURS}h+ ›</div></div>
     <div class="stat-tile ${reworkItems.length?'warn':''}" onclick="navigate('${h('stat','rework')}')"><div class="stat-num">${reworkItems.length}</div><div class="stat-label">↩️ Sent Back ›</div></div>
+    <div class="stat-tile" onclick="navigate('${h('hold')}')" style="${holdCount?'border-left:4px solid var(--gold)':''}"><div class="stat-num" style="${holdCount?'color:var(--gold)':''}">${holdCount}</div><div class="stat-label">⏸️ On Hold ›</div></div>
   </div>`;
 
   if(stale.length){
@@ -1488,7 +1492,7 @@ function buildPipelineItems(){
   (stageEvents||[]).forEach(e=>{
     // Bookkeeping events (attention dismissals, rework reasons, blocks) are not
     // pipeline movements — feeding them in would wrongly advance the item
-    if(['attn-ack','rework-paid','rework-free','blocked-unbooked','override-unbooked'].includes(e.action)) return;
+    if(['attn-ack','rework-paid','rework-free','blocked-unbooked','override-unbooked','hold','unhold'].includes(e.action)) return;
     const it=ensure(e.item_id, e.item_desc, ''); if(!it) return;
     if(e.worker) it.workers.add(e.worker);
     it.events.push({t:e.created_at, kind:e.action==='override'?'override':'finish', stage:e.stage, worker:e.worker});
@@ -1617,6 +1621,7 @@ function deliverySummaryHtml(){
   }catch(e){ return ''; }
 }
 function renderPipeBody(){
+  window._holdsCache=computeHolds();
   const box=document.getElementById('pipe-body');
   if(!box) return;
   const list=pipeFilteredItems();
@@ -1643,6 +1648,9 @@ function renderPipeBoard(list){
           <div class="pc-id">${esc(it.id)} · ${esc(orderIdOf(it.id))}</div>
           ${it.customer?`<div class="pc-cust">${esc(it.customer)}</div>`:''}
           ${it.scanovStatus?`<div style="font-size:10.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${esc(it.scanovStatus)}</div>`:''}
+          ${(()=>{ const hh=(window._holdsCache||{})[it.id]; if(!hh) return '';
+            const k=HOLD_KINDS[hh.kind]||HOLD_KINDS.customer;
+            return `<div style="font-size:10.5px;color:${k.hue};font-weight:700;margin-top:3px">⏸️ ${k.icon} on hold</div>`; })()}
           <div class="pc-foot">${pipeBadge(it)}${pipeTimeHtml(it,lvl)}</div>
         </div>`;
       }).join('')||'<div style="font-size:11px;color:var(--ink3);text-align:center;padding:10px 0">—</div>'}
@@ -2019,9 +2027,16 @@ function toggleParts(itemId,name,cust,city,note,due,services,group){
       return `<div style="display:flex;gap:10px;padding:7px 0"><input type="checkbox" class="item-cb" id="${cbId}" onchange="updateSelCount()" style="width:18px;height:18px;accent-color:var(--ink)"
         data-item-id="${pid}" data-item-name="${esc(name)} — ${part}" data-services="${esc(services||'')}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group||'')}" data-note="${esc(note)}" data-due="${esc(due)}" data-part="${part}">
         <div style="font-weight:600;font-size:13.5px">${part}</div></div>`;
-    }).join('')+`<div style="display:flex;gap:6px;margin-top:6px">
+    }).join('')+`<div id="cs-list-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}"></div>
+    <div style="display:flex;gap:8px;margin:10px 0 8px;padding-top:10px;border-top:1px solid var(--border)">
+      <input type="text" id="cs-input-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}" placeholder="Add another part — e.g. Lid, Bobeche…" style="flex:1" onkeydown="if(event.key==='Enter')addCustomPart('${jsstr(itemId)}')">
+      <button class="btn btn-sm" onclick="addCustomPart('${jsstr(itemId)}')">+ Add</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
     <button class="btn btn-sm" onclick="selectParts('${jsstr(itemId)}',true)">All parts</button>
     <button class="btn btn-ghost btn-sm" onclick="selectParts('${jsstr(itemId)}',false)">None</button></div>`;
+  // addCustomPart reads the item's details from here
+  box.dataset.meta=JSON.stringify({itemId,name,cust,city,note,due,services,group});
   updateSelCount();
 }
 function customSplit(itemId,name,cust,city,note,due,services,group){
@@ -2045,7 +2060,7 @@ function addCustomPart(itemId){
   const box=document.getElementById('split-'+key);
   const meta=JSON.parse(box.dataset.meta);
   const list=document.getElementById('cs-list-'+key);
-  const pid=itemId+'-'+part.toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const pid=itemId+'-'+partSlug(part);   // short code keeps the barcode scannable
   const cbId='cb-'+pid.replace(/[^a-zA-Z0-9]/g,'_');
   // Don't allow the same part twice
   if(document.getElementById(cbId)){ toast('"'+part+'" is already added'); inp.value=''; inp.focus(); return; }
@@ -2574,6 +2589,7 @@ function attnIsAcked(acks, itemId, type){ return !!acks[itemId+'::'+type]; }
 function computeAttention(){
   const {items}=buildPipelineItems();
   const acks=attnAcks();
+  const held=computeHolds();   // paused on purpose — never flag these as problems
   const all=Object.values(items);
   const now=Date.now();
   const issues=[];
@@ -2584,6 +2600,7 @@ function computeAttention(){
 
   all.forEach(it=>{
     if(it.col===DELIV_LAST) return;                       // delivered, nothing to chase
+    if(held[it.id]) return;                               // on hold, deliberately paused
     const sinceMs = it.since ? now-new Date(it.since).getTime() : 0;
     const hours = sinceMs/3600000;
 
@@ -3694,6 +3711,122 @@ async function scanovProbe(){
   }catch(e){ if(el) el.innerHTML='<span style="color:var(--red)">'+esc(e.message||String(e))+'</span>'; }
 }
 
+
+// ========================================================================
+// ON HOLD — a piece deliberately paused, with a reason
+// ========================================================================
+const HOLD_KINDS={
+  customer:{label:'Waiting on customer', icon:'👤', hue:'var(--gold)',
+            hint:'e.g. approval, a decision, they need to supply something'},
+  supplier:{label:'Waiting on supplier', icon:'📦', hue:'var(--blue)',
+            hint:'e.g. sent out for repair, waiting on a part'}
+};
+// Latest hold/unhold per item decides the current state
+function computeHolds(){
+  const byItem={};
+  (stageEvents||[]).forEach(e=>{
+    if(e.action!=='hold' && e.action!=='unhold') return;
+    const cur=byItem[e.item_id];
+    if(!cur || new Date(e.created_at)>new Date(cur.at)) {
+      byItem[e.item_id]={ action:e.action, kind:(e.stage||'').split('::')[0]||'customer',
+                          reason:(e.stage||'').split('::').slice(1).join('::'),
+                          desc:e.item_desc||'', worker:e.worker||'', at:e.created_at };
+    }
+  });
+  const out={};
+  Object.entries(byItem).forEach(([id,h])=>{ if(h.action==='hold') out[id]=h; });
+  return out;
+}
+function isOnHold(itemId){ return !!computeHolds()[itemId]; }
+
+async function putOnHold(itemId, desc){
+  const kind=await askHoldKind(desc||itemId);
+  if(!kind) return;
+  const reason=prompt('Why is "'+(desc||itemId)+'" on hold?\n\n'+HOLD_KINDS[kind].hint);
+  if(reason===null) return;
+  if(!String(reason).trim()){ toast('A reason is required'); return; }
+  const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:kind+'::'+reason,
+                         action:'hold', worker:'Admin'})});
+  if(r.ok){ toast('⏸️ On hold — '+HOLD_KINDS[kind].label); await loadStageEvents(); router(); }
+  else toast('Could not save');
+}
+async function releaseHold(itemId, desc){
+  if(!confirm('Take "'+(desc||itemId)+'" off hold?')) return;
+  const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:'', action:'unhold', worker:'Admin'})});
+  if(r.ok){ toast('▶ Back in the pipeline'); await loadStageEvents(); router(); }
+  else toast('Could not save');
+}
+// Two clear buttons rather than a typed category
+function askHoldKind(name){
+  return new Promise(resolve=>{
+    const bg=document.createElement('div');
+    bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    bg.innerHTML=`<div style="background:var(--surface);border-radius:16px;padding:24px;max-width:420px;width:100%">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Put on hold</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:700;margin:6px 0 16px">${esc(name)}</div>
+      ${Object.entries(HOLD_KINDS).map(([k,v])=>`
+        <button data-k="${k}" style="width:100%;padding:15px;border:2px solid var(--border);border-radius:11px;background:var(--surface);
+          text-align:left;cursor:pointer;margin-bottom:10px;font-size:15px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:10px">
+          <span style="font-size:20px">${v.icon}</span>
+          <span>${v.label}<br><span style="font-size:11.5px;font-weight:400;color:var(--ink3)">${v.hint}</span></span>
+        </button>`).join('')}
+      <button data-k="" style="width:100%;padding:10px;border:none;background:none;color:var(--ink3);cursor:pointer;font-size:13px">Cancel</button>
+    </div>`;
+    document.body.appendChild(bg);
+    bg.querySelectorAll('button').forEach(b=>b.onclick=()=>{ bg.remove(); resolve(b.dataset.k||null); });
+  });
+}
+
+function renderHoldPage(){
+  const holds=computeHolds();
+  const list=Object.entries(holds).map(([id,h])=>({id,...h}))
+    .sort((a,b)=>new Date(a.at)-new Date(b.at));   // longest-held first
+  const byKind={};
+  list.forEach(h=>{ (byKind[h.kind]=byKind[h.kind]||[]).push(h); });
+
+  let html=`<div class="page-head">
+    <div><div class="page-title">On Hold</div><div class="page-sub">Pieces deliberately paused — they don't count as stuck</div></div>
+  </div>`;
+
+  html+=`<div class="stat-grid">
+    <div class="stat-tile" style="border-left:4px solid var(--ink3)"><div class="stat-num">${list.length}</div><div class="stat-label">Total on hold</div></div>
+    ${Object.entries(HOLD_KINDS).map(([k,v])=>`
+      <div class="stat-tile" style="border-left:4px solid ${v.hue}"><div class="stat-num" style="color:${v.hue}">${(byKind[k]||[]).length}</div>
+        <div class="stat-label">${v.icon} ${v.label}</div></div>`).join('')}
+  </div>`;
+
+  if(!list.length){
+    html+=`<div class="card" style="text-align:center;padding:30px;border-color:var(--green);background:var(--green-soft)">
+      <div style="font-size:38px;line-height:1">✓</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:700;margin-top:6px">Nothing on hold</div>
+      <div style="font-size:13px;color:var(--ink2);margin-top:4px">Put a piece on hold from its item page or the pipeline.</div></div>`;
+  }
+
+  Object.entries(HOLD_KINDS).forEach(([k,v])=>{
+    const rows=byKind[k]||[];
+    if(!rows.length) return;
+    html+=`<div class="card" style="border-left:4px solid ${v.hue}">
+      <div class="card-label">${v.icon} ${v.label} (${rows.length})</div>
+      ${rows.map(h=>{
+        const days=Math.floor((Date.now()-new Date(h.at).getTime())/86400000);
+        return `<div style="display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <div class="clickable" style="font-weight:700;font-size:15px" onclick="navigate('${h2('item',h.id)}')">${esc(h.desc||h.id)}</div>
+            <div style="font-size:11.5px;color:var(--ink3)">${esc(h.id)} · on hold ${days} day${days!==1?'s':''} · since ${fmtDate(h.at)}</div>
+            <div style="font-size:13px;color:var(--ink2);margin-top:5px;background:var(--surface2);padding:7px 10px;border-radius:7px">${esc(h.reason||'no reason given')}</div>
+          </div>
+          <button class="btn btn-sm" onclick="releaseHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">▶ Release</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+  });
+
+  document.getElementById('content').innerHTML=html;
+}
+function h2(route,param){ return h(route,param).replace(/'/g,"\\'"); }
+
 async function renderProductionPage(){
 
   prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
@@ -4174,6 +4307,7 @@ async function renderItemDetailPage(itemId){
   let totalMs=0, openEvt=null;
   evts.forEach(e=>{ if((e.status||'').includes('Started'))openEvt=e; else if((e.status||'').includes('Stopped')&&openEvt){ totalMs+=new Date(e.created_at)-new Date(openEvt.created_at); openEvt=null; } });
 
+  const holdInfo=computeHolds()[itemId];
   const subParts=[];
   if(name) subParts.push(itemId);
   if(evts[0]&&evts[0].customer&&evts[0].customer!=='undefined') subParts.push(esc(evts[0].customer));
@@ -4181,7 +4315,20 @@ async function renderItemDetailPage(itemId){
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" onclick="refreshItemFromRD('${jsstr(itemId)}')" title="Pull the latest services, notes and photos from RepairDesk">↻ Refresh from RepairDesk</button>
       <button class="btn btn-ghost btn-sm" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 View full order (${esc(oid)})</button>
+      ${holdInfo
+        ? `<button class="btn btn-sm" onclick="releaseHold('${jsstr(itemId)}','${jsstr(name||'')}')">▶ Take off hold</button>`
+        : `<button class="btn btn-ghost btn-sm" onclick="putOnHold('${jsstr(itemId)}','${jsstr(name||'')}')">⏸️ Put on hold</button>`}
     </div></div>`;
+
+  if(holdInfo){
+    const hk=HOLD_KINDS[holdInfo.kind]||HOLD_KINDS.customer;
+    const hdays=Math.floor((Date.now()-new Date(holdInfo.at).getTime())/86400000);
+    html+=`<div class="card" style="border-color:${hk.hue};background:var(--orange-soft)">
+      <div class="card-label" style="color:${hk.hue}">⏸️ On hold — ${hk.icon} ${hk.label}</div>
+      <div style="font-size:14px">${esc(holdInfo.reason||'no reason given')}</div>
+      <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">since ${fmtDate(holdInfo.at)} · ${hdays} day${hdays!==1?'s':''}</div>
+    </div>`;
+  }
 
   html+=`<div class="card" style="text-align:center">
     <div class="card-label" style="margin-bottom:4px">Total Time Worked</div>
