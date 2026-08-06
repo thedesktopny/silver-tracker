@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-g</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-j</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -797,7 +797,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-06-g';
+const APP_VERSION='2026-08-06-j';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1187,6 +1187,37 @@ function renderLivePage(){
   // Recent activity feed + idle team roster, side by side
   const feed=[...scans].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,14);
   html+='<div class="live-split" style="margin-top:8px">';
+  // Held pieces listed here directly — not just a number to click through
+  const heldNow=computeHolds();
+  const heldList=Object.entries(heldNow).map(([id,h])=>({id,...h}))
+    .sort((a,b)=>new Date(a.since||a.at)-new Date(b.since||b.at));
+  if(heldList.length){
+    const grouped={};
+    heldList.forEach(x=>{ const lbl=holdKindOf(x.kind).label; (grouped[lbl]=grouped[lbl]||[]).push(x); });
+    html+=`<div class="card" style="border-left:4px solid var(--gold)">
+      <div class="card-label">⏸️ On Hold (${heldList.length}) <span style="font-weight:600;text-transform:none;color:var(--ink3)">— longest waiting first</span>
+        <button class="btn btn-ghost btn-sm" style="float:right;padding:3px 10px;font-size:11px" onclick="navigate('${h('hold')}')">Open full list ›</button></div>
+      ${Object.entries(grouped).map(([lbl,rows])=>{
+        const k=holdKindOf(rows[0].kind);
+        return `<div style="margin-bottom:10px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${k.hue};margin-bottom:4px">${k.icon} ${esc(lbl)} (${rows.length})</div>
+          ${rows.slice(0,6).map(x=>{
+            const days=Math.floor((Date.now()-new Date(x.since||x.at).getTime())/86400000);
+            return `<div class="clickable" style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)"
+              onclick="navigate('${h('item',x.id).replace(/'/g,"\\'")}')">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:13.5px">${esc(x.desc||x.id)}</div>
+                <div style="font-size:11.5px;color:var(--ink3)">${esc(x.reason||'')}</div>
+              </div>
+              <span style="font-size:11.5px;font-weight:700;color:${days>=7?'var(--red)':'var(--ink3)'};white-space:nowrap">${days}d</span>
+            </div>`;
+          }).join('')}
+          ${rows.length>6?`<div style="font-size:11.5px;color:var(--ink3);padding-top:5px">+ ${rows.length-6} more</div>`:''}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
   html+='<div class="card" style="margin-bottom:0"><div class="card-label">Recent Activity</div>'+
     (feed.length?feed.map(s=>{
       const started=(s.status||'').includes('Started');
@@ -3064,6 +3095,8 @@ function renderAttentionPage(){
 // DAY TIMELINE — the shape of the day in the bar, the detail in a list beside it
 // ========================================================================
 let tlDate=new Date(); tlDate.setHours(0,0,0,0);
+let dueFilter='all', dueSort=false;
+let holdFilter=null;   // which place is being filtered on the On Hold page
 let tlOpen=new Set();          // which workers are expanded
 function tlToggle(name){ tlOpen.has(name)?tlOpen.delete(name):tlOpen.add(name); drawTimeline(); }
 function tlExpandAll(){ (window._tlNames||[]).forEach(n=>tlOpen.add(n)); drawTimeline(); }
@@ -4098,7 +4131,10 @@ async function putOnHold(itemId, desc){
     body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:HOLD_KINDS[kind].label+'::'+reason,
                          action:'hold', worker:'Admin'})});
   if(r.ok){ toast('⏸️ On hold — '+HOLD_KINDS[kind].label); await loadStageEvents(); router(); }
-  else toast('Could not save');
+  else {
+    let why=''; try{ const j=await r.json(); why=j.message||j.error||''; }catch(_){}
+    toast('Could not save the hold'+(why?': '+String(why).slice(0,70):' — is the stage_events table set up?'));
+  }
 }
 // Releasing needs a note too — otherwise nobody knows what changed — and a choice of
 // where it goes back to. "Waiting for Shop" is how the office flags that it needs
@@ -4197,7 +4233,7 @@ function renderHoldPage(){
   const list=Object.entries(holds).map(([id,h])=>({id,...h}))
     .sort((a,b)=>new Date(a.at)-new Date(b.at));   // longest-held first
   const byKind={};
-  list.forEach(h=>{ (byKind[h.kind]=byKind[h.kind]||[]).push(h); });
+  list.forEach(h=>{ const lbl=holdKindOf(h.kind).label; (byKind[lbl]=byKind[lbl]||[]).push(h); });
 
   let html=`<div class="page-head">
     <div><div class="page-title">On Hold</div><div class="page-sub">Pieces deliberately paused — they don't count as stuck</div></div>
@@ -4206,7 +4242,7 @@ function renderHoldPage(){
   html+=`<div class="stat-grid">
     <div class="stat-tile" style="border-left:4px solid var(--ink3)"><div class="stat-num">${list.length}</div><div class="stat-label">Total on hold</div></div>
     ${Object.entries(HOLD_KINDS).map(([k,v])=>`
-      <div class="stat-tile" style="border-left:4px solid ${v.hue}"><div class="stat-num" style="color:${v.hue}">${(byKind[k]||[]).length}</div>
+      <div class="stat-tile clickable" onclick="holdFilter=holdFilter==='${jsstr(v.label)}'?null:'${jsstr(v.label)}';renderHoldPage()" style="border-left:4px solid ${v.hue};${holdFilter===v.label?'box-shadow:0 0 0 2px '+v.hue:''}"><div class="stat-num" style="color:${v.hue}">${(byKind[v.label]||[]).length}</div>
         <div class="stat-label">${v.icon} ${v.label}</div></div>`).join('')}
   </div>`;
 
@@ -4218,7 +4254,8 @@ function renderHoldPage(){
   }
 
   Object.entries(HOLD_KINDS).forEach(([k,v])=>{
-    const rows=byKind[k]||[];
+    const rows=byKind[v.label]||[];
+    if(holdFilter && holdFilter!==v.label) return;
     if(!rows.length) return;
     html+=`<div class="card" style="border-left:4px solid ${v.hue}">
       <div class="card-label">${v.icon} ${v.label} (${rows.length})</div>
@@ -4241,6 +4278,34 @@ function renderHoldPage(){
       }).join('')}
     </div>`;
   });
+
+  // A place that has since been removed from the list would otherwise vanish
+  const knownLabels=new Set(Object.values(HOLD_KINDS).map(v=>v.label));
+  Object.entries(byKind).forEach(([lbl,rows])=>{
+    if(knownLabels.has(lbl)) return;
+    if(holdFilter && holdFilter!==lbl) return;
+    html+=`<div class="card" style="border-left:4px solid var(--ink3)">
+      <div class="card-label">🔧 ${esc(lbl)} (${rows.length}) <span style="font-weight:600;text-transform:none;color:var(--ink3)">— no longer on your list of places</span></div>
+      ${rows.map(h=>{
+        const days=Math.floor((Date.now()-new Date(h.since||h.at).getTime())/86400000);
+        return `<div style="display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0">
+            <div class="clickable" style="font-weight:700;font-size:15px" onclick="navigate('${h2('item',h.id)}')">${esc(h.desc||h.id)}</div>
+            <div style="font-size:11.5px;color:var(--ink3)">${esc(h.id)} · on hold ${days} day${days!==1?'s':''}</div>
+            <div style="font-size:13px;color:var(--ink2);margin-top:5px;background:var(--surface2);padding:7px 10px;border-radius:7px">${esc(h.reason||'no reason given')}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+            <button class="btn btn-ghost btn-sm" onclick="updateHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">✏️ Update</button>
+            <button class="btn btn-sm" onclick="releaseHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">▶ Release</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  });
+
+  if(holdFilter){
+    html+=`<button class="btn btn-ghost btn-sm" onclick="holdFilter=null;renderHoldPage()">← Show every place</button>`;
+  }
 
   document.getElementById('content').innerHTML=html;
 }
@@ -4857,9 +4922,61 @@ function renderOrdersListPage(){
       <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time</div></div>
       <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
     </div>
+    <div class="card" style="padding:12px 16px">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-right:4px">Due</span>
+        ${[['all','Any time'],['overdue','⚠️ Overdue'],['today','Today'],['week','By end of week'],['7','Next 7 days'],['month','This month'],['none','No date set']]
+          .map(([k,l])=>`<button class="btn btn-sm ${dueFilter===k?'btn-gold':'btn-ghost'}" onclick="dueFilter='${k}';renderOrdersList()">${l}</button>`).join('')}
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink3);margin-left:auto">
+          <input type="checkbox" ${dueSort?'checked':''} onchange="dueSort=this.checked;renderOrdersList()" style="width:15px;height:15px"> sort by due date
+        </label>
+      </div>
+    </div>
     <div id="orders-list"></div>
   `;
   renderOrdersList();
+}
+// Which orders fall inside the chosen window
+function dueDateFor(oid){
+  const info=dueInfoFor(oid);
+  if(info) return info.date;
+  const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+  if(t){
+    const s=t.summary; let ts=(s&&(s.due_date||s.due_on))||null;
+    if(!ts && t.devices && t.devices.length) ts=t.devices[0].due_on||t.devices[0].due_date||null;
+    if(ts) return new Date(ts*1000);
+  }
+  return null;
+}
+function startOfDay(d){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()); }
+function dueMatches(oid, filter){
+  const f=filter||dueFilter;
+  if(f==='all') return true;
+  const raw=dueDateFor(oid);
+  const d=raw?startOfDay(raw):null;   // whole days only
+  if(f==='none') return !d;
+  if(!d) return false;
+  const now=new Date(), sod=startOfDay(now), day=86400000;
+  if(f==='overdue') return d<sod;
+  if(f==='today') return d.getTime()===sod.getTime();
+  if(f==='week'){
+    // everything up to and including the coming Sunday, overdue included
+    const end=new Date(sod.getTime()+((7-sod.getDay())%7)*day+day);
+    return d<end;
+  }
+  if(f==='7') return d>=sod && d<new Date(sod.getTime()+7*day);
+  if(f==='month') return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+  return true;
+}
+function dueBadge(oid){
+  const d=dueDateFor(oid);
+  if(!d) return '<span style="font-size:11px;color:var(--ink3)">no due date</span>';
+  const sod=startOfDay(new Date());
+  const days=Math.round((startOfDay(d)-sod)/86400000);
+  const late=days<0, soon=days>=0&&days<=2;
+  const col=late?'var(--red)':(soon?'var(--orange)':'var(--ink3)');
+  const txt=late?(Math.abs(days)+'d overdue'):(days===0?'due today':(days===1?'due tomorrow':'due in '+days+'d'));
+  return `<span style="font-size:11.5px;font-weight:700;color:${col}">${d.toLocaleDateString([], {month:'short',day:'numeric'})} · ${txt}</span>`;
 }
 function renderOrdersList(){
   const q=(document.getElementById('orders-search').value||'').toLowerCase().trim();
@@ -4877,8 +4994,19 @@ function renderOrdersList(){
     if(oid.toLowerCase().includes(q)||(o.customer||'').toLowerCase().includes(q)) return true;
     return Object.entries(o.items).some(([iid,it])=>iid.toLowerCase().includes(q)||(it.desc||'').toLowerCase().includes(q)||it.events.some(e=>(e.worker||'').toLowerCase().includes(q)));
   });
+  list=list.filter(([oid])=>dueMatches(oid));
+  if(dueSort) list.sort((a,b)=>{
+    const da=dueDateFor(a[0]), db=dueDateFor(b[0]);
+    if(!da&&!db) return 0;
+    if(!da) return 1;            // undated last
+    if(!db) return -1;
+    return da-db;                 // soonest first
+  });
   const el=document.getElementById('orders-list');
-  if(!list.length){ el.innerHTML='<div class="empty">No orders match</div>'; return; }
+  if(!list.length){
+    el.innerHTML='<div class="card"><div class="empty">No orders'+(dueFilter!=='all'?' due in that period':' match')+'</div></div>';
+    return;
+  }
   el.innerHTML=list.map(([oid,o])=>{
     const items=Object.entries(o.items);
     let doneCount=0, totalMs=0, anyWorking=false, anyRunaway=false;
@@ -4893,6 +5021,7 @@ function renderOrdersList(){
           <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${isJunk?' · <span style="color:var(--orange)">⚠️ NOT A GLINT LABEL</span>':''}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
           <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700${hasName?'':';color:var(--ink3)'}">${hasName?esc(o.customer):'Name not recorded'}</div>
           <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done${anyRunaway?' · <span style="color:var(--orange)">⚠️ includes capped time</span>':''}</div>
+          <div style="margin-top:3px">${dueBadge(oid)}</div>
           ${scanovStatus[oid]?`<div style="font-size:11.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${esc(scanovStatus[oid])}</div>`:''}
         </div>
         <div style="text-align:right">
