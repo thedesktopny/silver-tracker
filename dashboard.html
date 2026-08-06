@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-c</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-e</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -777,7 +777,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -796,7 +796,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-06-c';
+const APP_VERSION='2026-08-06-e';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -845,6 +845,7 @@ const ROUTE_RENDERERS={
   reports: renderReportsPage,
   insights: renderInsightsPage,
   ask: renderAskPage,
+  photofind: renderPhotoFindPage,
   attention: renderAttentionPage,
   hold: renderHoldPage,
   timeline: renderTimelinePage,
@@ -1711,7 +1712,7 @@ function renderPipelinePage(){
           <button class="${pipeView==='board'?'on':''}" onclick="pipeSetView('board')">Board</button>
           <button class="${pipeView==='order'?'on':''}" onclick="pipeSetView('order')">By Order</button>
         </div>
-        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
+        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
         <select id="pipe-stage" onchange="pipeStage=this.value;renderPipeBody()" style="width:auto;padding:8px 10px;font-size:12.5px">
           <option value="all">All steps</option>
           ${PIPE_COLS.map(c=>`<option value="${c.k}">${c.l}</option>`).join('')}
@@ -1943,6 +1944,39 @@ function openPipeModal(itemId){
 async function postStageEventAdmin(itemId, stage, action, desc){
   return sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage, action, worker:'Admin'})});
 }
+// Same thing from the order page — pick the stage in one prompt
+async function quickAddToPipeline(itemId){
+  const opts=[['RESET','Waiting for Shop'],...WORK_STAGES.map(s=>[s,'Waiting for '+s]),['READY','Ready'],...DELIVERY_STAGES.map(s=>[s,s])];
+  const list=opts.map((o,i)=>(i+1)+'. '+o[1]).join('\n');
+  const pick=prompt('Where is this piece?\n\n'+list+'\n\nType the number:');
+  if(pick===null) return;
+  const n=parseInt(pick,10);
+  if(!n||n<1||n>opts.length){ toast('Enter one of the numbers'); return; }
+  const r=await postStageEventAdmin(itemId, opts[n-1][0], 'override', '');
+  if(r.ok){ toast('✅ Added — '+opts[n-1][1]); await loadStageEvents(); router(); }
+  else toast('Could not add');
+}
+// Put a piece on the board that has never been scanned
+async function pipeAddItem(itemId){
+  const sel=document.getElementById('pipe-add-'+itemId.replace(/[^a-zA-Z0-9]/g,'_'));
+  if(!sel) return;
+  const stage=sel.value;
+  // Look up its name so the board card reads properly
+  let desc='';
+  try{
+    const oid=orderIdOf(itemId);
+    const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+    const num=parseInt(itemId.split('-')[2])||1;
+    const dev=t&&t.devices?t.devices[num-1]:null;
+    desc=(dev&&dev.device&&dev.device.name)||'';
+  }catch(e){}
+  const r=await postStageEventAdmin(itemId, stage, 'override', desc);
+  if(r.ok){
+    toast('✅ Added to the pipeline');
+    await loadStageEvents();
+    renderItemDetailPage(itemId);
+  } else toast('Could not add — is the stage_events table set up?');
+}
 async function pipeMarkFinished(itemId, stage){
   if(!confirm('Mark '+stage+' as FINISHED for '+itemId+'?\n\nThe item moves to the next step.')) return;
   const it=(window._pipeItems||{})[itemId];
@@ -1969,7 +2003,26 @@ function pipeRefreshAfterChange(itemId){
 function itemPipeCardHtml(itemId){
   const {items}=buildPipelineItems();
   const it=items[itemId];
-  if(!it) return '';
+  const allOpts=[
+    {v:'RESET', l:'Waiting for Shop'},
+    ...WORK_STAGES.map(s=>({v:s, l:'Waiting for '+s})),
+    {v:'READY', l:'Ready (all work steps done)'},
+    ...DELIVERY_STAGES.map(s=>({v:s, l:s}))
+  ];
+  // A piece only enters the pipeline once it's scanned or a label is printed. Until
+  // then it has no place on the board — so offer to put it somewhere directly.
+  if(!it){
+    return `<div class="card" style="border-style:dashed">
+      <div class="card-label">Pipeline</div>
+      <div style="font-size:13px;color:var(--ink3);margin-bottom:10px">This piece hasn't been scanned yet and no label has been printed, so it isn't on the board. Put it where it belongs:</div>
+      <div class="row">
+        <div class="field"><select id="pipe-add-${itemId.replace(/[^a-zA-Z0-9]/g,'_')}">
+          ${allOpts.map(o=>`<option value="${esc(o.v)}">${esc(o.l)}</option>`).join('')}
+        </select></div>
+        <button class="btn btn-gold" onclick="pipeAddItem('${jsstr(itemId)}')">Add to pipeline</button>
+      </div>
+    </div>`;
+  }
   const overrideOpts=[
     {v:'RESET', l:'Waiting for Shop (reset)'},
     ...WORK_STAGES.map(s=>({v:s, l:'Waiting for '+s})),
@@ -2006,7 +2059,7 @@ function renderPrintPage(){
     <div class="page-head">
       <div><div class="page-title">Print Labels</div><div class="page-sub">Load a ticket, pick items, print barcodes</div></div>
       <div class="head-actions">
-        <input class="search" id="tickets-search" placeholder="Search ticket # or customer..." oninput="filterTickets()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
+        <input class="search" id="tickets-search" placeholder="Search ticket # or customer..." oninput="filterTickets()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
         <button class="btn btn-ghost btn-sm" onclick="loadTickets()">↻ Reload</button>
       </div>
     </div>
@@ -4191,6 +4244,112 @@ function renderHoldPage(){
 }
 function h2(route,param){ return h(route,param).replace(/'/g,"\\'"); }
 
+
+// ========================================================================
+// FIND BY PHOTO — snap a piece, get the likely tickets back
+// ========================================================================
+function photoFindOpen(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(f) photoFindRun(f); };
+  inp.click();
+}
+// Shrink before sending — a full phone photo is slow and costs more to process
+function photoShrink(file, maxEdge){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const scale=Math.min(1, maxEdge/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*scale); cv.height=Math.round(img.height*scale);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg',0.82).split(',')[1]);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('could not read the photo')); };
+    img.src=url;
+  });
+}
+async function photoFindRun(file){
+  navigate(h('photofind'));
+  const box=()=>document.getElementById('photofind-body');
+  const say=h2=>{ const b=box(); if(b) b.innerHTML=h2; };
+  setTimeout(async()=>{
+    say('<div class="card"><div class="empty">Looking at the photo…</div></div>');
+    try{
+      const b64=await photoShrink(file, 900);
+      // Every distinct item name we know about, so it can match against real pieces
+      const names=[...new Set((scans||[]).map(s=>s.item_desc).filter(n=>n&&n!=='undefined'))].slice(0,400);
+      const r=await edgeCall({action:'vision', image:b64, mime:'image/jpeg', names});
+      const d=await r.json();
+      if(d.error){ say('<div class="card"><div class="empty">'+esc(d.error)+'</div></div>'); return; }
+      photoFindShow(d, b64);
+    }catch(e){ say('<div class="card"><div class="empty">'+esc(e.message||String(e))+'</div></div>'); }
+  }, 60);
+}
+function photoFindShow(d, b64){
+  const box=document.getElementById('photofind-body'); if(!box) return;
+  const wanted=(d.matches||[]).map(s=>String(s).toLowerCase().trim());
+  const desc=String(d.description||'').toLowerCase();
+
+  // Find every piece whose name matches, newest first
+  const seen={}, hits=[];
+  (scans||[]).forEach(s=>{
+    const nm=String(s.item_desc||'').trim();
+    if(!nm||nm==='undefined') return;
+    const low=nm.toLowerCase();
+    const exact=wanted.some(w=>w===low);
+    const loose=!exact && (wanted.some(w=>low.includes(w)||w.includes(low))
+                 || (desc && desc.split(/\s+/).filter(x=>x.length>3).some(word=>low.includes(word))));
+    if(!exact && !loose) return;
+    if(seen[s.item_id]) return;
+    seen[s.item_id]=1;
+    hits.push({itemId:s.item_id, name:nm, customer:s.customer, at:s.created_at, exact});
+  });
+  hits.sort((a,b)=> (b.exact-a.exact) || (new Date(b.at)-new Date(a.at)));
+
+  const holds=(()=>{ try{ return computeHolds(); }catch(e){ return {}; } })();
+  const pipe=(()=>{ try{ return buildPipelineItems().items; }catch(e){ return {}; } })();
+
+  box.innerHTML=`
+    <div class="card" style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+      <img src="data:image/jpeg;base64,${b64}" style="width:120px;border-radius:10px">
+      <div style="flex:1;min-width:200px">
+        <div class="card-label">What I can see</div>
+        <div style="font-size:15px;font-weight:700">${esc(d.description||'—')}</div>
+        ${d.features?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${esc(d.features)}</div>`:''}
+        <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="photoFindOpen()">📷 Try another photo</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">${hits.length?hits.length+' possible match'+(hits.length!==1?'es':''):'No matches'} <span style="font-weight:600;text-transform:none;color:var(--ink3)">— check the photos to confirm</span></div>
+      ${hits.length? hits.slice(0,30).map(x=>{
+        const it=pipe[x.itemId];
+        const hh=holds[x.itemId];
+        const where=hh?('⏸️ '+holdKindOf(hh.kind).label):(it?colLabel(it.col):'not in the pipeline');
+        return `<div class="clickable" style="display:flex;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border)"
+          onclick="navigate('${h('item',x.itemId).replace(/'/g,"\\'")}')">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:700;font-size:15px">${esc(x.name)}${x.exact?' <span style="font-size:10.5px;color:var(--green);font-weight:800">BEST MATCH</span>':''}</div>
+            <div style="font-size:11.5px;color:var(--ink3)">${esc(x.itemId)}${x.customer&&x.customer!=='undefined'?' · '+esc(x.customer):''} · ${esc(where)}</div>
+          </div>
+          <span style="color:var(--ink3)">›</span>
+        </div>`;
+      }).join('')
+      : '<div class="empty">Nothing matched that description. Try a closer photo, or search by name instead.</div>'}
+    </div>`;
+}
+function renderPhotoFindPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head">
+      <div><div class="page-title">Find by Photo</div><div class="page-sub">Take a picture of a piece to find which ticket it belongs to</div></div>
+      <button class="btn btn-gold btn-sm" onclick="photoFindOpen()">📷 Take a photo</button>
+    </div>
+    <div id="photofind-body">
+      <div class="card"><div class="empty">Press “Take a photo” to start</div></div>
+    </div>`;
+}
+
 async function renderProductionPage(){
 
   prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
@@ -4528,7 +4687,7 @@ function renderOrdersListPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head">
       <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time</div></div>
-      <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
+      <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
     </div>
     <div id="orders-list"></div>
   `;
@@ -4640,7 +4799,10 @@ async function renderOrderDetailPage(oid){
         <div style="font-size:11.5px;color:var(--ink2);margin-top:3px">${esc(hh.reason||'')}</div>`;
     }
     const it=pipeAll[itemId];
-    if(!it) return `<div style="display:inline-block;background:var(--surface2);color:var(--ink3);font-weight:700;font-size:11.5px;padding:4px 10px;border-radius:20px;margin-top:5px">Not in the pipeline yet</div>`;
+    if(!it) return `<div style="display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap">
+      <span style="display:inline-block;background:var(--surface2);color:var(--ink3);font-weight:700;font-size:11.5px;padding:4px 10px;border-radius:20px">Not in the pipeline yet</span>
+      <button class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:11px" onclick="event.stopPropagation();quickAddToPipeline('${jsstr(itemId)}')">+ Add to pipeline</button>
+    </div>`;
     const where=colLabel(it.col);
     const waiting=(it.status==='waiting');
     const done=(it.col===DELIV_LAST);
@@ -5013,7 +5175,7 @@ function renderHistoryPage(){
     <div class="page-head">
       <div><div class="page-title">History</div><div class="page-sub">Every scan, newest first — admins can edit or delete entries</div></div>
       <div class="head-actions">
-        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistoryTable()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button>
+        <input class="search" id="history-search" placeholder="Search item, worker, customer..." oninput="renderHistoryTable()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
         <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3)">
           <input type="date" id="hist-from" onchange="renderHistoryTable()" style="padding:6px 8px;font-size:12px;width:auto">
           <span>→</span>
