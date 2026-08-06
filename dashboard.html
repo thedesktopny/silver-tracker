@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-e</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-g</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -386,6 +386,7 @@ const NAV_ITEMS = [
   {route:'hold', label:'On Hold', icon:'⏸️'},
   {route:'timeline', label:'Day Timeline', icon:'🕘'},
   {route:'production', label:'Production', icon:'📈'},
+  {route:'costs', label:'Costs', icon:'💵'},
   {route:'orders', label:'Orders', icon:'▦'},
   {route:'history', label:'History', icon:'≡'},
   {route:'workers', label:'Workers', icon:'◐'},
@@ -777,7 +778,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -796,7 +797,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-06-e';
+const APP_VERSION='2026-08-06-g';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -850,6 +851,7 @@ const ROUTE_RENDERERS={
   hold: renderHoldPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
+  costs: renderCostsPage,
   orders: renderOrdersListPage,
   history: renderHistoryPage,
   workers: renderWorkersPage,
@@ -4283,60 +4285,94 @@ async function photoFindRun(file){
       const r=await edgeCall({action:'vision', image:b64, mime:'image/jpeg', names});
       const d=await r.json();
       if(d.error){ say('<div class="card"><div class="empty">'+esc(d.error)+'</div></div>'); return; }
-      photoFindShow(d, b64);
+      await photoFindShow(d, b64);
     }catch(e){ say('<div class="card"><div class="empty">'+esc(e.message||String(e))+'</div></div>'); }
   }, 60);
 }
-function photoFindShow(d, b64){
+async function photoFindShow(d, b64){
   const box=document.getElementById('photofind-body'); if(!box) return;
   const wanted=(d.matches||[]).map(s=>String(s).toLowerCase().trim());
-  const desc=String(d.description||'').toLowerCase();
+  const descWords=String(d.description||'').toLowerCase().split(/[^a-z0-9]+/).filter(x=>x.length>3);
 
-  // Find every piece whose name matches, newest first
+  // Gather every piece that could be it — exact name matches first, then looser ones.
+  // Better to show too many and let the eye decide than to hide the right one.
   const seen={}, hits=[];
   (scans||[]).forEach(s=>{
     const nm=String(s.item_desc||'').trim();
     if(!nm||nm==='undefined') return;
     const low=nm.toLowerCase();
     const exact=wanted.some(w=>w===low);
-    const loose=!exact && (wanted.some(w=>low.includes(w)||w.includes(low))
-                 || (desc && desc.split(/\s+/).filter(x=>x.length>3).some(word=>low.includes(word))));
-    if(!exact && !loose) return;
-    if(seen[s.item_id]) return;
-    seen[s.item_id]=1;
-    hits.push({itemId:s.item_id, name:nm, customer:s.customer, at:s.created_at, exact});
+    const partial=!exact && wanted.some(w=>low.includes(w)||w.includes(low));
+    const loose=!exact && !partial && descWords.some(word=>low.includes(word));
+    if(!exact && !partial && !loose) return;
+    if(seen[s.item_id]){
+      if(new Date(s.created_at)>new Date(seen[s.item_id].at)) seen[s.item_id].at=s.created_at;
+      return;
+    }
+    const rec={itemId:s.item_id, name:nm, customer:s.customer, at:s.created_at,
+               rank: exact?0:(partial?1:2)};
+    seen[s.item_id]=rec; hits.push(rec);
   });
-  hits.sort((a,b)=> (b.exact-a.exact) || (new Date(b.at)-new Date(a.at)));
+  // Most recent first, as asked
+  hits.sort((a,b)=> new Date(b.at)-new Date(a.at));
 
   const holds=(()=>{ try{ return computeHolds(); }catch(e){ return {}; } })();
   const pipe=(()=>{ try{ return buildPipelineItems().items; }catch(e){ return {}; } })();
+  const shown=hits.slice(0,60);
+
+  // Their own photos, so you can compare side by side
+  let thumbs={};
+  try{
+    if(shown.length){
+      const ids=shown.map(x=>'"'+x.itemId+'"').join(',');
+      const imgs=await sb('item_images?item_id=in.('+encodeURIComponent(ids)+')&select=item_id,image_url,created_at&order=created_at.desc&limit=400');
+      (Array.isArray(imgs)?imgs:[]).forEach(i=>{
+        if(/\.(mp4|mov|webm|m4v)(\?|$)/i.test(i.image_url||'')) return;
+        (thumbs[i.item_id]=thumbs[i.item_id]||[]).push(i.image_url);
+      });
+    }
+  }catch(e){}
 
   box.innerHTML=`
     <div class="card" style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
-      <img src="data:image/jpeg;base64,${b64}" style="width:120px;border-radius:10px">
+      <img src="data:image/jpeg;base64,${b64}" style="width:130px;border-radius:10px">
       <div style="flex:1;min-width:200px">
-        <div class="card-label">What I can see</div>
+        <div class="card-label">Your photo</div>
         <div style="font-size:15px;font-weight:700">${esc(d.description||'—')}</div>
         ${d.features?`<div style="font-size:12.5px;color:var(--ink2);margin-top:4px">${esc(d.features)}</div>`:''}
         <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="photoFindOpen()">📷 Try another photo</button>
       </div>
     </div>
     <div class="card">
-      <div class="card-label">${hits.length?hits.length+' possible match'+(hits.length!==1?'es':''):'No matches'} <span style="font-weight:600;text-transform:none;color:var(--ink3)">— check the photos to confirm</span></div>
-      ${hits.length? hits.slice(0,30).map(x=>{
+      <div class="card-label">${hits.length?hits.length+' possible piece'+(hits.length!==1?'s':''):'No matches'}
+        <span style="font-weight:600;text-transform:none;color:var(--ink3)">— most recent first, compare the photos</span></div>
+      ${shown.length? shown.map(x=>{
         const it=pipe[x.itemId];
         const hh=holds[x.itemId];
         const where=hh?('⏸️ '+holdKindOf(hh.kind).label):(it?colLabel(it.col):'not in the pipeline');
-        return `<div class="clickable" style="display:flex;gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--border)"
+        const pics=(thumbs[x.itemId]||[]).slice(0,4);
+        const oid=orderIdOf(x.itemId);
+        return `<div class="clickable" style="padding:12px 0;border-bottom:1px solid var(--border)"
           onclick="navigate('${h('item',x.itemId).replace(/'/g,"\\'")}')">
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:700;font-size:15px">${esc(x.name)}${x.exact?' <span style="font-size:10.5px;color:var(--green);font-weight:800">BEST MATCH</span>':''}</div>
-            <div style="font-size:11.5px;color:var(--ink3)">${esc(x.itemId)}${x.customer&&x.customer!=='undefined'?' · '+esc(x.customer):''} · ${esc(where)}</div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:15px">${esc(x.name)}
+                ${x.rank===0?'<span style="font-size:10px;color:#fff;background:var(--green);padding:2px 7px;border-radius:10px;font-weight:800;margin-left:5px">CLOSEST</span>':''}</div>
+              <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${esc(where)}${x.customer&&x.customer!=='undefined'?' · '+esc(x.customer):''}</div>
+            </div>
+            <span style="color:var(--ink3);flex-shrink:0">›</span>
           </div>
-          <span style="color:var(--ink3)">›</span>
+          ${pics.length?`<div style="display:flex;gap:6px;margin-top:8px;overflow-x:auto">
+            ${pics.map(u=>`<img src="${u}" style="width:74px;height:74px;object-fit:cover;border-radius:7px;flex-shrink:0">`).join('')}
+          </div>`:''}
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:7px;border-top:1px dashed var(--border)">
+            <span style="font-family:'Outfit',sans-serif;font-size:15px;font-weight:800;color:var(--gold2)">${esc(oid)}</span>
+            <span style="font-size:11.5px;color:var(--ink3)">${esc(x.itemId)} · last touched ${fmtDate(x.at)}</span>
+          </div>
         </div>`;
       }).join('')
       : '<div class="empty">Nothing matched that description. Try a closer photo, or search by name instead.</div>'}
+      ${hits.length>shown.length?`<div style="font-size:12px;color:var(--ink3);padding-top:10px">Showing the ${shown.length} most recent of ${hits.length}.</div>`:''}
     </div>`;
 }
 function renderPhotoFindPage(){
@@ -4347,6 +4383,138 @@ function renderPhotoFindPage(){
     </div>
     <div id="photofind-body">
       <div class="card"><div class="empty">Press “Take a photo” to start</div></div>
+    </div>`;
+}
+
+
+// ========================================================================
+// COSTS — what this system actually costs to run
+// ========================================================================
+// Rates per million tokens. Change these if Google's pricing moves.
+const AI_RATES={
+  'gemini-2.5-flash-lite':{in:0.10, out:0.40},
+  'gemini-2.5-flash':     {in:0.30, out:2.50},
+  'gemini-flash-latest':  {in:0.30, out:2.50},
+  'gemini-2.0-flash':     {in:0.10, out:0.40},
+  _default:               {in:0.30, out:2.50}
+};
+let SUPABASE_PLAN=parseFloat(localStorage.getItem('glint_sb_plan')||'0')||0;
+function rateFor(model){ return AI_RATES[model]||AI_RATES._default; }
+function costOf(row){
+  const r=rateFor(row.model);
+  return (row.tokens_in||0)/1e6*r.in + (row.tokens_out||0)/1e6*r.out;
+}
+function money4(v){ return v>=1 ? '$'+v.toFixed(2) : ('$'+v.toFixed(4)); }
+
+async function setSupabasePlan(){
+  const v=prompt('What do you pay Supabase per month?\n\nEnter 0 if you are on the free plan.', String(SUPABASE_PLAN));
+  if(v===null) return;
+  const n=parseFloat(v); if(isNaN(n)||n<0){ toast('Enter a number'); return; }
+  SUPABASE_PLAN=n; localStorage.setItem('glint_sb_plan',String(n));
+  await sb('settings?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({key:'supabase_plan', value:String(n)})});
+  toast('Saved'); renderCostsPage();
+}
+
+async function renderCostsPage(){
+  document.getElementById('content').innerHTML=`
+    <div class="page-head"><div><div class="page-title">Costs</div>
+      <div class="page-sub">What the AI and the database are costing you</div></div></div>
+    <div id="costs-body"><div class="card"><div class="empty">Adding it up…</div></div></div>`;
+
+  let rows=[];
+  try{
+    const r=await sb("settings?key=eq.supabase_plan&select=value");
+    if(r&&r[0]&&r[0].value) SUPABASE_PLAN=parseFloat(r[0].value)||0;
+  }catch(e){}
+  try{
+    rows=await sbList('ai_usage?select=*&order=created_at.desc&limit=10000', 2);
+  }catch(e){
+    document.getElementById('costs-body').innerHTML=
+      `<div class="card"><div class="empty">No usage recorded yet. Run <strong>add-cost-tracking.sql</strong> in Supabase, then redeploy the Edge Function — every AI call after that is counted here.</div></div>`;
+    return;
+  }
+
+  const now=Date.now(), day=86400000;
+  const since=d=>now-d*day;
+  const inWin=(r,d)=>new Date(r.created_at).getTime()>=since(d);
+  const sum=(list,fn)=>list.reduce((a,x)=>a+fn(x),0);
+
+  const today=rows.filter(r=>new Date(r.created_at).toDateString()===new Date().toDateString());
+  const m30=rows.filter(r=>inWin(r,30));
+  const m7=rows.filter(r=>inWin(r,7));
+
+  const byAction={};
+  m30.forEach(r=>{ const k=r.action||'other';
+    (byAction[k]=byAction[k]||{calls:0,tin:0,tout:0,cost:0});
+    byAction[k].calls++; byAction[k].tin+=r.tokens_in||0; byAction[k].tout+=r.tokens_out||0;
+    byAction[k].cost+=costOf(r); });
+
+  const cost30=sum(m30,costOf), cost7=sum(m7,costOf), costToday=sum(today,costOf);
+  // A month's AI spend projected from the last 7 days
+  const projected=cost7/7*30;
+  const totalMonthly=projected+SUPABASE_PLAN;
+
+  const LABELS={ask:'✨ Ask Glint', vision:'🔎 Find by Photo'};
+
+  document.getElementById('costs-body').innerHTML=`
+    <div class="stat-grid">
+      <div class="stat-tile" style="border-left:4px solid var(--green)">
+        <div class="stat-num" style="color:var(--green);font-size:26px">${money4(costToday)}</div>
+        <div class="stat-label">AI today</div></div>
+      <div class="stat-tile" style="border-left:4px solid var(--gold)">
+        <div class="stat-num" style="color:var(--gold);font-size:26px">${money4(cost30)}</div>
+        <div class="stat-label">AI last 30 days</div></div>
+      <div class="stat-tile" style="border-left:4px solid var(--blue)">
+        <div class="stat-num" style="font-size:26px">${SUPABASE_PLAN?('$'+SUPABASE_PLAN.toFixed(2)):'Free'}</div>
+        <div class="stat-label">Supabase per month</div></div>
+      <div class="stat-tile" style="border-left:4px solid var(--ink3)">
+        <div class="stat-num" style="font-size:26px">${'$'+totalMonthly.toFixed(2)}</div>
+        <div class="stat-label">Running at, per month</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Where the AI spend goes <span style="font-weight:600;text-transform:none;color:var(--ink3)">— last 30 days</span></div>
+      ${Object.keys(byAction).length?`<table><thead><tr>
+        <th>Feature</th><th>Uses</th><th>Tokens in</th><th>Tokens out</th><th>Cost</th><th>Per use</th>
+      </tr></thead><tbody>
+      ${Object.entries(byAction).sort((a,b)=>b[1].cost-a[1].cost).map(([k,v])=>`
+        <tr><td style="font-weight:600">${esc(LABELS[k]||k)}</td>
+          <td>${v.calls}</td>
+          <td style="color:var(--ink3)">${v.tin.toLocaleString()}</td>
+          <td style="color:var(--ink3)">${v.tout.toLocaleString()}</td>
+          <td style="font-weight:700;color:var(--green)">${money4(v.cost)}</td>
+          <td style="color:var(--ink3)">${money4(v.cost/Math.max(v.calls,1))}</td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">No AI calls recorded in the last 30 days</div>'}
+    </div>
+
+    <div class="card">
+      <div class="card-label">Recent calls</div>
+      ${rows.slice(0,25).map(r=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+          <div><strong>${esc(LABELS[r.action]||r.action||'—')}</strong>
+            <span style="color:var(--ink3);font-size:11.5px">· ${esc(r.model||'')} · ${(r.tokens_total||0).toLocaleString()} tokens</span></div>
+          <div style="text-align:right">
+            <div style="font-weight:700;color:var(--green)">${money4(costOf(r))}</div>
+            <div style="font-size:11px;color:var(--ink3)">${fmtDate(r.created_at)}</div></div>
+        </div>`).join('')||'<div class="empty">Nothing yet</div>'}
+    </div>
+
+    <div class="card" style="max-width:620px">
+      <div class="card-label">Supabase</div>
+      <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Supabase bills a flat monthly plan rather than per use, so there's nothing to meter — enter what you pay and it's included in the monthly total above.</div>
+      <div style="font-size:15px;margin-bottom:10px">Currently set to <strong>${SUPABASE_PLAN?('$'+SUPABASE_PLAN.toFixed(2)+' / month'):'free plan'}</strong></div>
+      <button class="btn btn-sm" onclick="setSupabasePlan()">Change</button>
+    </div>
+
+    <div class="card" style="max-width:620px">
+      <div class="card-label">How this is worked out</div>
+      <div style="font-size:12.5px;color:var(--ink3);line-height:1.7">
+        Every AI call records the exact tokens Google charged for, so these are real figures rather than estimates.
+        Rates used: <strong>$0.10</strong> per million tokens in and <strong>$0.40</strong> per million out for Flash-Lite.<br>
+        The monthly figure projects the last 7 days across 30, plus your Supabase plan.<br>
+        Check against the real bills at <a href="https://aistudio.google.com" target="_blank" style="color:var(--gold)">aistudio.google.com</a> and your Supabase billing page.
+      </div>
     </div>`;
 }
 
