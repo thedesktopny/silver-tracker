@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-05-f</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-05-g</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -796,7 +796,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-05-f';
+const APP_VERSION='2026-08-05-g';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -3877,9 +3877,10 @@ const HOLD_KINDS={
 };
 // Latest hold/unhold per item decides the current state
 function computeHolds(){
-  const byItem={};
+  const byItem={}, history={};
   (stageEvents||[]).forEach(e=>{
     if(e.action!=='hold' && e.action!=='unhold') return;
+    (history[e.item_id]=history[e.item_id]||[]).push(e);
     const cur=byItem[e.item_id];
     if(!cur || new Date(e.created_at)>new Date(cur.at)) {
       byItem[e.item_id]={ action:e.action, kind:(e.stage||'').split('::')[0]||'customer',
@@ -3888,7 +3889,18 @@ function computeHolds(){
     }
   });
   const out={};
-  Object.entries(byItem).forEach(([id,h])=>{ if(h.action==='hold') out[id]=h; });
+  Object.entries(byItem).forEach(([id,h])=>{
+    if(h.action!=='hold') return;
+    // Every note since this hold began, oldest first
+    const evs=(history[id]||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+    let startIdx=0;
+    for(let i=evs.length-1;i>=0;i--){ if(evs[i].action==='unhold'){ startIdx=i+1; break; } }
+    h.updates=evs.slice(startIdx).map(e=>({
+      reason:(e.stage||'').split('::').slice(1).join('::'), at:e.created_at, worker:e.worker||''
+    })).filter(u=>u.reason);
+    h.since=h.updates.length?h.updates[0].at:h.at;
+    out[id]=h;
+  });
   return out;
 }
 function isOnHold(itemId){ return !!computeHolds()[itemId]; }
@@ -3905,12 +3917,68 @@ async function putOnHold(itemId, desc){
   if(r.ok){ toast('⏸️ On hold — '+HOLD_KINDS[kind].label); await loadStageEvents(); router(); }
   else toast('Could not save');
 }
+// Releasing needs a note too — otherwise nobody knows what changed — and a choice of
+// where it goes back to. "Waiting for Shop" is how the office flags that it needs
+// picking up again now the customer has confirmed.
+function askRelease(name){
+  return new Promise(resolve=>{
+    const bg=document.createElement('div');
+    bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    bg.innerHTML=`<div style="background:var(--surface);border-radius:16px;padding:24px;max-width:440px;width:100%">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3)">Take off hold</div>
+      <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:700;margin:6px 0 14px">${esc(name)}</div>
+      <label style="font-size:12px;color:var(--ink3);display:block;margin-bottom:5px">What changed? (required)</label>
+      <textarea id="rel-note" rows="3" placeholder="e.g. customer confirmed the design, part arrived back from the plater" style="width:100%;margin-bottom:14px"></textarea>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Where does it go now?</div>
+      <button data-go="shop" style="width:100%;padding:14px;border:none;border-radius:11px;background:var(--gold);color:#fff;font-size:15px;font-weight:700;margin-bottom:9px;cursor:pointer;text-align:left">
+        📦 Back to Waiting for Shop<br><span style="font-size:11.5px;font-weight:400;opacity:.9">Flags it as needing to be picked up again</span></button>
+      <button data-go="keep" style="width:100%;padding:14px;border:2px solid var(--border);border-radius:11px;background:var(--surface);color:var(--ink);font-size:15px;font-weight:700;margin-bottom:9px;cursor:pointer;text-align:left">
+        ↩ Carry on where it left off<br><span style="font-size:11.5px;font-weight:400;color:var(--ink3)">Returns to the stage it was at</span></button>
+      <button data-go="" style="width:100%;padding:10px;border:none;background:none;color:var(--ink3);cursor:pointer;font-size:13px">Cancel</button>
+      <div id="rel-err" style="color:var(--red);font-size:12px;min-height:16px;margin-top:4px"></div>
+    </div>`;
+    document.body.appendChild(bg);
+    bg.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      const go=b.dataset.go;
+      if(!go){ bg.remove(); resolve(null); return; }
+      const note=(bg.querySelector('#rel-note').value||'').trim();
+      if(!note){ bg.querySelector('#rel-err').textContent='Please say what changed.'; return; }
+      bg.remove(); resolve({go, note});
+    });
+  });
+}
 async function releaseHold(itemId, desc){
-  if(!confirm('Take "'+(desc||itemId)+'" off hold?')) return;
+  const res=await askRelease(desc||itemId);
+  if(!res) return;
   const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
-    body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:'', action:'unhold', worker:'Admin'})});
-  if(r.ok){ toast('▶ Back in the pipeline'); await loadStageEvents(); router(); }
-  else toast('Could not save');
+    body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:res.note, action:'unhold', worker:'Admin'})});
+  if(!r.ok){ toast('Could not save'); return; }
+  // Send it back to the front of the shop queue if that's what was chosen
+  if(res.go==='shop'){
+    await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:'RESET', action:'override', worker:'Admin'})});
+  }
+  // Keep the reason visible to the workers as well
+  await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, note:'Off hold: '+res.note, worker:'Office', role:'Office'})}).catch(()=>{});
+  toast(res.go==='shop'?'📦 Back to Waiting for Shop':'▶ Back in the pipeline');
+  await loadStageEvents(); await loadAllScans(); router();
+}
+// Add an update to a hold without releasing it
+async function updateHold(itemId, desc){
+  const note=prompt('Update on "'+(desc||itemId)+'"\n\nWhat has changed? It stays on hold.');
+  if(note===null) return;
+  if(!String(note).trim()){ toast('An update is required'); return; }
+  const h=computeHolds()[itemId];
+  if(!h){ toast('This one is not on hold'); return; }
+  const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:h.kind+'::'+String(note).trim(),
+                         action:'hold', worker:'Admin'})});
+  if(r.ok){
+    await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:itemId, note:'Hold update: '+String(note).trim(), worker:'Office', role:'Office'})}).catch(()=>{});
+    toast('✅ Update saved'); await loadStageEvents(); router();
+  } else toast('Could not save');
 }
 // Two clear buttons rather than a typed category
 function askHoldKind(name){
@@ -3968,10 +4036,16 @@ function renderHoldPage(){
         return `<div style="display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--border)">
           <div style="flex:1;min-width:0">
             <div class="clickable" style="font-weight:700;font-size:15px" onclick="navigate('${h2('item',h.id)}')">${esc(h.desc||h.id)}</div>
-            <div style="font-size:11.5px;color:var(--ink3)">${esc(h.id)} · on hold ${days} day${days!==1?'s':''} · since ${fmtDate(h.at)}</div>
-            <div style="font-size:13px;color:var(--ink2);margin-top:5px;background:var(--surface2);padding:7px 10px;border-radius:7px">${esc(h.reason||'no reason given')}</div>
+            <div style="font-size:11.5px;color:var(--ink3)">${esc(h.id)} · on hold ${days} day${days!==1?'s':''} · since ${fmtDate(h.since||h.at)}</div>
+            ${(h.updates&&h.updates.length?h.updates:[{reason:h.reason,at:h.at,worker:h.worker}]).map((u,ui,arr)=>`
+              <div style="font-size:13px;color:var(--ink2);margin-top:5px;background:var(--surface2);padding:7px 10px;border-radius:7px">
+                ${ui>0?'<span style="font-size:10.5px;color:var(--ink3);font-weight:700">UPDATE · '+fmtDate(u.at)+'</span><br>':''}${esc(u.reason||'no reason given')}
+              </div>`).join('')}
           </div>
-          <button class="btn btn-sm" onclick="releaseHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">▶ Release</button>
+          <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+            <button class="btn btn-ghost btn-sm" onclick="updateHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">✏️ Update</button>
+            <button class="btn btn-sm" onclick="releaseHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">▶ Release</button>
+          </div>
         </div>`;
       }).join('')}
     </div>`;
@@ -4524,8 +4598,12 @@ async function renderItemDetailPage(itemId){
     const hdays=Math.floor((Date.now()-new Date(holdInfo.at).getTime())/86400000);
     html+=`<div class="card" style="border-color:${hk.hue};background:var(--orange-soft)">
       <div class="card-label" style="color:${hk.hue}">⏸️ On hold — ${hk.icon} ${hk.label}</div>
-      <div style="font-size:14px">${esc(holdInfo.reason||'no reason given')}</div>
-      <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">since ${fmtDate(holdInfo.at)} · ${hdays} day${hdays!==1?'s':''}</div>
+      ${(holdInfo.updates&&holdInfo.updates.length?holdInfo.updates:[{reason:holdInfo.reason,at:holdInfo.at}]).map((u,ui)=>`
+        <div style="font-size:14px;${ui>0?'margin-top:8px;padding-top:8px;border-top:1px solid var(--border)':''}">
+          ${ui>0?'<div style="font-size:10.5px;color:var(--ink3);font-weight:700">UPDATE · '+fmtDate(u.at)+'</div>':''}${esc(u.reason||'no reason given')}
+        </div>`).join('')}
+      <div style="font-size:11.5px;color:var(--ink3);margin-top:6px">since ${fmtDate(holdInfo.since||holdInfo.at)} · ${hdays} day${hdays!==1?'s':''}</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="updateHold('${jsstr(itemId)}','${jsstr(name||'')}')">✏️ Add an update</button>
     </div>`;
   }
 
