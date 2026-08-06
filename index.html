@@ -1141,13 +1141,13 @@ async function prPrint(){
     else if(noteLen>120) noteCls='n-xs';
     const idLen=(it.itemId||'').length;
     const idCls = idLen>18 ? 'o-sm' : (idLen>12 ? 'o-md' : 'o-lg');
-    return `<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part&&!String(it.itemName||'').toUpperCase().includes(String(it.part).toUpperCase())?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${it.note}${it.noteEs?`<br><span class="nl">ES</span> ${it.noteEs}`:''}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}<div class="l-oid ${idCls}">${it.itemId}</div></div></div>`;
+    return `<div class="label"><div class="lt"><div class="l-item">${it.itemName||''}${it.part&&!String(it.itemName||'').toUpperCase().includes(String(it.part).toUpperCase())?' — '+it.part:''}</div>${it.services?`<div class="l-svc">${it.services}</div>`:''}${it.customer?`<div class="l-cust">${it.customer}</div>`:''}<div class="l-row">${it.due?`<span>DUE: ${it.due}</span>`:''}${it.group?`<span>${it.group}</span>`:''}</div>${it.note?`<div class="l-note ${noteCls}"><span class="nl">EN</span> ${it.note}${it.noteEs?`<br><span class="nl">ES</span> ${it.noteEs}`:''}</div>`:''}</div><div class="lb"><img src="${it.bc}"></div><div class="lf">${it.part?`<div class="l-part">◆ ${it.part.toUpperCase()}</div>`:''}<div class="l-oid ${idCls}">${it.itemId}</div></div></div>`;
   }).join('');
   const W=labelSize.width,H=labelSize.height;
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Glint Labels</title><style>
 @page{size:${W}mm ${H}mm;margin:0}*{box-sizing:border-box;margin:0;padding:0}body{background:#fff;font-family:Arial,sans-serif}
 .label{width:${W}mm;height:${H}mm;display:flex;flex-direction:column;padding:2mm 3mm;overflow:hidden;page-break-after:always}.label:last-child{page-break-after:auto}
-.lt{text-align:center;flex-shrink:0}.l-item{font-size:10.5pt;font-weight:700;line-height:1.1}.l-svc{font-size:7.5pt;color:#444;margin-top:.3mm}
+.lt{text-align:center;flex-shrink:0}.l-item{font-size:10.5pt;font-weight:700;line-height:1.1}.l-svc{font-size:7.5pt;color:#444;margin-top:.3mm}.l-cust{font-size:9.5pt;font-weight:700;margin-top:.6mm}
 .l-row{display:flex;justify-content:center;gap:4mm;margin-top:.6mm;font-size:9pt;font-weight:700}
 .l-note{font-weight:700;margin-top:.8mm;background:#f0f0f0;padding:.8mm 1mm;border-radius:1mm;text-align:left}
 .l-note .nl{display:inline-block;background:#555;color:#fff;border-radius:.6mm;padding:0 .8mm;font-size:.85em;vertical-align:.3mm}
