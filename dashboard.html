@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-05-e</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-05-f</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -796,7 +796,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-05-e';
+const APP_VERSION='2026-08-05-f';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1595,8 +1595,21 @@ function buildPipelineItems(){
   const externalMove=(it, stage, who, raw)=>{
     const target=stageIdxByName(stage);
     if(target<0) return;
-    const now0=derivePipeState(it.events);
+    // Events are still unsorted at this point, so sort a copy before reading the state
+    const now0=derivePipeState([...it.events].sort((a,b)=>new Date(a.t)-new Date(b.t)));
     const cur=(now0.col==='shop')?-1:(now0.col==='ready'?LASTW:now0.col);
+    const workDone = now0.fin>=LASTW;   // every work stage finished
+
+    // Scanovator runs BOTH legs: collecting a piece from the customer, and delivering
+    // it back. A "Delivered" on the inbound leg means it arrived at the shop, not at
+    // the customer. Work can't be delivered before it's finished, so a delivery status
+    // on an unfinished piece is treated as the collection run and recorded, not applied.
+    if(who==='Scanovator' && target>=DELIV0 && !workDone){
+      it.scanovStatus=raw;
+      it.scanovInbound=true;
+      return;
+    }
+
     if(typeof cur==='number' && cur>=target) { if(who==='Scanovator') it.scanovStatus=raw; else it.rdStatus=raw; return; }
     it.events.push({t:new Date().toISOString(), kind:'override', stage, worker:who});
     if(who==='Scanovator') it.scanovStatus=raw; else it.rdStatus=raw;
@@ -1617,6 +1630,8 @@ function buildPipelineItems(){
     const stage=rdStatusToStage(name);
     if(!stage) return;
     const it=items[itemId]; if(!it) return;
+    const st0=derivePipeState([...it.events].sort((a,b)=>new Date(a.t)-new Date(b.t)));
+    if(stageIdxByName(stage)>=DELIV0 && !(st0.fin>=LASTW)){ it.rdStatus=name; return; }   // not finished yet
     externalMove(it, stage, 'RepairDesk', name);
   });
 
@@ -1785,7 +1800,7 @@ function renderPipeBoard(list){
           <div class="pc-name">${esc(it.desc||it.id)}</div>
           <div class="pc-id">${esc(it.id)} · ${esc(orderIdOf(it.id))}</div>
           ${it.customer?`<div class="pc-cust">${esc(it.customer)}</div>`:''}
-          ${it.scanovStatus?`<div style="font-size:10.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${esc(it.scanovStatus)}</div>`:''}
+          ${it.scanovStatus?`<div style="font-size:10.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${it.scanovInbound?'Collected — brought in':esc(it.scanovStatus)}</div>`:''}
           ${(()=>{ const hh=(window._holdsCache||{})[it.id]; if(!hh) return '';
             const k=HOLD_KINDS[hh.kind]||HOLD_KINDS.customer;
             return `<div style="font-size:10.5px;color:${k.hue};font-weight:700;margin-top:3px">⏸️ ${k.icon} on hold</div>`; })()}
@@ -1958,7 +1973,7 @@ function itemPipeCardHtml(itemId){
     ${(it.scanovStatus||it.rdStatus)?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
       ${it.scanovStatus?(()=>{
         const m=scanovMeta[orderIdOf(it.id)]||{};
-        return `<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 Scanovator: ${esc(it.scanovStatus)}${m.driver?' · '+esc(m.driver):''}${m.when?' · '+fmtDate(m.when):''}</span>`
+        return `<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 ${it.scanovInbound?'Collected from customer':'Scanovator: '+esc(it.scanovStatus)}${m.driver?' · '+esc(m.driver):''}${m.when?' · '+fmtDate(m.when):''}</span>`
           + (m.receipt?` <a href="${esc(m.receipt)}" target="_blank" style="font-size:11.5px;font-weight:700;color:var(--gold);padding:5px 0">Delivery receipt ↗</a>`:'');
       })():''}
       ${it.rdStatus?`<span style="background:var(--surface2);color:var(--ink2);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">RepairDesk: ${esc(it.rdStatus)}</span>`:''}
