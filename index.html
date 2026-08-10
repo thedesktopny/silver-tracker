@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-10-c</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-10-d</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -232,8 +232,9 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
     </div>
   </div>
 
-  <div class="card" id="role-select-card" style="display:none">
+  <div class="card" id="role-select-card" style="display:none;border:2px solid var(--gold)">
     <div class="card-label">What are you doing now?</div>
+    <div style="font-size:12.5px;color:var(--ink2);margin-bottom:10px">👇 Tap one to start — you can't scan until you do.</div>
     <div class="worker-row" id="role-row"></div>
   </div>
 
@@ -1522,6 +1523,56 @@ window.addEventListener('unhandledrejection', e=>{
   if(!SCAN_DEBUG){ SCAN_DEBUG=true; }
   dbgRender();
 });
+
+// A barcode scanner types very fast and ends with Enter. If the scan box isn't on
+// screen — for instance the worker hasn't chosen a role yet — those keystrokes used to
+// go nowhere at all and the scan simply vanished. This catches them wherever they land.
+(function(){
+  let buf='', last=0;
+  document.addEventListener('keydown', e=>{
+    const t=e.target||{};
+    if(t.id==='scan-input') return;                    // the box has it
+    if(['INPUT','TEXTAREA','SELECT'].includes(t.tagName)) return;
+    const now=Date.now();
+    if(now-last>120) buf='';                           // slow typing isn't a scanner
+    last=now;
+    if(e.key==='Enter'){
+      const code=buf.trim(); buf='';
+      if(code.length>=5) handleStrayScan(code);
+      return;
+    }
+    if(e.key&&e.key.length===1) buf+=e.key;
+  });
+})();
+function handleStrayScan(code){
+  dbg('scan arrived while the scan box was not on screen: '+code);
+  if(!selectedWorker){
+    showToast('👤 Log in first, then scan');
+    return;
+  }
+  if(!selectedRole){
+    // The commonest cause of "I scanned and nothing happened"
+    playErrorBeep();
+    if(navigator.vibrate) navigator.vibrate([100,60,100]);
+    showBlockingPrompt('Choose what you are doing first',
+      'Tap one of the buttons above — for example "Inspección y preparación del lacado" — then scan the piece again.');
+    return;
+  }
+  processScan(code);
+}
+// A message that can't be missed, unlike a toast that fades
+function showBlockingPrompt(title, body){
+  const bg=document.createElement('div');
+  bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+  bg.innerHTML=`<div style="background:var(--surface);border-radius:16px;padding:26px;max-width:400px;width:100%;text-align:center">
+    <div style="font-size:44px;line-height:1">👆</div>
+    <div style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:800;margin:10px 0 8px">${title}</div>
+    <div style="font-size:14px;color:var(--ink2);line-height:1.5;margin-bottom:18px">${body}</div>
+    <button style="width:100%;padding:14px;border:none;border-radius:11px;background:var(--gold);color:#fff;font-size:16px;font-weight:700;cursor:pointer">OK</button>
+  </div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('button').onclick=()=>bg.remove();
+}
 
 async function processScan(itemId) {
   dbg('scan received: '+itemId+'  worker='+(selectedWorker?selectedWorker.name:'NONE')+'  role='+(selectedRole||'NONE'));
