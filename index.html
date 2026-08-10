@@ -1513,7 +1513,11 @@ async function processScan(itemId) {
   // A camera misread can produce a slightly DIFFERENT string each frame, which slips past
   // the same-id check below. Nobody scans two real labels within a second, so ignore
   // anything that lands right on top of an accepted scan.
-  if ((now - lastScan.at) < 1200) {
+  // This used to drop the scan in complete silence, which looked exactly like the app
+  // ignoring you. It now says so, and only blocks a genuinely instant repeat.
+  if ((now - lastScan.at) < 700) {
+    playErrorBeep();
+    showToast('⏱️ Too fast — wait a second and scan again');
     document.getElementById('scan-input').value = '';
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
     return;
@@ -2693,17 +2697,24 @@ let cameraScanHandled = false;   // one accepted read per camera session
 // A bad decode produces a DIFFERENT wrong string each frame, while a good decode
 // repeats identically. Requiring two matching reads kills nearly all misreads.
 let scanCandidate=null, scanCandidateHits=0;
+let scanAttempts=0;
 function confirmedRead(code){
   if(!code) return null;
+  scanAttempts++;
   if(code===scanCandidate){
     scanCandidateHits++;
     if(scanCandidateHits>=2) return code;   // seen twice — trust it
   } else {
     scanCandidate=code; scanCandidateHits=1;
   }
+  // Reading the barcode but never getting the same answer twice means a poor read.
+  // Tell the worker rather than appearing to do nothing.
+  if(scanAttempts===12){
+    showToast('📷 Struggling to read it — hold steadier, or move a little further back');
+  }
   return null;
 }
-function resetConfirm(){ scanCandidate=null; scanCandidateHits=0; }
+function resetConfirm(){ scanCandidate=null; scanCandidateHits=0; scanAttempts=0; }
 async function startCamera() {
   cameraScanHandled = false;
   resetConfirm();
