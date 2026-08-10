@@ -1617,8 +1617,18 @@ async function processScan(itemId) {
                                worker:selectedWorker.name, role:task, customer:si.customer||'' })
       });
       playBeep(920,140);
+      if (navigator.vibrate) navigator.vibrate(100);
+      // Show it on screen too — without this the scan saved but the worker saw
+      // nothing at all, which looked exactly like the app ignoring them.
+      sessionLog.unshift({
+        itemId, itemDesc: si.name||'', customer: si.customer||'',
+        status: task + ' ✓ recorded', worker: selectedWorker.name,
+        timestamp: new Date().toISOString()
+      });
+      renderHistory();
+      renderScanRecent();
       showToast('✓ ' + task + ' recorded — ' + (si.name || itemId));
-    }catch(e){ showToast('⚠️ Could not save — check connection'); }
+    }catch(e){ playErrorBeep(); showToast('⚠️ Could not save — check connection'); }
     document.getElementById('scan-input').value = '';
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
     return;
