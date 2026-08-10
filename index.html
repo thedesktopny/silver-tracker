@@ -200,6 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-10-c</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1480,9 +1481,52 @@ function changeAdminPin() {
 let lastScan = { id:null, at:0 };
 const DOUBLE_SCAN_MS = 3000; // ignore the same barcode re-scanned within 3 seconds
 
+// Turn on by tapping the build number. Shows exactly what each scan does, so a scan
+// that appears to do nothing can be diagnosed instead of guessed at.
+let SCAN_DEBUG = localStorage.getItem('st_debug')==='1';
+function toggleScanDebug(){
+  SCAN_DEBUG=!SCAN_DEBUG;
+  localStorage.setItem('st_debug', SCAN_DEBUG?'1':'0');
+  showToast(SCAN_DEBUG?'🔧 Scan details ON — tap the build number to turn off':'Scan details off');
+  dbgRender();
+}
+let dbgLines=[];
+function dbg(msg){
+  if(!SCAN_DEBUG) return;
+  dbgLines.unshift(new Date().toLocaleTimeString()+'  '+msg);
+  dbgLines=dbgLines.slice(0,25);
+  dbgRender();
+}
+function dbgRender(){
+  let el=document.getElementById('scan-debug');
+  if(!SCAN_DEBUG){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement('div'); el.id='scan-debug';
+    el.style.cssText='position:fixed;left:0;right:0;bottom:0;max-height:42vh;overflow-y:auto;background:#12141c;color:#8ef;'+
+      'font-family:monospace;font-size:10.5px;padding:8px 10px;z-index:9999;line-height:1.5;white-space:pre-wrap';
+    document.body.appendChild(el);
+  }
+  el.innerHTML='<b style="color:#fff">SCAN DETAILS</b>  (tap the build number to hide)<br>'+
+    dbgLines.map(l=>l.replace(/</g,'&lt;')).join('<br>');
+}
+// Any uncaught error anywhere in the app now shows on screen
+window.addEventListener('error', e=>{
+  dbgLines.unshift('❌ ERROR: '+e.message+(e.lineno?' (line '+e.lineno+')':''));
+  if(!SCAN_DEBUG){ SCAN_DEBUG=true; }
+  dbgRender();
+});
+window.addEventListener('unhandledrejection', e=>{
+  const m=String((e.reason&&e.reason.message)||e.reason||'');
+  if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return;
+  dbgLines.unshift('❌ ERROR: '+m);
+  if(!SCAN_DEBUG){ SCAN_DEBUG=true; }
+  dbgRender();
+});
+
 async function processScan(itemId) {
-  if (!selectedWorker) { showToast('Select a worker first'); return; }
-  if (!selectedRole) { showToast('Select your role first'); return; }
+  dbg('scan received: '+itemId+'  worker='+(selectedWorker?selectedWorker.name:'NONE')+'  role='+(selectedRole||'NONE'));
+  if (!selectedWorker) { dbg('STOPPED: no worker selected'); showToast('Select a worker first'); return; }
+  if (!selectedRole) { dbg('STOPPED: no role selected'); showToast('Select your role first'); return; }
   const rawScan = String(itemId||'').trim();
   itemId = cleanScannedId(rawScan);
 
@@ -1491,6 +1535,7 @@ async function processScan(itemId) {
   if (/^T-\d+-\d+/.test(itemId) && !/^T-\d+-\d+(-[A-Z0-9]+)?$/.test(itemId)) {
     if (navigator.vibrate) navigator.vibrate([100,50,100]);
     playErrorBeep();
+    dbg('STOPPED: garbled read "'+rawScan+'"');
     showToast('⚠️ Barcode did not read cleanly — scan again, closer and steady');
     document.getElementById('scan-input').value = '';
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
@@ -1517,6 +1562,7 @@ async function processScan(itemId) {
   // ignoring you. It now says so, and only blocks a genuinely instant repeat.
   if ((now - lastScan.at) < 700) {
     playErrorBeep();
+    dbg('STOPPED: too soon after the last scan');
     showToast('⏱️ Too fast — wait a second and scan again');
     document.getElementById('scan-input').value = '';
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
@@ -1524,6 +1570,7 @@ async function processScan(itemId) {
   }
   if (lastScan.id === itemId && (now - lastScan.at) < DOUBLE_SCAN_MS) {
     playErrorBeep();
+    dbg('STOPPED: same code repeated within 3s');
     showToast('⏱️ Already scanned a moment ago — ignored');
     document.getElementById('scan-input').value = '';
     setTimeout(() => document.getElementById('scan-input').focus(), 100);
@@ -1627,6 +1674,7 @@ async function processScan(itemId) {
       });
       renderHistory();
       renderScanRecent();
+      dbg('DONE: status-only scan recorded');
       showToast('✓ ' + task + ' recorded — ' + (si.name || itemId));
     }catch(e){ playErrorBeep(); showToast('⚠️ Could not save — check connection'); }
     document.getElementById('scan-input').value = '';
@@ -1642,6 +1690,7 @@ async function processScan(itemId) {
       const proceed = await askUnbookedService(gi.name || itemId, task, gi.services || []);
       if (!proceed) {
         playErrorBeep();
+        dbg('STOPPED: '+task+' is not booked on this ticket');
         await postStageEvent(itemId, task, 'blocked-unbooked', gi.name || '');
         document.getElementById('scan-input').value = '';
         setTimeout(() => document.getElementById('scan-input').focus(), 100);
@@ -1988,6 +2037,7 @@ async function completeScan(itemId, task, isInProgress) {
 
   if (saveFailed) {
     playErrorBeep();
+    dbg('FAILED: the save did not reach the server');
     showToast('⚠️ Did not save — check your connection and scan again');
   } else {
     showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
