@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-06-j</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-10-b</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -797,7 +797,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-06-j';
+const APP_VERSION='2026-08-10-b';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -952,7 +952,8 @@ async function bootstrap(){
   const loaders=[
     ['scans', loadAllScans], ['workers', loadWorkers], ['roles', loadRoles],
     ['stage events', loadStageEvents], ['labels', loadPipeLabels], ['stages', loadPipeStages],
-    ['delivery status', loadExternalStatus], ['due dates', loadDueOverrides], ['hold places', loadHoldPlaces]
+    ['delivery status', loadExternalStatus], ['due dates', loadDueOverrides], ['hold places', loadHoldPlaces],
+    ['live sessions', loadLiveSessions]
   ];
   const results=await Promise.allSettled(loaders.map(([,fn],i)=>
     new Promise(res=>setTimeout(res, i*120)).then(fn)));
@@ -1002,7 +1003,7 @@ async function bootstrap(){
   setInterval(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 10*60*1000);
 
   setInterval(async ()=>{
-    await Promise.allSettled([loadAllScans(), loadStageEvents(), loadExternalStatus()]);
+    await Promise.allSettled([loadAllScans(), loadStageEvents(), loadExternalStatus(), loadLiveSessions()]);
     try{ checkForNewScans(); }catch(e){}
     if(currentRoute()==='live') renderLivePage();
     if(currentRoute()==='pipeline') renderPipeBody();
@@ -1034,15 +1035,40 @@ function pairSessions(filterFn){
   });
   return { sessions: filterFn?sessions.filter(x=>filterFn(x.end)):sessions, open:Object.values(open) };
 }
+let liveSessions=null;   // straight from active_sessions — the real state
+async function loadLiveSessions(){
+  try{
+    const rows=await sbList('active_sessions?select=*&order=started_at.asc', 2);
+    liveSessions=Array.isArray(rows)?rows:null;
+  }catch(e){ liveSessions=null; }   // table not set up yet — fall back to pairing
+}
 function computeActive(){
+  // Prefer the live table. Pairing the event log is only a fallback for when the
+  // table hasn't been created yet — it's the pairing that let sessions get stuck.
+  let itemRoleState={};
+  if(Array.isArray(liveSessions)){
+    liveSessions.forEach(r=>{
+      itemRoleState[r.item_id+'::'+(r.role||'')]={
+        worker:r.worker, itemId:r.item_id, itemDesc:r.item_desc, role:r.role, startedAt:r.started_at};
+    });
+  } else {
   const chron=[...scans].reverse();
-  const itemRoleState={};
   chron.forEach(s=>{
     const key=s.item_id+'::'+(s.role||'');
     if((s.status||'').includes('Started')) itemRoleState[key]={worker:s.worker,itemId:s.item_id,itemDesc:s.item_desc,role:s.role,startedAt:s.created_at};
     else delete itemRoleState[key];
   });
-  const active={}; Object.values(itemRoleState).forEach(s=>active[s.worker]=s);
+  }
+  // A worker can genuinely have several items open at once. Keying only by worker
+  // hid the rest, so force-stopping the visible one just revealed the next and looked
+  // like nothing happened. Keep them all.
+  const openByWorker={};
+  Object.values(itemRoleState).forEach(s=>{ (openByWorker[s.worker]=openByWorker[s.worker]||[]).push(s); });
+  const active={};
+  Object.entries(openByWorker).forEach(([w,list])=>{
+    list.sort((a,b)=>new Date(a.startedAt)-new Date(b.startedAt));   // oldest first
+    active[w]={...list[0], others:list.slice(1), openCount:list.length};
+  });
   const now=Date.now();
   const stale=Object.values(itemRoleState).filter(s=>(now-new Date(s.startedAt).getTime())>IDLE_ALERT_HOURS*3600*1000);
   return {active, all:Object.values(itemRoleState), stale};
@@ -1174,10 +1200,15 @@ function renderLivePage(){
         <div class="wrole">${esc(s.role||'Working')}${flag}</div>
         <div class="witem" onclick="navigate('${h('item',s.itemId).replace(/'/g,"\\'")}')">${desc}<br><span style="color:var(--ink3);font-size:11px">${esc(s.itemId)}</span></div>
         <div class="wtimer live-timer" data-start="${s.startedAt}">--:--</div>
-        <div style="display:flex;gap:6px;margin-top:10px">
+        ${s.openCount>1?`<div style="background:var(--orange-soft);border-radius:8px;padding:8px 10px;margin-top:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--orange)">⚠️ ${s.openCount} items running at once</div>
+          ${s.others.map(o=>`<div style="font-size:11.5px;color:var(--ink2);margin-top:3px">${esc(o.itemDesc||o.itemId)} · ${esc(o.role||'')}</div>`).join('')}
+        </div>`:''}
+        <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" style="flex:1" onclick="navigate('${h('order',oid).replace(/'/g,"\\'")}')">📋 Order</button>
           <button class="btn btn-danger btn-sm" style="flex:1" onclick="liveForceStop('${jsstr(s.itemId)}','${jsstr(s.role||'')}','${jsstr(name)}','${jsstr(s.itemDesc||'')}')">■ Stop</button>
         </div>
+        ${s.openCount>1?`<button class="btn btn-danger btn-sm btn-block" style="margin-top:6px" onclick="stopAllForWorker('${jsstr(name)}')">■ Stop all ${s.openCount}</button>`:''}
       </div>`;
     }).join('')+'</div>';
   } else {
@@ -1262,10 +1293,32 @@ async function closeStaleSessions(hours){
   await loadAllScans();
   renderLivePage();
 }
+// Close every session a worker has open — the reliable way out of a tangle
+async function stopAllForWorker(worker){
+  const {active}=computeActive();
+  const s=active[worker];
+  if(!s){ toast('Nothing open for '+worker); return; }
+  const all=[s, ...(s.others||[])];
+  if(!confirm('Stop all '+all.length+' items '+worker+' has running?')) return;
+  let ok=0, failed=0;
+  for(const o of all){
+    try{
+      const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({item_id:o.itemId, item_desc:o.itemDesc||'', status:(o.role||'')+' — Stopped (admin)', worker, role:o.role||''})});
+      await sb('active_sessions?item_id=eq.'+encodeURIComponent(o.itemId)+'&role=eq.'+encodeURIComponent(o.role||''),{method:'DELETE'});
+      r.ok?ok++:failed++;
+    }catch(e){ failed++; }
+  }
+  toast('■ Stopped '+ok+(failed?' · '+failed+' failed':''));
+  await Promise.allSettled([loadAllScans(), loadLiveSessions()]);
+  renderLivePage();
+}
 async function liveForceStop(itemId, role, worker, desc){
   if(!confirm('Force stop '+worker+' on '+(desc||itemId)+'?')) return;
   const r=await fetch(SUPABASE_URL+'/rest/v1/scans',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:itemId,item_desc:desc,status:role+' — Stopped (admin)',worker:worker,role:role})});
-  if(r.ok){ toast('■ Stopped '+worker); await loadAllScans(); renderLivePage(); }
+  await sb('active_sessions?item_id=eq.'+encodeURIComponent(itemId)+'&role=eq.'+encodeURIComponent(role||''),{method:'DELETE'});
+  if(r.ok){ toast('■ Stopped '+worker); await Promise.allSettled([loadAllScans(), loadLiveSessions()]); renderLivePage(); }
   else toast('Could not stop');
 }
 
