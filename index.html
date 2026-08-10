@@ -1562,16 +1562,20 @@ async function processScan(itemId) {
 
   // Check Supabase for the TRUE latest state of this item+role (source of truth)
   // This handles admin force-stops and multi-device consistency
+  // The active_sessions table IS the state — no guessing from the event log.
+  // If a row exists for this piece and step, it's running. That's the whole test.
   let isInProgress = itemTaskState[stateKey] === 'in_progress';
+  let myOpen = [];
   try {
-    const q = SUPABASE_URL + '/rest/v1/scans?item_id=eq.' + encodeURIComponent(itemId) +
-      '&role=eq.' + encodeURIComponent(task) + '&select=status,created_at&order=created_at.desc&limit=1';
-    const resp = await fetch(q, { headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
-    const rows = await resp.json();
-    if (Array.isArray(rows) && rows.length) {
-      isInProgress = (rows[0].status || '').includes('Started');
-    } else {
-      isInProgress = false; // no history for this item+role
+    const r = await fetch(SUPABASE_URL + '/rest/v1/active_sessions?worker=eq.' +
+      encodeURIComponent(selectedWorker.name) + '&select=*', {
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+    if (r.ok) {
+      const rows = await r.json();
+      if (Array.isArray(rows)) {
+        myOpen = rows;
+        isInProgress = rows.some(x => x.item_id === itemId && (x.role||'') === task);
+      }
     }
   } catch(e) { /* offline — fall back to local state */ }
 
@@ -1637,23 +1641,28 @@ async function processScan(itemId) {
   // previous automatically, so a stop scan that fails can never leave a timer running
   // for days. This stops runaway hours accumulating in the first place.
   if (!isInProgress) {
-    const orphans = (openSessions||[]).filter(o => o.task === task && o.itemId !== itemId);
+    // Close EVERY other item this worker has running, not just ones in the same role.
+    // Nobody works two pieces at once, so anything else still open was forgotten —
+    // and leaving them is what made items pile up and "stop" appear not to work.
+    // Close everything else this worker has open, taken from the live table rather
+    // than from anything remembered on this phone.
+    const orphans = (myOpen||[]).filter(o => !(o.item_id === itemId && (o.role||'') === task));
     for (const o of orphans) {
       try{
         await fetch(SUPABASE_URL + '/rest/v1/scans', {
           method:'POST',
           headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
-          body: JSON.stringify({ item_id:o.itemId, item_desc:o.name||'', status:(o.task||'')+' — Stopped (auto)',
-                                 worker:selectedWorker.name, role:o.task||'' })
+          body: JSON.stringify({ item_id:o.item_id, item_desc:o.item_desc||'', status:(o.role||'')+' — Stopped (auto)',
+                                 worker:selectedWorker.name, role:o.role||'' })
         });
-        itemTaskState[o.itemId+'::'+(o.task||'')]='done';
+        await fetch(SUPABASE_URL + '/rest/v1/active_sessions?item_id=eq.' + encodeURIComponent(o.item_id) +
+          '&role=eq.' + encodeURIComponent(o.role||''), { method:'DELETE',
+          headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+        itemTaskState[o.item_id+'::'+(o.role||'')]='done';
       }catch(e){}
     }
     if (orphans.length) {
-      openSessions = (openSessions||[]).filter(o => !(o.task === task && o.itemId !== itemId));
-      localStorage.setItem('st_open_sessions', JSON.stringify(openSessions));
       localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
-      renderOpenSessions();
       showToast('⏹️ Closed ' + orphans.length + ' timer' + (orphans.length!==1?'s':'') + ' you left running');
     }
   }
@@ -1932,15 +1941,43 @@ async function completeScan(itemId, task, isInProgress) {
   renderHistory();
   renderScanRecent();
 
+  // The scan row is the time record; active_sessions is the live state. Both are
+  // written here, and a failure is reported rather than swallowed — a silent failure
+  // is exactly how sessions used to end up stuck open.
+  let saveFailed=false;
   try {
-    await fetch(SUPABASE_URL + '/rest/v1/scans', {
+    const r=await fetch(SUPABASE_URL + '/rest/v1/scans', {
       method: 'POST',
       headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
       body: JSON.stringify({ item_id: itemId, item_desc: info.name || '', customer: info.customer || '', city: info.city || '', status: newStatus, worker: selectedWorker.name, role: task })
     });
-  } catch(e) {}
+    if(!r.ok) saveFailed=true;
+  } catch(e) { saveFailed=true; }
 
-  showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
+  try {
+    if (isInProgress) {
+      // Stopping — remove the live row
+      await fetch(SUPABASE_URL + '/rest/v1/active_sessions?item_id=eq.' + encodeURIComponent(itemId) +
+        '&role=eq.' + encodeURIComponent(task), { method:'DELETE',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+    } else {
+      // Starting — upsert, so a second start can never create a duplicate
+      await fetch(SUPABASE_URL + '/rest/v1/active_sessions?on_conflict=item_id,role', {
+        method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',
+                 'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body: JSON.stringify({ item_id:itemId, role:task, worker:selectedWorker.name,
+                               item_desc:info.name||'', started_at:new Date().toISOString() })
+      });
+    }
+  } catch(e) { saveFailed=true; }
+
+  if (saveFailed) {
+    playErrorBeep();
+    showToast('⚠️ Did not save — check your connection and scan again');
+  } else {
+    showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
+  }
 
   // On STOP, ask if this step is completely finished — workers may clean/polish
   // an item several times, so stopping alone doesn't move it forward
