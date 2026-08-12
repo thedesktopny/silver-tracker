@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-10-e</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-a</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1018,7 +1018,15 @@ async function prToggle(oid){
     const name=device.device?device.device.name:'Item '+num;
     const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
     const note=prNote(device,t);
-    const esc=s=>(s||'').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    // These values go inside a JavaScript string inside an HTML attribute. Escaping the
+    // apostrophe as &#39; was wrong: the browser decodes it back to ' BEFORE running the
+    // JavaScript, which ends the string early and breaks the whole handler —
+    // "SyntaxError: missing ) after argument list" on any item with an apostrophe.
+    const esc=s=>String(s||'')
+      .replace(/\\/g,'\\\\')      // backslash first
+      .replace(/'/g,"\\'")            // real escape the browser will not undo
+      .replace(/"/g,'&quot;')
+      .replace(/\r?\n/g,' ');
     const cbId='prcb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
     let h=`<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
       <input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:20px;height:20px;accent-color:var(--ink);margin-top:2px"
@@ -1246,20 +1254,18 @@ function doLogout() {
 async function syncActiveWorkFromServer(){
   if(!selectedWorker) return;
   try{
-    const q = SUPABASE_URL + '/rest/v1/scans?worker=eq.' + encodeURIComponent(selectedWorker.name) +
-      '&select=item_id,item_desc,status,role,created_at&order=created_at.asc&limit=800';
+    // Read the LIVE state table, not the event log. Pairing the log was resurrecting
+    // stopped timers: one stale unpaired "Started" from months ago made the panel come
+    // back every 60 seconds, no matter how many times the worker pressed stop.
+    const q = SUPABASE_URL + '/rest/v1/active_sessions?worker=eq.' +
+      encodeURIComponent(selectedWorker.name) + '&select=*&order=started_at.desc';
     const r = await fetch(q, { headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+    if(!r.ok) return;                      // table missing — leave what's on screen alone
     const rows = await r.json();
     if(!Array.isArray(rows)) return;
-
-    // Pair start/stop per item+role; whatever is left unpaired is still running
-    const open={};
-    rows.forEach(s=>{
-      const key=s.item_id+'::'+(s.role||'');
-      if((s.status||'').includes('Started')) open[key]=s;
-      else delete open[key];
-    });
-    const openList=Object.values(open).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    const openList = rows.map(x=>({
+      item_id:x.item_id, item_desc:x.item_desc, role:x.role, created_at:x.started_at
+    }));
 
     // Keep the FULL list — a worker can have several timers still running from
     // earlier sessions. Only marking the newest meant scanning any of the others
@@ -1271,6 +1277,11 @@ async function syncActiveWorkFromServer(){
       startedAt: new Date(s.created_at).getTime()
     }));
     localStorage.setItem('st_open_sessions', JSON.stringify(openSessions));
+    // Rebuild local state from scratch so a stopped item can't linger as 'in_progress'
+    const stillOpen=new Set(openList.map(s=>s.item_id+'::'+(s.role||'')));
+    Object.keys(itemTaskState).forEach(k=>{
+      if(itemTaskState[k]==='in_progress' && !stillOpen.has(k)) delete itemTaskState[k];
+    });
     openList.forEach(s=>{ itemTaskState[s.item_id+'::'+(s.role||'')]='in_progress'; });
     localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
 
