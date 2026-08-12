@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-10-d</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-10-e</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1633,7 +1633,17 @@ async function processScan(itemId) {
   const stateKey = itemId + '::' + task;
 
   // Resolve item name/customer if we don't have it yet (fixes blank item names on regular scans)
-  await resolveItemInfo(itemId);
+  // The item's name comes from RepairDesk through public proxies, which can hang for
+  // a long time on a shop connection. A scan must NEVER depend on that — if it's slow,
+  // carry on and save the work anyway. The name can be filled in later.
+  dbg('looking up the item name…');
+  try{
+    await Promise.race([
+      resolveItemInfo(itemId),
+      new Promise(res=>setTimeout(()=>res('timeout'), 2500))
+    ]);
+    dbg('lookup finished');
+  }catch(e){ dbg('lookup failed: '+(e.message||e)); }
 
   // The role's own setting decides how a scan behaves. Guessing from the name was
   // wrong — "Pack up" is real timed work here, even though the word looks like delivery.
@@ -1669,9 +1679,12 @@ async function processScan(itemId) {
   let isInProgress = itemTaskState[stateKey] === 'in_progress';
   let myOpen = [];
   try {
-    const r = await fetch(SUPABASE_URL + '/rest/v1/active_sessions?worker=eq.' +
-      encodeURIComponent(selectedWorker.name) + '&select=*', {
-        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+    const r = await Promise.race([
+      fetch(SUPABASE_URL + '/rest/v1/active_sessions?worker=eq.' +
+        encodeURIComponent(selectedWorker.name) + '&select=*', {
+          headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} }),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('slow connection')), 4000))
+    ]);
     if (r.ok) {
       const rows = await r.json();
       if (Array.isArray(rows)) {
@@ -1782,6 +1795,8 @@ async function processScan(itemId) {
   }
 
   const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
+
+  dbg('state: '+(isInProgress?'RUNNING -> stopping':'not running -> starting'));
 
   // If STOPPING and this role REQUIRES a photo, capture it first before completing
   const rs = curRoleSetting();
@@ -2091,6 +2106,7 @@ async function completeScan(itemId, task, isInProgress) {
     dbg('FAILED: the save did not reach the server');
     showToast('⚠️ Did not save — check your connection and scan again');
   } else {
+    dbg('SAVED ✓');
     showToast((isInProgress ? '⏹️ Stopped: ' : '✅ Now working: ') + task + ' on ' + itemId);
   }
 
