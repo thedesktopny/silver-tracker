@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-b</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -797,7 +797,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-a';
+const APP_VERSION='2026-08-11-b';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -2020,8 +2020,8 @@ function openPipeModal(itemId){
     ${canFinishHere?`<button class="btn btn-gold btn-block" style="margin-bottom:10px" onclick="pipeMarkFinished('${jsstr(it.id)}','${jsstr(STAGE_NAMES[it.col])}')">✓ Mark ${esc(STAGE_NAMES[it.col])} Finished</button>`:''}
     <div class="field" style="margin-bottom:14px"><label>Admin Override — move item to</label>
       <div style="display:flex;gap:8px">
-        <select id="pipe-ov-sel">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select>
-        <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(it.id)}')">Move</button>
+        <select id="pipe-ov-modal">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select>
+        <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(it.id)}','pipe-ov-modal')">Move</button>
       </div>
     </div>
     <div class="card-label">History</div>${hist}
@@ -2094,14 +2094,33 @@ async function pipeMarkFinished(itemId, stage){
   if(r.ok){ toast('✓ '+stage+' finished'); closeModal(); await loadStageEvents(); pipeRefreshAfterChange(itemId); }
   else toast('Could not save — did you create the stage_events table?');
 }
-async function pipeApplyOverride(itemId){
-  const val=document.getElementById('pipe-ov-sel').value;
-  const label=(document.getElementById('pipe-ov-sel').selectedOptions[0]||{}).textContent||val;
+// The two Move buttons used to share one element id, so this picked up whichever
+// dropdown the browser found first — usually the wrong one, or none at all, and then
+// nothing happened. Each now passes its own id.
+async function pipeApplyOverride(itemId, selId){
+  const sel=document.getElementById(selId||'pipe-ov-item')||document.getElementById('pipe-ov-modal');
+  if(!sel){ toast('Could not read the selection — reload the page'); return; }
+  const val=sel.value;
+  const label=(sel.selectedOptions[0]||{}).textContent||val;
   if(!confirm('Move '+itemId+' to "'+label+'"?\n\nThis is logged as an admin override.')) return;
-  const it=(window._pipeItems||{})[itemId];
-  const r=await postStageEventAdmin(itemId, val, 'override', it?it.desc:'');
-  if(r.ok){ toast('⚡ Moved to '+label); closeModal(); await loadStageEvents(); pipeRefreshAfterChange(itemId); }
-  else toast('Could not save — did you create the stage_events table?');
+
+  // Name it properly whether we came from the board or the item page
+  let desc=((window._pipeItems||{})[itemId]||{}).desc||'';
+  if(!desc){ try{ desc=(buildPipelineItems().items[itemId]||{}).desc||''; }catch(e){} }
+
+  const r=await postStageEventAdmin(itemId, val, 'override', desc);
+  if(!r.ok){
+    let why=''; try{ const j=await r.json(); why=j.message||j.hint||''; }catch(_){}
+    toast('Could not move: '+(why||('HTTP '+r.status)));
+    return;
+  }
+  await loadStageEvents();
+  // Check it actually moved rather than just claiming success
+  let now='';
+  try{ const it2=buildPipelineItems().items[itemId]; now=it2?colLabel(it2.col):''; }catch(e){}
+  toast(now?('⚡ Now at '+now):'Saved — refreshing');
+  closeModal();
+  pipeRefreshAfterChange(itemId);
 }
 function pipeRefreshAfterChange(itemId){
   const route=currentRoute();
@@ -2156,8 +2175,8 @@ function itemPipeCardHtml(itemId){
       ${it.rdStatus?`<span style="background:var(--surface2);color:var(--ink2);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">RepairDesk: ${esc(it.rdStatus)}</span>`:''}
     </div>`:''}
     <div class="row"><div class="field"><label>Admin Override — move item to</label>
-      <select id="pipe-ov-sel">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select></div>
-      <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(itemId)}')">Move</button></div>
+      <select id="pipe-ov-item">${overrideOpts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('')}</select></div>
+      <button class="btn btn-sm" onclick="pipeApplyOverride('${jsstr(itemId)}','pipe-ov-item')">Move</button></div>
   </div>`;
 }
 
