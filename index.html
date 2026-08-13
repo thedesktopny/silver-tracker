@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-a</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-b</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -2061,11 +2061,19 @@ async function completeScan(itemId, task, isInProgress) {
   const info = itemCache[itemId] || {};
 
   if (isInProgress) {
-    if (activeWork && activeWork.itemId === itemId && activeWork.task === task) {
-      activeWork = null;
-      localStorage.setItem('st_active_work', 'null');
-      stopActiveWorkTimer();
-    }
+    // Stopping clears the panel FULL STOP. It used to only clear when the panel happened
+    // to be showing this exact item and role — so if it was showing anything else (a
+    // ghost from the old log, or another piece), the timer stayed on screen and it
+    // looked like stop did nothing.
+    activeWork = null;
+    localStorage.setItem('st_active_work', 'null');
+    stopActiveWorkTimer();
+    openSessions = (openSessions||[]).filter(o => !(o.itemId === itemId && o.task === task));
+    localStorage.setItem('st_open_sessions', JSON.stringify(openSessions));
+    delete itemTaskState[stateKey];
+    localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+    renderOpenSessions();
+    dbg('panel cleared');
   } else {
     activeWork = { itemId, name: info.name || itemId, task, startedAt: Date.now() };
     localStorage.setItem('st_active_work', JSON.stringify(activeWork));
@@ -2096,10 +2104,29 @@ async function completeScan(itemId, task, isInProgress) {
 
   try {
     if (isInProgress) {
-      // Stopping — remove the live row
-      await fetch(SUPABASE_URL + '/rest/v1/active_sessions?item_id=eq.' + encodeURIComponent(itemId) +
-        '&role=eq.' + encodeURIComponent(task), { method:'DELETE',
+      // Stopping — remove the live row, and CHECK it actually went. If this quietly
+      // fails the row survives, the next sync sees it and the timer comes straight
+      // back, which is exactly what "stop doesn't work" looks like.
+      const delUrl = SUPABASE_URL + '/rest/v1/active_sessions?item_id=eq.' +
+        encodeURIComponent(itemId) + '&role=eq.' + encodeURIComponent(task);
+      const dr = await fetch(delUrl, { method:'DELETE',
         headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
+      dbg('delete live row: HTTP '+dr.status);
+      if(!dr.ok){
+        let why=''; try{ const j=await dr.json(); why=j.message||j.hint||''; }catch(_){}
+        dbg('DELETE FAILED '+(why||''));
+        saveFailed=true;
+      } else {
+        // Confirm it's really gone — a 2xx with nothing deleted is still a problem
+        try{
+          const chk=await fetch(delUrl+'&select=item_id',{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+          const left=await chk.json();
+          if(Array.isArray(left)&&left.length){
+            dbg('STILL THERE after delete — check the active_sessions policy allows DELETE');
+            saveFailed=true;
+          } else dbg('live row gone ✓');
+        }catch(_){}
+      }
     } else {
       // Starting — upsert, so a second start can never create a duplicate
       await fetch(SUPABASE_URL + '/rest/v1/active_sessions?on_conflict=item_id,role', {
