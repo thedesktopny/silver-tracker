@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-b</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-c</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -797,7 +797,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-b';
+const APP_VERSION='2026-08-11-c';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -938,7 +938,17 @@ async function runServerSync(){
     } else toast('Sync failed: '+(d.error||'unknown'));
   }catch(e){ toast('Sync failed: '+(e.message||e)); }
 }
-async function loadStageEvents(){ try{ const r=await sbList('stage_events?select=*&order=created_at.asc&limit=8000'); stageEvents=Array.isArray(r)?r:[]; }catch(e){ stageEvents=[]; } _unitsIdx=null; }
+// Fetch the NEWEST events, not the oldest. This was ordered ascending with a cap, so
+// once the table passed the limit only ancient events loaded — every new override,
+// hold or move was saved correctly and then never read back, so the board appeared to
+// accept the change and immediately snap back to where it was.
+async function loadStageEvents(){
+  try{
+    const r=await sbList('stage_events?select=*&order=created_at.desc&limit=20000');
+    stageEvents=Array.isArray(r)?r.slice().reverse():[];   // back to oldest-first for pairing
+  }catch(e){ stageEvents=[]; }
+  _unitsIdx=null;
+}
 async function loadPipeLabels(){ try{ const r=await sbList('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=(Array.isArray(r)?r:[]).map(l=>({...l, item_id:normalizeItemId(l.item_id)})); }catch(e){ pipeLabels=[]; } }
 
 async function bootstrap(){
