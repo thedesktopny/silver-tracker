@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-b</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-c</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -238,6 +238,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
     <div class="worker-row" id="role-row"></div>
   </div>
 
+  <div class="card" id="work-next" style="display:none;border-left:4px solid var(--red)"></div>
+
   <div class="card" id="scan-card" style="display:none">
     <div class="card-label" id="scan-card-label">Scan item</div>
     <div class="scan-input-wrap" style="margin-bottom:10px;display:flex;gap:8px">
@@ -249,6 +251,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
       <button onclick="toggleKeyboard()" id="keyboard-btn" class="gen-btn" style="flex-shrink:0;background:var(--surface2);border:2px solid var(--border);color:var(--ink2)" title="Show keyboard">⌨️</button>
       <button onclick="submitScan()" class="gen-btn" style="flex-shrink:0">Enter</button>
     </div>
+    <button onclick="startLookup()" id="lookup-btn" style="width:100%;padding:11px;background:var(--surface);border:2px solid var(--gold);border-radius:10px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;letter-spacing:.06em;color:var(--gold2);cursor:pointer;margin-bottom:8px">🔍 <span data-t="checkItem">Check an item — don't start work</span></button>
     <button onclick="toggleCamera()" id="camera-btn" style="width:100%;padding:13px;background:var(--surface2);border:2px solid var(--border);border-radius:10px;font-family:'Inter',sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--ink2);cursor:pointer;text-transform:uppercase;margin-bottom:10px">
       📷 Use Camera to Scan
     </button>
@@ -256,6 +259,19 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
       <video id="camera-video" style="width:100%;border-radius:10px;display:block" autoplay muted playsinline></video>
       <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:60%;height:40%;border:3px solid var(--gold);border-radius:8px;pointer-events:none"></div>
       <button onclick="toggleCamera()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:none;border-radius:50px;color:white;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer">✕ Close</button>
+    </div>
+  </div>
+
+  <div class="card" id="lookup-result" style="display:none;border-left:4px solid var(--gold)"></div>
+
+  <div class="card" style="padding:10px 14px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:11.5px;color:var(--ink3);font-weight:600" data-t="language">Language</span>
+      <select id="lang-select" onchange="setLang(this.value)" style="flex:1;max-width:180px;padding:7px 10px;font-size:13px">
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="he">עברית</option>
+      </select>
     </div>
   </div>
 
@@ -303,6 +319,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 </div>
 
 <!-- ===== POINTS PAGE ===== -->
+<div id="page-settings-lang" style="display:none"></div>
+
 <div id="page-points" class="page">
   <div class="card" style="text-align:center;background:linear-gradient(135deg,var(--gold),#818cf8);border:none;color:#fff">
     <div style="font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;opacity:.85">⭐ Points Earned</div>
@@ -1356,6 +1374,7 @@ function renderRoleButtons(workerRoles) {
 }
 
 function selectRole(role) {
+  setTimeout(()=>{ if(typeof loadWorkPriority==='function') loadWorkPriority(); }, 50);
   selectedRole = role;
   document.getElementById('scan-card').style.display = 'block';
   document.getElementById('scan-recent-card').style.display = 'block';
@@ -1366,6 +1385,7 @@ function selectRole(role) {
   renderScanRecent();
   renderActiveWork();
   renderOpenSessions();
+  loadWorkPriority();
   if (activeWork) startActiveWorkTimer();
   syncActiveWorkFromServer();
   setTimeout(() => document.getElementById('scan-input').focus(), 150);
@@ -1585,12 +1605,144 @@ function showBlockingPrompt(title, body){
   bg.querySelector('button').onclick=()=>bg.remove();
 }
 
+
+// ===== WHAT TO WORK ON NEXT =====
+// Worked out by the Control Room and shared through settings, so the phone doesn't
+// have to compute anything or wait on RepairDesk.
+let workPriority=null;
+async function loadWorkPriority(){
+  try{
+    const r=await fetch(SUPABASE_URL+"/rest/v1/settings?key=eq.work_priority&select=value",
+      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const rows=await r.json();
+    workPriority=(rows&&rows[0]&&rows[0].value)?JSON.parse(rows[0].value):null;
+  }catch(e){ workPriority=null; }
+  renderWorkPriority();
+}
+function renderWorkPriority(){
+  const el=document.getElementById('work-next');
+  if(!el) return;
+  if(!selectedRole || !workPriority || !workPriority.stages){ el.style.display='none'; return; }
+  // Match the worker's role to a stage, allowing for slightly different wording
+  const keys=Object.keys(workPriority.stages);
+  const r=selectedRole.toLowerCase();
+  const key=keys.find(k=>k.toLowerCase()===r)
+        || keys.find(k=>r.includes(k.toLowerCase())||k.toLowerCase().includes(r));
+  const list=key?workPriority.stages[key]:null;
+  if(!list||!list.length){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.innerHTML=`<div class="card-label">${t('workNext')}</div>
+    <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">${t('workNextHint')}</div>
+    ${list.slice(0,5).map((x,i)=>`
+      <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="width:24px;height:24px;border-radius:50%;background:${i===0?'var(--red)':(i<3?'var(--orange)':'var(--surface2)')};color:${i<3?'#fff':'var(--ink3)'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;flex-shrink:0">${i+1}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:13.5px">${x.desc||x.id}</div>
+          <div style="font-size:11px;color:var(--ink3)">${x.id}</div>
+        </div>
+        ${(x.why||[]).length?`<div style="font-size:10.5px;font-weight:700;color:var(--orange);text-align:right;flex-shrink:0">${x.why.join('<br>')}</div>`:''}
+      </div>`).join('')}`;
+}
+
+// ===== CHECK AN ITEM =====
+// Anyone can scan just to see what a piece is — right tag on the right object, its
+// services, and any notes — without starting or stopping any work.
+let lookupMode=false;
+function startLookup(){
+  lookupMode=true;
+  showToast(t('lookupOn'));
+  const el=document.getElementById('lookup-result');
+  if(el){ el.style.display='block'; el.innerHTML='<div style="color:var(--ink3);font-size:13px">'+t('lookupWaiting')+'</div>'; }
+  const inp=document.getElementById('scan-input'); if(inp) inp.focus();
+}
+async function showLookup(itemId){
+  lookupMode=false;
+  const el=document.getElementById('lookup-result');
+  if(!el) return;
+  el.style.display='block';
+  el.innerHTML='<div style="color:var(--ink3);font-size:13px">…</div>';
+  let info={};
+  try{
+    await Promise.race([resolveItemInfo(itemId), new Promise(r=>setTimeout(r,2500))]);
+    info=itemCache[itemId]||{};
+  }catch(e){}
+  let notes=[];
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/item_notes?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc&limit=8',
+      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const j=await r.json(); if(Array.isArray(j)) notes=j;
+  }catch(e){}
+  let open=[];
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/active_sessions?item_id=eq.'+encodeURIComponent(itemId)+'&select=*',
+      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const j=await r.json(); if(Array.isArray(j)) open=j;
+  }catch(e){}
+
+  el.innerHTML=`<div class="card-label">🔍 ${t('checkResult')}</div>
+    <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:800">${info.name||itemId}</div>
+    <div style="font-size:12px;color:var(--ink3)">${itemId}${info.customer?' · '+info.customer:''}${info.city?' · '+info.city:''}</div>
+    ${info.services?`<div style="font-size:12.5px;color:var(--gold2);margin-top:6px;font-weight:600">${Array.isArray(info.services)?info.services.join(', '):info.services}</div>`:''}
+    ${open.length?`<div style="margin-top:8px;background:var(--green-soft);border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:700;color:var(--green)">
+      ▶ ${open.map(o=>o.worker+' — '+(o.role||'')).join('<br>')}</div>`:''}
+    ${notes.length?`<div style="margin-top:10px">
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px">${t('notes')}</div>
+      ${notes.map(n=>{ const office=(n.role||'')==='Office'||(n.worker||'')==='Office';
+        return `<div style="background:${office?'var(--accent-soft)':'var(--surface2)'};${office?'border-left:3px solid var(--gold);':''}border-radius:7px;padding:7px 9px;margin-bottom:5px">
+          <div style="font-size:12.5px">${office?'📋 ':''}${n.note}</div>
+          <div style="font-size:10px;color:var(--ink3)">${office?'Office':(n.worker||'')}</div></div>`; }).join('')}
+    </div>`:`<div style="font-size:12.5px;color:var(--ink3);margin-top:8px;font-style:italic">${t('noNotes')}</div>`}
+    <button class="gen-btn" style="width:100%;margin-top:10px" onclick="document.getElementById('lookup-result').style.display='none'">${t('close')}</button>`;
+  playBeep(920,120);
+}
+
+// ===== LANGUAGES =====
+const LANGS={en:'English', es:'Español', he:'עברית'};
+const STRINGS={
+  en:{ workNext:'🎯 Work on these first', workNextHint:'Ordered by due date, orders nearly finished, and pieces waiting longest.',
+       language:'Language', settings:'Settings', scanItem:'Scan item', chooseRole:'What are you doing now?',
+       chooseRoleHint:'👇 Tap one to start — you can\'t scan until you do.', loggedInAs:'Logged in as', logOut:'Log out',
+       useCamera:'📷 Use the camera to scan', recentScans:'Your recent scans', noScans:'No scans in this session yet.',
+       enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
+  es:{ workNext:'🎯 Trabaja primero en estos', workNextHint:'Ordenado por fecha de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
+       language:'Idioma', settings:'Ajustes', scanItem:'Escanear artículo', chooseRole:'¿Qué estás haciendo ahora?',
+       chooseRoleHint:'👇 Toca uno para empezar; no podrás escanear hasta que lo hagas.', loggedInAs:'Sesión iniciada como', logOut:'Finalizar la sesión',
+       useCamera:'📷 Usa la cámara para escanear', recentScans:'Tus escaneos recientes', noScans:'Aún no hay escaneos en esta sesión.',
+       enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
+  he:{ workNext:'🎯 עבדו קודם על אלה', workNextHint:'לפי תאריך יעד, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
+       language:'שפה', settings:'הגדרות', scanItem:'סריקת פריט', chooseRole:'מה אתה עושה עכשיו?',
+       chooseRoleHint:'👇 הקישו על אחד כדי להתחיל — אי אפשר לסרוק לפני כן.', loggedInAs:'מחובר בתור', logOut:'התנתקות',
+       useCamera:'📷 השתמשו במצלמה לסריקה', recentScans:'הסריקות האחרונות שלך', noScans:'אין עדיין סריקות בפעילות הזו.',
+       enter:'אישור', addPhoto:'📸 תמונה', addVideo:'🎥 וידאו', stillRunning:'⏱️ עדיין פועל', stop:'עצור' , checkItem:'בדיקת פריט — בלי להתחיל עבודה', lookupOn:'🔍 סרקו תווית כדי לבדוק', lookupWaiting:'ממתין לסריקה…', checkResult:'פרטי הפריט', notes:'הערות', noNotes:'אין הערות לפריט הזה.', close:'סגירה', topPriority:'זה הפריט הראשון לביצוע', highPriority:'טוב — זה קרוב לראש הרשימה', notPriority:'לא ברשימת העדיפות. מומלץ קודם'}
+};
+let LANG=localStorage.getItem('st_lang')||'en';
+function t(k){ return (STRINGS[LANG]&&STRINGS[LANG][k])||STRINGS.en[k]||k; }
+function setLang(l){
+  if(!STRINGS[l]) return;
+  LANG=l; localStorage.setItem('st_lang',l);
+  document.documentElement.lang=l;
+  document.documentElement.dir = (l==='he') ? 'rtl' : 'ltr';   // Hebrew reads right to left
+  applyLang();
+  showToast(LANGS[l]);
+}
+function applyLang(){
+  document.documentElement.dir = (LANG==='he') ? 'rtl' : 'ltr';
+  document.querySelectorAll('[data-t]').forEach(el=>{ el.textContent=t(el.dataset.t); });
+  renderWorkPriority();
+  const sel=document.getElementById('lang-select'); if(sel) sel.value=LANG;
+}
+
 async function processScan(itemId) {
   dbg('scan received: '+itemId+'  worker='+(selectedWorker?selectedWorker.name:'NONE')+'  role='+(selectedRole||'NONE'));
   if (!selectedWorker) { dbg('STOPPED: no worker selected'); showToast('Select a worker first'); return; }
   if (!selectedRole) { dbg('STOPPED: no role selected'); showToast('Select your role first'); return; }
   const rawScan = String(itemId||'').trim();
   itemId = cleanScannedId(rawScan);
+  if (lookupMode) {
+    dbg('lookup only — no work started');
+    document.getElementById('scan-input').value='';
+    return showLookup(itemId);
+  }
 
   // A garbled read that couldn't be repaired must NOT be recorded — it would create a
   // phantom item and leave the real timer running.
@@ -1808,6 +1960,22 @@ async function processScan(itemId) {
   const newStatus = isInProgress ? (task + ' Stopped') : (task + ' Started');
 
   dbg('state: '+(isInProgress?'RUNNING -> stopping':'not running -> starting'));
+
+  // Flag whether this is one the shop wants done first
+  if(!isInProgress && workPriority && workPriority.stages){
+    try{
+      const keys=Object.keys(workPriority.stages);
+      const rl=task.toLowerCase();
+      const key=keys.find(k=>k.toLowerCase()===rl)||keys.find(k=>rl.includes(k.toLowerCase())||k.toLowerCase().includes(rl));
+      const list=key?workPriority.stages[key]:null;
+      if(list&&list.length){
+        const pos=list.findIndex(x=>x.id===itemId);
+        if(pos===0) showToast('⭐ '+t('topPriority'));
+        else if(pos>0&&pos<3) showToast('👍 '+t('highPriority'));
+        else if(pos<0&&list[0]) showToast('⚠️ '+t('notPriority')+': '+(list[0].desc||list[0].id));
+      }
+    }catch(e){}
+  }
 
   // If STOPPING and this role REQUIRES a photo, capture it first before completing
   const rs = curRoleSetting();
