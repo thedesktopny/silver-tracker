@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-c</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-d</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -382,6 +382,7 @@ const NAV_ITEMS = [
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
   {route:'ask', label:'Ask Glint', icon:'✨'},
+  {route:'priority', label:'What to Work On', icon:'🎯'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
   {route:'hold', label:'On Hold', icon:'⏸️'},
   {route:'timeline', label:'Day Timeline', icon:'🕘'},
@@ -778,7 +779,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -797,7 +798,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-c';
+const APP_VERSION='2026-08-11-d';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -848,6 +849,7 @@ const ROUTE_RENDERERS={
   ask: renderAskPage,
   photofind: renderPhotoFindPage,
   attention: renderAttentionPage,
+  priority: renderPriorityPage,
   hold: renderHoldPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
@@ -1010,6 +1012,8 @@ async function bootstrap(){
 
   // Keep courier status fresh without anyone pressing a button
   setTimeout(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 3000);
+  setTimeout(()=>{ if(typeof saveWorkPriority==='function') saveWorkPriority(true); }, 6000);
+  setInterval(()=>{ if(typeof saveWorkPriority==='function') saveWorkPriority(true); }, 10*60*1000);
   setInterval(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 10*60*1000);
 
   setInterval(async ()=>{
@@ -4687,6 +4691,117 @@ async function renderCostsPage(){
         Check against the real bills at <a href="https://aistudio.google.com" target="_blank" style="color:var(--gold)">aistudio.google.com</a> and your Supabase billing page.
       </div>
     </div>`;
+}
+
+
+// ========================================================================
+// WHAT TO WORK ON NEXT — worked out here, read by the workers' app
+// ========================================================================
+// Three things decide the order, exactly as the shop wants:
+//   1. how close the due date is (or how overdue)
+//   2. whether the rest of the order is finished and only this piece is holding it
+//   3. how long it has already sat at this station
+function computeWorkPriority(){
+  const {items}=buildPipelineItems();
+  const all=Object.values(items);
+  const holds=(()=>{ try{ return computeHolds(); }catch(e){ return {}; } })();
+  const now=Date.now(), day=86400000;
+
+  // How far along is each order, so we can spot ones nearly done
+  const byOrder={};
+  all.forEach(it=>{ const o=orderIdOf(it.id); (byOrder[o]=byOrder[o]||[]).push(it); });
+  const orderProgress={};
+  Object.entries(byOrder).forEach(([o,list])=>{
+    const done=list.filter(x=>x.fin>=LASTW).length;
+    orderProgress[o]={done, total:list.length};
+  });
+
+  const out={};
+  all.forEach(it=>{
+    if(holds[it.id]) return;                       // paused on purpose
+    if(typeof it.col!=='number' || it.col>LASTW) return;   // not waiting for a work step
+    const stage=STAGE_NAMES[it.col];
+    if(!stage) return;
+
+    let score=0; const why=[];
+
+    // 1. Due date
+    const due=dueDateFor(orderIdOf(it.id));
+    if(due){
+      const days=Math.round((startOfDay(due)-startOfDay(new Date()))/day);
+      if(days<0){ score+=100+Math.min(Math.abs(days),30)*3; why.push(Math.abs(days)+'d overdue'); }
+      else if(days<=2){ score+=70; why.push(days===0?'due today':'due in '+days+'d'); }
+      else if(days<=7){ score+=40; why.push('due in '+days+'d'); }
+      else if(days<=14){ score+=15; }
+    }
+
+    // 2. Holding up an order that's otherwise finished
+    const prog=orderProgress[orderIdOf(it.id)];
+    if(prog && prog.total>1){
+      const left=prog.total-prog.done;
+      if(left===1){ score+=60; why.push('last piece of '+orderIdOf(it.id)); }
+      else if(left<=Math.max(2,Math.floor(prog.total/4))){ score+=30; why.push(left+' left on '+orderIdOf(it.id)); }
+    }
+
+    // 3. Sitting here too long
+    const waiting=it.since?Math.floor((now-new Date(it.since).getTime())/day):0;
+    if(waiting>=7){ score+=50; why.push('waiting '+waiting+'d'); }
+    else if(waiting>=3){ score+=25; why.push('waiting '+waiting+'d'); }
+    else if(waiting>=1){ score+=8; }
+
+    (out[stage]=out[stage]||[]).push({
+      id:it.id, desc:it.desc||it.id, customer:it.customer||'',
+      score, why:why.slice(0,2), waiting
+    });
+  });
+
+  Object.keys(out).forEach(k=>{
+    out[k].sort((a,b)=>b.score-a.score || b.waiting-a.waiting);
+    out[k]=out[k].slice(0,12);
+  });
+  return out;
+}
+
+// Share it with the workers' app
+async function saveWorkPriority(silent){
+  try{
+    const p=computeWorkPriority();
+    const r=await sb('settings?on_conflict=key',{method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify({key:'work_priority', value:JSON.stringify({at:new Date().toISOString(), stages:p})})});
+    if(!silent) toast(r.ok?'✅ Work order sent to the floor':'Could not send');
+    return r.ok;
+  }catch(e){ if(!silent) toast('Could not send: '+(e.message||e)); return false; }
+}
+
+function renderPriorityPage(){
+  const p=computeWorkPriority();
+  const stages=Object.keys(p).filter(k=>p[k].length);
+  let html=`<div class="page-head">
+    <div><div class="page-title">What to Work On</div>
+      <div class="page-sub">The order each station should take things in — due date, orders nearly finished, and pieces waiting too long</div></div>
+    <button class="btn btn-gold btn-sm" onclick="saveWorkPriority()">↑ Send to the floor</button>
+  </div>`;
+
+  if(!stages.length){
+    html+='<div class="card"><div class="empty">Nothing waiting at any station</div></div>';
+  }
+  html+=stages.map(st=>`<div class="card">
+    <div class="card-label">${esc(st)} <span style="font-weight:600;text-transform:none;color:var(--ink3)">— ${p[st].length} waiting</span></div>
+    ${p[st].map((x,i)=>`<div class="clickable" style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"
+      onclick="navigate('${h('item',x.id).replace(/'/g,"\\'")}')">
+      <span style="width:26px;height:26px;border-radius:50%;background:${i===0?'var(--red)':(i<3?'var(--orange)':'var(--surface2)')};color:${i<3?'#fff':'var(--ink3)'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0">${i+1}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14.5px">${esc(x.desc)}</div>
+        <div style="font-size:11.5px;color:var(--ink3)">${esc(x.id)}${x.customer?' · '+esc(x.customer):''}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        ${x.why.map(r=>`<div style="font-size:11px;font-weight:700;color:${/overdue|today/.test(r)?'var(--red)':'var(--orange)'}">${esc(r)}</div>`).join('')}
+      </div>
+    </div>`).join('')}
+  </div>`).join('');
+
+  document.getElementById('content').innerHTML=html;
 }
 
 async function renderProductionPage(){
