@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-f</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-g</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1704,38 +1704,96 @@ async function showLookup(itemId){
   if(!el) return;
   el.style.display='block';
   el.innerHTML='<div style="color:var(--ink3);font-size:13px">…</div>';
+  try{ el.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+
+  const get=async(path)=>{
+    try{
+      const r=await fetch(SUPABASE_URL+'/rest/v1/'+path,{headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+      const j=await r.json(); return Array.isArray(j)?j:[];
+    }catch(e){ return []; }
+  };
+
+  // Everything about this piece, fetched together
   let info={};
   try{
-    await Promise.race([resolveItemInfo(itemId), new Promise(r=>setTimeout(r,2500))]);
+    await Promise.race([resolveItemInfo(itemId), new Promise(r=>setTimeout(r,3000))]);
     info=itemCache[itemId]||{};
   }catch(e){}
-  let notes=[];
-  try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/item_notes?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc&limit=8',
-      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
-    const j=await r.json(); if(Array.isArray(j)) notes=j;
-  }catch(e){}
-  let open=[];
-  try{
-    const r=await fetch(SUPABASE_URL+'/rest/v1/active_sessions?item_id=eq.'+encodeURIComponent(itemId)+'&select=*',
-      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
-    const j=await r.json(); if(Array.isArray(j)) open=j;
-  }catch(e){}
 
-  el.innerHTML=`<div class="card-label">🔍 ${t('checkResult')}</div>
-    <div style="font-family:'Outfit',sans-serif;font-size:19px;font-weight:800">${info.name||itemId}</div>
-    <div style="font-size:12px;color:var(--ink3)">${itemId}${info.customer?' · '+info.customer:''}${info.city?' · '+info.city:''}</div>
-    ${info.services?`<div style="font-size:12.5px;color:var(--gold2);margin-top:6px;font-weight:600">${Array.isArray(info.services)?info.services.join(', '):info.services}</div>`:''}
-    ${open.length?`<div style="margin-top:8px;background:var(--green-soft);border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:700;color:var(--green)">
+  const [notes, imgs, open, hist] = await Promise.all([
+    get('item_notes?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc&limit=10'),
+    get('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc&limit=30'),
+    get('active_sessions?item_id=eq.'+encodeURIComponent(itemId)+'&select=*'),
+    get('scans?item_id=eq.'+encodeURIComponent(itemId)+'&select=status,role,worker,created_at&order=created_at.desc&limit=40')
+  ]);
+
+  const isVid=u=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(u||'');
+  const pics=imgs.filter(i=>!isVid(i.image_url));
+  const vids=imgs.filter(i=>isVid(i.image_url));
+
+  // What has actually been done, newest first
+  const doneRoles=[...new Set(hist.filter(h=>(h.status||'').includes('Stopped')).map(h=>h.role).filter(Boolean))];
+  const last=hist[0];
+
+  el.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+      <div style="min-width:0">
+        <div class="card-label">🔍 ${t('checkResult')}</div>
+        <div style="font-family:'Outfit',sans-serif;font-size:20px;font-weight:800;line-height:1.2">${info.name||itemId}</div>
+        <div style="font-size:12px;color:var(--ink3);margin-top:2px">${itemId}</div>
+      </div>
+      <button class="gen-btn" style="flex-shrink:0;font-size:11px;padding:7px 12px" onclick="document.getElementById('lookup-result').style.display='none'">${t('close')}</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px">
+      ${info.customer?`<div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">${t('customer')}</div>
+        <div style="font-size:13.5px;font-weight:600">${info.customer}</div></div>`:''}
+      ${info.city?`<div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">${t('area')}</div>
+        <div style="font-size:13.5px;font-weight:600">${info.city}</div></div>`:''}
+      ${info.due?`<div><div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">${t('due')}</div>
+        <div style="font-size:13.5px;font-weight:600">${info.due}</div></div>`:''}
+    </div>
+
+    ${info.services?`<div style="margin-top:10px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${t('services')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${(Array.isArray(info.services)?info.services:String(info.services).split(',')).map(s=>
+        `<span style="background:var(--accent-soft);color:var(--gold2);font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px">${String(s).trim()}</span>`).join('')}</div>
+    </div>`:''}
+
+    ${open.length?`<div style="margin-top:10px;background:var(--green-soft);border-radius:8px;padding:9px 11px;font-size:12.5px;font-weight:700;color:var(--green)">
       ▶ ${open.map(o=>o.worker+' — '+(o.role||'')).join('<br>')}</div>`:''}
-    ${notes.length?`<div style="margin-top:10px">
-      <div style="font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px">${t('notes')}</div>
+
+    ${doneRoles.length?`<div style="margin-top:10px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${t('alreadyDone')}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${doneRoles.map(r=>
+        `<span style="background:var(--surface2);font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:20px">✓ ${r}</span>`).join('')}</div>
+      ${last?`<div style="font-size:11px;color:var(--ink3);margin-top:5px">${t('lastActivity')}: ${last.worker||''} · ${new Date(last.created_at).toLocaleString()}</div>`:''}
+    </div>`:''}
+
+    ${notes.length?`<div style="margin-top:12px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">${t('notes')} (${notes.length})</div>
       ${notes.map(n=>{ const office=(n.role||'')==='Office'||(n.worker||'')==='Office';
-        return `<div style="background:${office?'var(--accent-soft)':'var(--surface2)'};${office?'border-left:3px solid var(--gold);':''}border-radius:7px;padding:7px 9px;margin-bottom:5px">
-          <div style="font-size:12.5px">${office?'📋 ':''}${n.note}</div>
-          <div style="font-size:10px;color:var(--ink3)">${office?'Office':(n.worker||'')}</div></div>`; }).join('')}
-    </div>`:`<div style="font-size:12.5px;color:var(--ink3);margin-top:8px;font-style:italic">${t('noNotes')}</div>`}
-    <button class="gen-btn" style="width:100%;margin-top:10px" onclick="document.getElementById('lookup-result').style.display='none'">${t('close')}</button>`;
+        return `<div style="background:${office?'var(--accent-soft)':'var(--surface2)'};${office?'border-left:3px solid var(--gold);':''}border-radius:7px;padding:8px 10px;margin-bottom:5px">
+          <div style="font-size:12.5px;white-space:pre-wrap">${office?'📋 ':''}${n.note}</div>
+          <div style="font-size:10px;color:var(--ink3);margin-top:2px">${office?'Office':(n.worker||'')} · ${new Date(n.created_at).toLocaleDateString()}</div></div>`; }).join('')}
+    </div>`:`<div style="font-size:12.5px;color:var(--ink3);margin-top:10px;font-style:italic">${t('noNotes')}</div>`}
+
+    ${pics.length?`<div style="margin-top:12px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">${t('photos')} (${pics.length})</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px">
+        ${pics.map(i=>`<img loading="lazy" decoding="async" src="${thumbUrl(i.image_url,200)}"
+          onerror="this.onerror=null;this.src='${i.image_url}'"
+          onclick="window.open('${i.image_url}','_blank')"
+          style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;background:var(--surface2)">`).join('')}
+      </div>
+    </div>`:''}
+
+    ${vids.length?`<div style="margin-top:12px">
+      <div style="font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">🎥 ${t('videos')} (${vids.length})</div>
+      ${vids.map(v=>`<video src="${v.image_url}" controls preload="none" playsinline
+        style="width:100%;border-radius:8px;background:#000;margin-bottom:6px"></video>`).join('')}
+    </div>`:''}
+  `;
   playBeep(920,120);
 }
 
@@ -1746,17 +1804,17 @@ const STRINGS={
        language:'Language', settings:'Settings', scanItem:'Scan item', chooseRole:'What are you doing now?',
        chooseRoleHint:'👇 Tap one to start — you can\'t scan until you do.', loggedInAs:'Logged in as', logOut:'Log out',
        useCamera:'📷 Use the camera to scan', recentScans:'Your recent scans', noScans:'No scans in this session yet.',
-       enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', noPriorityYet:'No list has been sent from the office yet.', nothingWaiting:'Nothing waiting for this step right now.', roleNoStage:'%s is not one of the pipeline steps, so there is no list for it.', stagesKnown:'Lists exist for', refresh:'↻ Refresh', ghostWarn:'This has been running far too long — it is probably left over from before.', ghostClear:'Close it', ghostConfirm:'Close this leftover timer?', ghostCleared:'Leftover timer closed', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
+       enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', customer:'Customer', area:'Area', due:'Due', services:'Services', alreadyDone:'Already done', lastActivity:'Last activity', photos:'Photos', videos:'Videos', noPriorityYet:'No list has been sent from the office yet.', nothingWaiting:'Nothing waiting for this step right now.', roleNoStage:'%s is not one of the pipeline steps, so there is no list for it.', stagesKnown:'Lists exist for', refresh:'↻ Refresh', ghostWarn:'This has been running far too long — it is probably left over from before.', ghostClear:'Close it', ghostConfirm:'Close this leftover timer?', ghostCleared:'Leftover timer closed', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
   es:{ workNext:'🎯 Trabaja primero en estos', lvlUrgent:'Urgente', lvlSoon:'Pronto', lvlNormal:'Sin prisa', workNextHint:'Todo lo que tienes, lo más urgente primero de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
        language:'Idioma', settings:'Ajustes', scanItem:'Escanear artículo', chooseRole:'¿Qué estás haciendo ahora?',
        chooseRoleHint:'👇 Toca uno para empezar; no podrás escanear hasta que lo hagas.', loggedInAs:'Sesión iniciada como', logOut:'Finalizar la sesión',
        useCamera:'📷 Usa la cámara para escanear', recentScans:'Tus escaneos recientes', noScans:'Aún no hay escaneos en esta sesión.',
-       enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', noPriorityYet:'La oficina aún no ha enviado ninguna lista.', nothingWaiting:'Ahora mismo no hay nada esperando en este paso.', roleNoStage:'%s no es uno de los pasos del proceso, así que no hay lista.', stagesKnown:'Hay listas para', refresh:'↻ Actualizar', ghostWarn:'Esto lleva demasiado tiempo en marcha — probablemente quedó de antes.', ghostClear:'Cerrarlo', ghostConfirm:'¿Cerrar este temporizador olvidado?', ghostCleared:'Temporizador cerrado', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
+       enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', customer:'Cliente', area:'Zona', due:'Entrega', services:'Servicios', alreadyDone:'Ya hecho', lastActivity:'Última actividad', photos:'Fotos', videos:'Videos', noPriorityYet:'La oficina aún no ha enviado ninguna lista.', nothingWaiting:'Ahora mismo no hay nada esperando en este paso.', roleNoStage:'%s no es uno de los pasos del proceso, así que no hay lista.', stagesKnown:'Hay listas para', refresh:'↻ Actualizar', ghostWarn:'Esto lleva demasiado tiempo en marcha — probablemente quedó de antes.', ghostClear:'Cerrarlo', ghostConfirm:'¿Cerrar este temporizador olvidado?', ghostCleared:'Temporizador cerrado', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
   he:{ workNext:'🎯 עבדו קודם על אלה', lvlUrgent:'דחוף', lvlSoon:'בקרוב', lvlNormal:'ללא לחץ', workNextHint:'כל מה שאצלך, הדחוף ביותר קודם, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
        language:'שפה', settings:'הגדרות', scanItem:'סריקת פריט', chooseRole:'מה אתה עושה עכשיו?',
        chooseRoleHint:'👇 הקישו על אחד כדי להתחיל — אי אפשר לסרוק לפני כן.', loggedInAs:'מחובר בתור', logOut:'התנתקות',
        useCamera:'📷 השתמשו במצלמה לסריקה', recentScans:'הסריקות האחרונות שלך', noScans:'אין עדיין סריקות בפעילות הזו.',
-       enter:'אישור', addPhoto:'📸 תמונה', addVideo:'🎥 וידאו', stillRunning:'⏱️ עדיין פועל', stop:'עצור' , checkItem:'בדיקת פריט — בלי להתחיל עבודה', lookupOn:'🔍 סרקו תווית כדי לבדוק', lookupWaiting:'ממתין לסריקה…', checkResult:'פרטי הפריט', notes:'הערות', noNotes:'אין הערות לפריט הזה.', noPriorityYet:'המשרד עדיין לא שלח רשימה.', nothingWaiting:'אין כרגע פריטים ממתינים בשלב הזה.', roleNoStage:'%s אינו אחד משלבי התהליך, ולכן אין רשימה.', stagesKnown:'יש רשימות עבור', refresh:'↻ רענון', ghostWarn:'זה רץ יותר מדי זמן — כנראה נשאר מקודם.', ghostClear:'סגור אותו', ghostConfirm:'לסגור את הטיימר שנשאר?', ghostCleared:'הטיימר נסגר', close:'סגירה', topPriority:'זה הפריט הראשון לביצוע', highPriority:'טוב — זה קרוב לראש הרשימה', notPriority:'לא ברשימת העדיפות. מומלץ קודם'}
+       enter:'אישור', addPhoto:'📸 תמונה', addVideo:'🎥 וידאו', stillRunning:'⏱️ עדיין פועל', stop:'עצור' , checkItem:'בדיקת פריט — בלי להתחיל עבודה', lookupOn:'🔍 סרקו תווית כדי לבדוק', lookupWaiting:'ממתין לסריקה…', checkResult:'פרטי הפריט', notes:'הערות', noNotes:'אין הערות לפריט הזה.', customer:'לקוח', area:'אזור', due:'תאריך יעד', services:'שירותים', alreadyDone:'כבר בוצע', lastActivity:'פעילות אחרונה', photos:'תמונות', videos:'סרטונים', noPriorityYet:'המשרד עדיין לא שלח רשימה.', nothingWaiting:'אין כרגע פריטים ממתינים בשלב הזה.', roleNoStage:'%s אינו אחד משלבי התהליך, ולכן אין רשימה.', stagesKnown:'יש רשימות עבור', refresh:'↻ רענון', ghostWarn:'זה רץ יותר מדי זמן — כנראה נשאר מקודם.', ghostClear:'סגור אותו', ghostConfirm:'לסגור את הטיימר שנשאר?', ghostCleared:'הטיימר נסגר', close:'סגירה', topPriority:'זה הפריט הראשון לביצוע', highPriority:'טוב — זה קרוב לראש הרשימה', notPriority:'לא ברשימת העדיפות. מומלץ קודם'}
 };
 let LANG=localStorage.getItem('st_lang')||'en';
 function t(k){ return (STRINGS[LANG]&&STRINGS[LANG][k])||STRINGS.en[k]||k; }
