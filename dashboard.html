@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-f</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-g</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -798,7 +798,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-f';
+const APP_VERSION='2026-08-11-g';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -4716,6 +4716,21 @@ function computeWorkPriority(){
     orderProgress[o]={done, total:list.length};
   });
 
+  // How long a piece normally waits at each station. Three days may be routine at one
+  // step and alarming at another, so compare each piece against its own station.
+  const waitsByStage={};
+  all.forEach(it=>{
+    if(typeof it.col!=='number' || it.col>LASTW) return;
+    const st=STAGE_NAMES[it.col]; if(!st) return;
+    const d=it.since?(now-new Date(it.since).getTime())/day:0;
+    (waitsByStage[st]=waitsByStage[st]||[]).push(d);
+  });
+  const typicalWait={};
+  Object.entries(waitsByStage).forEach(([st,arr])=>{
+    const s=arr.slice().sort((a,b)=>a-b);
+    typicalWait[st]=s[Math.floor(s.length/2)]||0;      // the middle piece, not the average
+  });
+
   const out={};
   all.forEach(it=>{
     if(holds[it.id]) return;                       // paused on purpose
@@ -4735,19 +4750,29 @@ function computeWorkPriority(){
       else if(days<=14){ score+=15; }
     }
 
-    // 2. Holding up an order that's otherwise finished
+    // 2. Holding up an order. One piece standing between a whole order and the door is
+    //    urgent in its own right, whatever the due date says.
     const prog=orderProgress[orderIdOf(it.id)];
     if(prog && prog.total>1){
       const left=prog.total-prog.done;
-      if(left===1){ score+=60; why.push('last piece of '+orderIdOf(it.id)); }
-      else if(left<=Math.max(2,Math.floor(prog.total/4))){ score+=30; why.push(left+' left on '+orderIdOf(it.id)); }
+      if(left===1){ score+=110; why.push('last piece of '+orderIdOf(it.id)); }
+      else if(left===2){ score+=75; why.push('2 left on '+orderIdOf(it.id)); }
+      else if(left<=Math.max(3,Math.ceil(prog.total*0.2))){ score+=40; why.push(left+' left on '+orderIdOf(it.id)); }
     }
 
-    // 3. Sitting here too long
-    const waiting=it.since?Math.floor((now-new Date(it.since).getTime())/day):0;
-    if(waiting>=7){ score+=50; why.push('waiting '+waiting+'d'); }
-    else if(waiting>=3){ score+=25; why.push('waiting '+waiting+'d'); }
-    else if(waiting>=1){ score+=8; }
+    // 3. Sitting here longer than pieces normally do at THIS station
+    const waitDays=it.since?(now-new Date(it.since).getTime())/day:0;
+    const waiting=Math.floor(waitDays);
+    const typical=typicalWait[stage]||0;
+    if(typical>=0.5 && waitDays>=typical*3 && waiting>=2){
+      score+=70; why.push('waiting '+waiting+'d — far longer than usual here');
+    } else if(typical>=0.5 && waitDays>=typical*2 && waiting>=1){
+      score+=35; why.push('waiting '+waiting+'d — longer than usual here');
+    } else if(waiting>=10){
+      score+=55; why.push('waiting '+waiting+'d');
+    } else if(waiting>=4){
+      score+=25; why.push('waiting '+waiting+'d');
+    } else if(waiting>=1){ score+=8; }
 
     (out[stage]=out[stage]||[]).push({
       id:it.id, desc:it.desc||it.id, customer:it.customer||'',
@@ -4798,6 +4823,15 @@ function renderPriorityPage(){
     <div><div class="page-title">What to Work On</div>
       <div class="page-sub">The order each station should take things in — due date, orders nearly finished, and pieces waiting too long</div></div>
     <button class="btn btn-gold btn-sm" onclick="saveWorkPriority()">↑ Send to the floor</button>
+  </div>
+  <div class="card" style="padding:12px 16px">
+    <div class="card-label">How the order is decided</div>
+    <div style="font-size:12.5px;color:var(--ink2);line-height:1.7">
+      <strong>Due date</strong> counts most — overdue outranks everything, then due within two days, then within a week.<br>
+      <strong>Last piece of an order</strong> is treated as urgent on its own: one piece holding up a finished order goes red. Two left counts nearly as much.<br>
+      <strong>Waiting too long</strong> is judged against that station, not a fixed number of days — a piece sitting three times longer than others at the same step is flagged, so a slow step isn't penalised and a fast one isn't excused.<br>
+      <span style="color:var(--ink3)">🔴 urgent · 🟠 soon · 🟢 no rush — everything waiting is listed either way.</span>
+    </div>
   </div>
   <div class="card" style="padding:11px 16px;font-size:12.5px;color:var(--ink3)">
     The workers see this on their phones under the step they picked. The step names must match their role names —
