@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-h</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-i</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -798,7 +798,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-h';
+const APP_VERSION='2026-08-11-i';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1615,6 +1615,45 @@ function stageForRole(role){
 }
 function stageIdxByName(n){ const x=(n||'').toLowerCase(); return STAGE_NAMES.findIndex(s=>s.toLowerCase()===x); }
 
+// Which work steps a piece actually needs, taken from the services on its RepairDesk
+// ticket. Without this, a piece that finished Cleaning but was never booked for Antique
+// sat showing "waiting for Antique" — appearing on the wrong worker's list — until
+// somebody further down the line scanned it.
+let _svcIdx=null;
+function buildServiceIndex(){
+  _svcIdx={};
+  (allTickets||[]).forEach(t=>{
+    const oid=getOrderId(t); if(!oid) return;
+    (t.devices||[]).forEach((dev,i)=>{
+      const names=(dev.repairProdItems||[]).map(s=>String(s.name||'').trim().toLowerCase()).filter(Boolean);
+      if(names.length) _svcIdx[oid+'-'+(i+1)]=names;
+    });
+  });
+}
+function itemNeedsStage(itemId, stageName){
+  if(!_svcIdx) buildServiceIndex();
+  const svc=_svcIdx[parentItemId(itemId)] || _svcIdx[itemId];
+  if(!svc || !svc.length) return true;          // no service list — assume it's needed
+  const s=String(stageName||'').toLowerCase();
+  if(!s) return true;
+  if(svc.some(x=>x===s)) return true;                       // named exactly
+  // If the ticket names some stages exactly, trust that list and don't guess at the
+  // rest — otherwise "Final Inspection" would also count as plain "Inspection".
+  const anyExact=svc.some(x=>STAGE_NAMES.some(n=>n.toLowerCase()===x));
+  if(anyExact) return false;
+  // Otherwise the wording differs from our stage names, so match loosely
+  const word=s.split(/[^a-z]+/).filter(w=>w.length>3)[0]||s;
+  return svc.some(x=>x.includes(word) || word.includes(x) || x.includes(s) || s.includes(x));
+}
+// Move past any step this piece doesn't need
+function skipUnneededStages(itemId, col){
+  if(typeof col!=='number') return col;
+  let i=col, guard=0;
+  while(i<=LASTW && guard++<20 && !itemNeedsStage(itemId, STAGE_NAMES[i])) i++;
+  if(i>LASTW) return 'ready';                   // nothing left to do in the shop
+  return i;
+}
+
 // Walk an item's merged event history and figure out where it is right now.
 // fin = index of the highest stage that is FINISHED (-1 = nothing finished yet)
 function derivePipeState(events){
@@ -1761,6 +1800,15 @@ function buildPipelineItems(){
   Object.values(items).forEach(it=>{
     it.events.sort((a,b)=>new Date(a.t)-new Date(b.t));
     Object.assign(it, derivePipeState(it.events));
+    // Skip steps this piece was never booked for
+    if(it.status==='waiting' && typeof it.col==='number' && it.col<=LASTW){
+      const moved=skipUnneededStages(it.id, it.col);
+      if(moved!==it.col){
+        it.skippedTo=moved;
+        it.col=moved;
+        if(moved==='ready') it.status='ready';
+      }
+    }
     // Actual WORK time: paired start->stop scans only. Sitting/paused time never counts.
     let worked=0; const openAt={};
     it.events.forEach(e=>{
@@ -2230,6 +2278,7 @@ async function loadTickets(){
     // Warm the order_id -> internal ticket id map while we have the list
     fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
     // RepairDesk's own per-item status — used to auto-close delivered pieces
+    _svcIdx=null;
     rdStatus={};
     fetched.forEach(t=>{
       const o=t.summary&&t.summary.order_id; if(!o) return;
