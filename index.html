@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-c</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-e</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -615,7 +615,12 @@ let adminPin = localStorage.getItem('st_admin_pin') || '1234';
 let newWorkerSelectedRoles = [];
 let labelHistory = JSON.parse(localStorage.getItem('st_label_history') || '[]');
 let labelSize = JSON.parse(localStorage.getItem('st_label_size') || '{"width":102,"height":59}');
-let activeWork = JSON.parse(localStorage.getItem('st_active_work') || 'null'); // {itemId, name, task, startedAt}
+// The timer panel is NEVER restored from this phone's own storage. A copy saved here
+// survived a stop that failed to sync and reappeared days later as a ghost timer —
+// "still running 74 hours". The server's active_sessions table is the only truth;
+// until it answers, no timer is shown at all.
+let activeWork = null;
+try{ localStorage.removeItem('st_active_work'); }catch(e){}
 let activeWorkTimer = null;
 
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
@@ -1278,7 +1283,12 @@ async function syncActiveWorkFromServer(){
     const q = SUPABASE_URL + '/rest/v1/active_sessions?worker=eq.' +
       encodeURIComponent(selectedWorker.name) + '&select=*&order=started_at.desc';
     const r = await fetch(q, { headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY} });
-    if(!r.ok) return;                      // table missing — leave what's on screen alone
+    if(!r.ok){
+      // Can't confirm anything — better to show no timer than a wrong one
+      dbg('could not read live sessions: HTTP '+r.status);
+      if(activeWork){ activeWork=null; stopActiveWorkTimer(); renderActiveWork(); }
+      return;
+    }
     const rows = await r.json();
     if(!Array.isArray(rows)) return;
     const openList = rows.map(x=>({
@@ -1616,20 +1626,37 @@ async function loadWorkPriority(){
       {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
     const rows=await r.json();
     workPriority=(rows&&rows[0]&&rows[0].value)?JSON.parse(rows[0].value):null;
-  }catch(e){ workPriority=null; }
+  }catch(e){ workPriority=null; dbg('priority list failed: '+(e.message||e)); }
+  dbg(workPriority?('priority list loaded — stages: '+Object.keys(workPriority.stages||{}).join(', ')):'no priority list saved yet');
   renderWorkPriority();
 }
 function renderWorkPriority(){
   const el=document.getElementById('work-next');
   if(!el) return;
-  if(!selectedRole || !workPriority || !workPriority.stages){ el.style.display='none'; return; }
+  if(!selectedRole){ el.style.display='none'; return; }
+  // An empty panel used to just disappear, so there was no way to tell whether the list
+  // hadn't been sent, or this role simply has nothing waiting.
+  if(!workPriority || !workPriority.stages){
+    el.style.display='block';
+    el.innerHTML=`<div class="card-label">${t('workNext')}</div>
+      <div style="font-size:12.5px;color:var(--ink3)">${t('noPriorityYet')}</div>
+      <button class="gen-btn" style="width:100%;margin-top:8px;font-size:12px" onclick="loadWorkPriority()">${t('refresh')}</button>`;
+    return;
+  }
   // Match the worker's role to a stage, allowing for slightly different wording
   const keys=Object.keys(workPriority.stages);
   const r=selectedRole.toLowerCase();
   const key=keys.find(k=>k.toLowerCase()===r)
         || keys.find(k=>r.includes(k.toLowerCase())||k.toLowerCase().includes(r));
   const list=key?workPriority.stages[key]:null;
-  if(!list||!list.length){ el.style.display='none'; return; }
+  if(!list||!list.length){
+    el.style.display='block';
+    el.innerHTML=`<div class="card-label">${t('workNext')}</div>
+      <div style="font-size:12.5px;color:var(--ink3)">${key?t('nothingWaiting'):t('roleNoStage').replace('%s', selectedRole)}</div>
+      <div style="font-size:11px;color:var(--ink3);margin-top:6px;opacity:.75">${t('stagesKnown')}: ${keys.join(', ')||'—'}</div>
+      <button class="gen-btn" style="width:100%;margin-top:8px;font-size:12px" onclick="loadWorkPriority()">${t('refresh')}</button>`;
+    return;
+  }
   el.style.display='block';
   el.innerHTML=`<div class="card-label">${t('workNext')}</div>
     <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">${t('workNextHint')}</div>
@@ -1703,17 +1730,17 @@ const STRINGS={
        language:'Language', settings:'Settings', scanItem:'Scan item', chooseRole:'What are you doing now?',
        chooseRoleHint:'👇 Tap one to start — you can\'t scan until you do.', loggedInAs:'Logged in as', logOut:'Log out',
        useCamera:'📷 Use the camera to scan', recentScans:'Your recent scans', noScans:'No scans in this session yet.',
-       enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
+       enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', noPriorityYet:'No list has been sent from the office yet.', nothingWaiting:'Nothing waiting for this step right now.', roleNoStage:'%s is not one of the pipeline steps, so there is no list for it.', stagesKnown:'Lists exist for', refresh:'↻ Refresh', ghostWarn:'This has been running far too long — it is probably left over from before.', ghostClear:'Close it', ghostConfirm:'Close this leftover timer?', ghostCleared:'Leftover timer closed', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
   es:{ workNext:'🎯 Trabaja primero en estos', workNextHint:'Ordenado por fecha de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
        language:'Idioma', settings:'Ajustes', scanItem:'Escanear artículo', chooseRole:'¿Qué estás haciendo ahora?',
        chooseRoleHint:'👇 Toca uno para empezar; no podrás escanear hasta que lo hagas.', loggedInAs:'Sesión iniciada como', logOut:'Finalizar la sesión',
        useCamera:'📷 Usa la cámara para escanear', recentScans:'Tus escaneos recientes', noScans:'Aún no hay escaneos en esta sesión.',
-       enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
+       enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', noPriorityYet:'La oficina aún no ha enviado ninguna lista.', nothingWaiting:'Ahora mismo no hay nada esperando en este paso.', roleNoStage:'%s no es uno de los pasos del proceso, así que no hay lista.', stagesKnown:'Hay listas para', refresh:'↻ Actualizar', ghostWarn:'Esto lleva demasiado tiempo en marcha — probablemente quedó de antes.', ghostClear:'Cerrarlo', ghostConfirm:'¿Cerrar este temporizador olvidado?', ghostCleared:'Temporizador cerrado', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
   he:{ workNext:'🎯 עבדו קודם על אלה', workNextHint:'לפי תאריך יעד, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
        language:'שפה', settings:'הגדרות', scanItem:'סריקת פריט', chooseRole:'מה אתה עושה עכשיו?',
        chooseRoleHint:'👇 הקישו על אחד כדי להתחיל — אי אפשר לסרוק לפני כן.', loggedInAs:'מחובר בתור', logOut:'התנתקות',
        useCamera:'📷 השתמשו במצלמה לסריקה', recentScans:'הסריקות האחרונות שלך', noScans:'אין עדיין סריקות בפעילות הזו.',
-       enter:'אישור', addPhoto:'📸 תמונה', addVideo:'🎥 וידאו', stillRunning:'⏱️ עדיין פועל', stop:'עצור' , checkItem:'בדיקת פריט — בלי להתחיל עבודה', lookupOn:'🔍 סרקו תווית כדי לבדוק', lookupWaiting:'ממתין לסריקה…', checkResult:'פרטי הפריט', notes:'הערות', noNotes:'אין הערות לפריט הזה.', close:'סגירה', topPriority:'זה הפריט הראשון לביצוע', highPriority:'טוב — זה קרוב לראש הרשימה', notPriority:'לא ברשימת העדיפות. מומלץ קודם'}
+       enter:'אישור', addPhoto:'📸 תמונה', addVideo:'🎥 וידאו', stillRunning:'⏱️ עדיין פועל', stop:'עצור' , checkItem:'בדיקת פריט — בלי להתחיל עבודה', lookupOn:'🔍 סרקו תווית כדי לבדוק', lookupWaiting:'ממתין לסריקה…', checkResult:'פרטי הפריט', notes:'הערות', noNotes:'אין הערות לפריט הזה.', noPriorityYet:'המשרד עדיין לא שלח רשימה.', nothingWaiting:'אין כרגע פריטים ממתינים בשלב הזה.', roleNoStage:'%s אינו אחד משלבי התהליך, ולכן אין רשימה.', stagesKnown:'יש רשימות עבור', refresh:'↻ רענון', ghostWarn:'זה רץ יותר מדי זמן — כנראה נשאר מקודם.', ghostClear:'סגור אותו', ghostConfirm:'לסגור את הטיימר שנשאר?', ghostCleared:'הטיימר נסגר', close:'סגירה', topPriority:'זה הפריט הראשון לביצוע', highPriority:'טוב — זה קרוב לראש הרשימה', notPriority:'לא ברשימת העדיפות. מומלץ קודם'}
 };
 let LANG=localStorage.getItem('st_lang')||'en';
 function t(k){ return (STRINGS[LANG]&&STRINGS[LANG][k])||STRINGS.en[k]||k; }
@@ -2448,6 +2475,31 @@ async function stopOpenSession(i){
     syncActiveWorkFromServer();
   }catch(e){ showToast('Could not stop — check connection'); }
 }
+// Nobody works one piece for days. If the server still holds such a row it is a
+// leftover, so say so plainly and give a one-tap way to close it.
+const GHOST_HOURS = 12;
+function activeWorkHours(){
+  if(!activeWork||!activeWork.startedAt) return 0;
+  return (Date.now()-activeWork.startedAt)/3600000;
+}
+async function clearGhostSession(){
+  if(!activeWork) return;
+  const it=activeWork.itemId, tk=activeWork.task;
+  if(!confirm(t('ghostConfirm')||'Close this leftover timer?')) return;
+  try{
+    await fetch(SUPABASE_URL+'/rest/v1/active_sessions?item_id=eq.'+encodeURIComponent(it)+
+      '&role=eq.'+encodeURIComponent(tk||''),{method:'DELETE',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    await fetch(SUPABASE_URL+'/rest/v1/scans',{method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:it,item_desc:activeWork.name||'',status:(tk||'')+' — Stopped (auto)',worker:selectedWorker?selectedWorker.name:'',role:tk||''})});
+  }catch(e){}
+  activeWork=null; stopActiveWorkTimer();
+  delete itemTaskState[it+'::'+(tk||'')];
+  localStorage.setItem('st_item_task_state', JSON.stringify(itemTaskState));
+  renderActiveWork();
+  showToast('⏹️ ' + (t('ghostCleared')||'Leftover timer closed'));
+}
 function renderActiveWork() {
   const panel = document.getElementById('active-work-panel');
   if (!panel) return;
@@ -2455,6 +2507,19 @@ function renderActiveWork() {
     panel.style.display = 'block';
     document.getElementById('active-work-name').textContent = activeWork.name;
     document.getElementById('active-work-task').textContent = activeWork.task;
+
+    // Flag an implausibly long session as a leftover rather than presenting it as work
+    let gw=document.getElementById('ghost-warn');
+    if(activeWorkHours()>=GHOST_HOURS){
+      if(!gw){
+        gw=document.createElement('div'); gw.id='ghost-warn';
+        gw.style.cssText='background:var(--red);color:#fff;border-radius:9px;padding:10px 12px;margin-top:10px;font-size:12.5px;font-weight:700';
+        panel.appendChild(gw);
+      }
+      gw.innerHTML=(t('ghostWarn')||'This has been running far too long — it is probably left over from before.')+
+        '<button onclick="clearGhostSession()" style="display:block;width:100%;margin-top:8px;padding:10px;border:none;border-radius:8px;background:#fff;color:var(--red);font-weight:800;font-size:13px;cursor:pointer">'+
+        (t('ghostClear')||'Close it')+'</button>';
+    } else if(gw){ gw.remove(); }
     // Show the Finish button only for roles that are pipeline work steps
     const fb=document.getElementById('finish-stage-btn');
     if(fb){
