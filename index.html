@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-e</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-f</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1660,9 +1660,14 @@ function renderWorkPriority(){
   el.style.display='block';
   el.innerHTML=`<div class="card-label">${t('workNext')}</div>
     <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">${t('workNextHint')}</div>
-    ${list.slice(0,5).map((x,i)=>`
+    <div style="display:flex;gap:12px;font-size:10.5px;color:var(--ink3);margin-bottom:8px">
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red)"></span> ${t('lvlUrgent')}</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--orange)"></span> ${t('lvlSoon')}</span>
+      <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green)"></span> ${t('lvlNormal')}</span>
+    </div>
+    ${list.map((x,i)=>`
       <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <span style="width:24px;height:24px;border-radius:50%;background:${i===0?'var(--red)':(i<3?'var(--orange)':'var(--surface2)')};color:${i<3?'#fff':'var(--ink3)'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;flex-shrink:0">${i+1}</span>
+        <span style="width:24px;height:24px;border-radius:50%;background:${x.level==='urgent'?'var(--red)':(x.level==='soon'?'var(--orange)':'var(--green)')};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;flex-shrink:0">${i+1}</span>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:13.5px">${x.desc||x.id}</div>
           <div style="font-size:11px;color:var(--ink3)">${x.id}</div>
@@ -1671,6 +1676,17 @@ function renderWorkPriority(){
       </div>`).join('')}`;
 }
 
+
+// Photos were loading at full size — several megabytes each, painfully slow on a phone.
+// Supabase can resize on the fly; ask it for a small version for grids and thumbnails.
+function thumbUrl(url, w){
+  try{
+    if(!url || !/\/storage\/v1\/object\/public\//.test(url)) return url;
+    if(/\.(mp4|mov|webm|m4v)(\?|$)/i.test(url)) return url;      // videos aren't resized
+    return url.replace('/storage/v1/object/public/','/storage/v1/render/image/public/')
+              + '?width=' + (w||400) + '&quality=60&resize=contain';
+  }catch(e){ return url; }
+}
 // ===== CHECK AN ITEM =====
 // Anyone can scan just to see what a piece is — right tag on the right object, its
 // services, and any notes — without starting or stopping any work.
@@ -1726,17 +1742,17 @@ async function showLookup(itemId){
 // ===== LANGUAGES =====
 const LANGS={en:'English', es:'Español', he:'עברית'};
 const STRINGS={
-  en:{ workNext:'🎯 Work on these first', workNextHint:'Ordered by due date, orders nearly finished, and pieces waiting longest.',
+  en:{ workNext:'🎯 Work on these first', lvlUrgent:'Urgent', lvlSoon:'Soon', lvlNormal:'No rush', workNextHint:'Everything on your bench, most pressing first, orders nearly finished, and pieces waiting longest.',
        language:'Language', settings:'Settings', scanItem:'Scan item', chooseRole:'What are you doing now?',
        chooseRoleHint:'👇 Tap one to start — you can\'t scan until you do.', loggedInAs:'Logged in as', logOut:'Log out',
        useCamera:'📷 Use the camera to scan', recentScans:'Your recent scans', noScans:'No scans in this session yet.',
        enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', noPriorityYet:'No list has been sent from the office yet.', nothingWaiting:'Nothing waiting for this step right now.', roleNoStage:'%s is not one of the pipeline steps, so there is no list for it.', stagesKnown:'Lists exist for', refresh:'↻ Refresh', ghostWarn:'This has been running far too long — it is probably left over from before.', ghostClear:'Close it', ghostConfirm:'Close this leftover timer?', ghostCleared:'Leftover timer closed', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
-  es:{ workNext:'🎯 Trabaja primero en estos', workNextHint:'Ordenado por fecha de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
+  es:{ workNext:'🎯 Trabaja primero en estos', lvlUrgent:'Urgente', lvlSoon:'Pronto', lvlNormal:'Sin prisa', workNextHint:'Todo lo que tienes, lo más urgente primero de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
        language:'Idioma', settings:'Ajustes', scanItem:'Escanear artículo', chooseRole:'¿Qué estás haciendo ahora?',
        chooseRoleHint:'👇 Toca uno para empezar; no podrás escanear hasta que lo hagas.', loggedInAs:'Sesión iniciada como', logOut:'Finalizar la sesión',
        useCamera:'📷 Usa la cámara para escanear', recentScans:'Tus escaneos recientes', noScans:'Aún no hay escaneos en esta sesión.',
        enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', noPriorityYet:'La oficina aún no ha enviado ninguna lista.', nothingWaiting:'Ahora mismo no hay nada esperando en este paso.', roleNoStage:'%s no es uno de los pasos del proceso, así que no hay lista.', stagesKnown:'Hay listas para', refresh:'↻ Actualizar', ghostWarn:'Esto lleva demasiado tiempo en marcha — probablemente quedó de antes.', ghostClear:'Cerrarlo', ghostConfirm:'¿Cerrar este temporizador olvidado?', ghostCleared:'Temporizador cerrado', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
-  he:{ workNext:'🎯 עבדו קודם על אלה', workNextHint:'לפי תאריך יעד, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
+  he:{ workNext:'🎯 עבדו קודם על אלה', lvlUrgent:'דחוף', lvlSoon:'בקרוב', lvlNormal:'ללא לחץ', workNextHint:'כל מה שאצלך, הדחוף ביותר קודם, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
        language:'שפה', settings:'הגדרות', scanItem:'סריקת פריט', chooseRole:'מה אתה עושה עכשיו?',
        chooseRoleHint:'👇 הקישו על אחד כדי להתחיל — אי אפשר לסרוק לפני כן.', loggedInAs:'מחובר בתור', logOut:'התנתקות',
        useCamera:'📷 השתמשו במצלמה לסריקה', recentScans:'הסריקות האחרונות שלך', noScans:'אין עדיין סריקות בפעילות הזו.',
