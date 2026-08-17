@@ -292,7 +292,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-i</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-k</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -625,9 +625,34 @@ async function setDueWeeks(){
   router();
 }
 // Only include diagnostic/repair notes — excludes driver, delivery, and other note types
+// RepairDesk stores photos in more than one place depending on how they were added —
+// intake condition photos, later attachments, and ticket-level images. Reading only
+// PreConditions_images meant anything added afterwards never appeared.
+function collectRdImages(device, ticket){
+  const out=[];
+  const push=v=>{
+    if(!v) return;
+    if(typeof v==='string'){ if(/^https?:\/\//.test(v)) out.push(v); return; }
+    if(Array.isArray(v)){ v.forEach(push); return; }
+    if(typeof v==='object'){
+      const u=v.medium||v.large||v.url||v.image||v.file_url||v.path||v.small||v.thumb;
+      if(u&&typeof u==='string'&&/^https?:\/\//.test(u)) out.push(u);
+    }
+  };
+  const FIELDS=['PreConditions_images','preconditions_images','images','image','attachments',
+                'files','photos','device_images','ticket_images','post_images','PostConditions_images'];
+  if(device) FIELDS.forEach(f=>push(device[f]));
+  if(ticket)  FIELDS.forEach(f=>push(ticket[f]));
+  if(ticket&&ticket.summary) FIELDS.forEach(f=>push(ticket.summary[f]));
+  return [...new Set(out)];
+}
 function isRepairNote(n){
+  // This used to require the word "diagnostic" in the note's title, so any note added
+  // in RepairDesk any other way never appeared here at all. Now every note shows
+  // EXCEPT the automatic delivery/driver chatter nobody needs on the shop floor.
   const title=((n.tittle||n.title||'')+'').toLowerCase();
-  return title.includes('diagnostic');
+  if(/driver|delivery|sms|email|payment|invoice|receipt/.test(title)) return false;
+  return true;
 }
 // A note is only meaningful if it contains at least one letter or number
 function hasMeaning(txt){ return /[a-z0-9]/i.test(txt||''); }
@@ -798,7 +823,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-i';
+const APP_VERSION='2026-08-11-k';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5637,7 +5662,7 @@ async function renderItemDetailPage(itemId){
 
     const services=dev.repairProdItems?dev.repairProdItems.map(s=>String(s.name||'').trim()).filter(Boolean):[];
     const note=getDeviceNote(dev,d.data);
-    const pre=(dev.PreConditions_images||[]).map(im=>im.medium||im.small);
+    const pre=collectRdImages(dev, d.data);
     const due=dev.due_on?new Date(dev.due_on*1000):null;
     const cust=d.data.summary&&d.data.summary.customer?d.data.summary.customer:{};
     window._itemPreImgs=pre;
@@ -5654,6 +5679,18 @@ async function renderItemDetailPage(itemId){
     if(note){
       let noteEs=''; try{ noteEs=await translateCached(note); }catch(_){}
       ticketBlock+=`<div class="note-box" style="margin-top:14px"><div class="nb-label">⚠️ Repair Note</div><div class="nb-en">${esc(note)}</div>${noteEs?`<div class="nb-es">🇪🇸 ${esc(noteEs)}</div>`:''}</div>`;
+    }
+    // Every other note on the ticket, so nothing added in RepairDesk goes unseen
+    const allNotes=((d.data&&d.data.notes)||[]).filter(n=>hasMeaning(n.msg_text||''));
+    const shown=allNotes.filter(n=>!note || !note.includes((n.msg_text||'').trim()));
+    if(shown.length){
+      ticketBlock+=`<div style="margin-top:12px">
+        <div style="font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">All notes on this ticket (${shown.length})</div>
+        ${shown.map(n=>`<div style="background:var(--surface2);border-radius:7px;padding:8px 10px;margin-bottom:5px">
+          <div style="font-size:13px;white-space:pre-wrap">${esc((n.msg_text||'').trim())}</div>
+          <div style="font-size:10.5px;color:var(--ink3);margin-top:2px">${esc(n.tittle||n.title||'note')}${n.devicename?' · '+esc(n.devicename):''}</div>
+        </div>`).join('')}
+      </div>`;
     }
     ticketBlock+='</div>';
   }catch(err){
