@@ -192,7 +192,10 @@ tr.clickable:hover td{background:var(--surface2)}
 .pipe-jump-btn:hover{border-color:var(--gold);color:var(--gold)}
 .pipe-jump-btn.empty{opacity:.45}
 .pj-n{background:var(--surface2);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800}
-.pipe-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start;scroll-behavior:smooth;cursor:grab;scrollbar-width:thin}
+.pipe-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:16px;align-items:flex-start;scroll-behavior:auto;cursor:grab;scrollbar-width:thin}
+.pipe-card{cursor:grab}
+.pipe-card:active{cursor:grabbing}
+.pipe-col{transition:background .12s}
 .pipe-board::-webkit-scrollbar{height:10px}
 .pipe-board::-webkit-scrollbar-thumb{background:var(--ink3);border-radius:5px}
 .pipe-arrow{position:sticky;top:40vh;z-index:30;width:40px;height:40px;border-radius:50%;border:1px solid var(--border);
@@ -292,7 +295,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-k</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-l</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -823,7 +826,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-k';
+const APP_VERSION='2026-08-11-l';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1045,7 +1048,7 @@ async function bootstrap(){
     await Promise.allSettled([loadAllScans(), loadStageEvents(), loadExternalStatus(), loadLiveSessions()]);
     try{ checkForNewScans(); }catch(e){}
     if(currentRoute()==='live') renderLivePage();
-    if(currentRoute()==='pipeline') renderPipeBody();
+    if(currentRoute()==='pipeline' && !pipeBusy()) renderPipeBody();
   }, 15000);
   setInterval(()=>{ document.querySelectorAll('.live-timer[data-start]').forEach(updateOneTimer); }, 1000);
 }
@@ -1954,17 +1957,30 @@ function deliverySummaryHtml(){
     </div>`;
   }catch(e){ return ''; }
 }
+let pipeScrollLeft=0, pipeUserBusy=0;
 function renderPipeBody(){
   window._holdsCache=computeHolds();
   const box=document.getElementById('pipe-body');
   if(!box) return;
+  // The board rebuilds every 15 seconds. Remember where you had scrolled to, or it
+  // snaps back to the first column every time and you can never look at later stages.
+  const prev=document.getElementById('pipe-board');
+  if(prev) pipeScrollLeft=prev.scrollLeft;
+
   const list=pipeFilteredItems();
   if(!list.length){ box.innerHTML='<div class="card"><div class="empty">No items match — items appear here once a label is printed or the first scan happens</div></div>'; return; }
   const dsum=deliverySummaryHtml();
   if(pipeView==='board') box.innerHTML=dsum+renderPipeBoard(list);
   else box.innerHTML=dsum+renderPipeByOrder(list);
-  setTimeout(pipeBoardSetup,0);
+  setTimeout(()=>{
+    pipeBoardSetup();
+    const el=document.getElementById('pipe-board');
+    if(el && pipeScrollLeft) el.scrollLeft=pipeScrollLeft;
+  },0);
 }
+// Don't redraw underneath someone who is scrolling or dragging
+function pipeTouch(){ pipeUserBusy=Date.now(); }
+function pipeBusy(){ return (Date.now()-pipeUserBusy) < 20000; }
 function renderPipeBoard(list){
   const cols=PIPE_COLS.filter(c=>pipeShowDelivered || c.k!==DELIV_LAST || list.some(it=>it.col===DELIV_LAST));
   return `<div class="pipe-jump">`+cols.map((c,ci)=>{
@@ -1980,11 +1996,14 @@ function renderPipeBoard(list){
         return visibleDeliveryCol(it.col)===c.k;
       return false;
     }).sort((a,b)=>new Date(a.since||0)-new Date(b.since||0));
-    return `<div class="pipe-col">
+    return `<div class="pipe-col" data-col="${c.k}"
+      ondragover="pipeDragOver(event)" ondragleave="pipeDragLeave(event)" ondrop="pipeDrop(event,'${jsstr(String(c.k))}','${jsstr(c.l)}')">
       <div class="pipe-col-head"><span>${c.l}${c.scanov?' <span title="Updated automatically by Scanovator" style="color:var(--blue);font-size:10px">🚚</span>':''}</span><span class="cnt">${its.length}</span></div>
       ${its.map(it=>{
         const lvl=pipeStuckLevel(it);
-        return `<div class="pipe-card ${lvl===2?'crit':(lvl===1?'warn':'')}" onclick="openPipeModal('${jsstr(it.id)}')">
+        return `<div class="pipe-card ${lvl===2?'crit':(lvl===1?'warn':'')}" draggable="true"
+          ondragstart="pipeDragStart(event,'${jsstr(it.id)}')" ondragend="pipeDragEnd(event)"
+          onclick="openPipeModal('${jsstr(it.id)}')">
           <div class="pc-name">${esc(it.desc||it.id)}</div>
           <div class="pc-id">${esc(it.id)} · ${esc(orderIdOf(it.id))}</div>
           ${it.customer?`<div class="pc-cust">${esc(it.customer)}</div>`:''}
@@ -2000,6 +2019,58 @@ function renderPipeBoard(list){
 }
 // Arrow buttons, drag-to-pan and keyboard — so the board can be moved without
 // reaching for the scrollbar at the very bottom of a long page
+// Drag a piece from one column to another to move it. Same effect as the Move
+// dropdown, just quicker, and logged as an admin override exactly the same way.
+let pipeDragId=null;
+function pipeDragStart(e,id){
+  pipeDragId=id; pipeTouch();
+  try{ e.dataTransfer.setData('text/plain',id); e.dataTransfer.effectAllowed='move'; }catch(_){}
+  e.currentTarget.style.opacity='.45';
+}
+function pipeDragEnd(e){
+  pipeDragId=null;
+  e.currentTarget.style.opacity='';
+  document.querySelectorAll('.pipe-col').forEach(x=>x.style.background='');
+}
+function pipeDragOver(e){
+  if(!pipeDragId) return;
+  e.preventDefault();
+  try{ e.dataTransfer.dropEffect='move'; }catch(_){}
+  const col=e.currentTarget;
+  col.style.background='var(--accent-soft)';
+  pipeTouch();
+}
+function pipeDragLeave(e){ e.currentTarget.style.background=''; }
+async function pipeDrop(e,colKey,colLabel){
+  e.preventDefault();
+  const col=e.currentTarget; col.style.background='';
+  const id=pipeDragId || (()=>{ try{ return e.dataTransfer.getData('text/plain'); }catch(_){ return null; } })();
+  pipeDragId=null;
+  if(!id) return;
+
+  // Turn the column back into the stage value an override understands
+  let stage;
+  if(colKey==='shop') stage='RESET';
+  else if(colKey==='ready') stage='READY';
+  else stage=STAGE_NAMES[parseInt(colKey,10)];
+  if(!stage){ toast('Could not work out that column'); return; }
+
+  const it=(()=>{ try{ return buildPipelineItems().items[id]; }catch(_){ return null; } })();
+  if(it && String(it.col)===String(colKey)) return;         // dropped where it already was
+  if(!confirm('Move "'+((it&&it.desc)||id)+'" to "'+colLabel+'"?')) return;
+
+  const r=await postStageEventAdmin(id, stage, 'override', it?it.desc:'');
+  if(!r.ok){
+    let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
+    toast('Could not move: '+(why||('HTTP '+r.status)));
+    return;
+  }
+  await loadStageEvents();
+  let now=''; try{ const it2=buildPipelineItems().items[id]; now=it2?colLabel2(it2.col):''; }catch(_){}
+  toast('⚡ '+(now?('Now at '+now):'Moved'));
+  renderPipeBody();
+}
+function colLabel2(k){ try{ return colLabel(k); }catch(e){ return ''; } }
 function pipeJump(i){
   const el=document.getElementById('pipe-board'); if(!el) return;
   const col=el.children[i]; if(!col) return;
@@ -4098,7 +4169,7 @@ async function scanovSync(silent){
     localStorage.setItem('glint_scanov',JSON.stringify(scanovStatus));
     try{ localStorage.setItem('glint_scanov_meta',JSON.stringify(scanovMeta)); }catch(e){}
     if(!silent) toast(found?('✓ Updated '+found+' order'+(found!==1?'s':'')+' from Scanovator'):'No matching orders came back');
-    if(currentRoute()==='pipeline') renderPipeBody();
+    if(currentRoute()==='pipeline' && !pipeBusy()) renderPipeBody();
   }catch(e){ if(!silent) toast('Scanovator: '+(e.message||e)); }
 }
 
