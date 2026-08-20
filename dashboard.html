@@ -295,7 +295,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-l</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-11-m</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -826,7 +826,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-11-l';
+const APP_VERSION='2026-08-11-m';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1888,7 +1888,7 @@ function renderPipelinePage(){
           <button class="${pipeView==='board'?'on':''}" onclick="pipeSetView('board')">Board</button>
           <button class="${pipeView==='order'?'on':''}" onclick="pipeSetView('order')">By Order</button>
         </div>
-        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
+        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button><button class="btn btn-ghost btn-sm" id="bulk-toggle" onclick="bulkToggle()" style="flex-shrink:0">☑️ Select many</button>
         <select id="pipe-stage" onchange="pipeStage=this.value;renderPipeBody()" style="width:auto;padding:8px 10px;font-size:12.5px">
           <option value="all">All steps</option>
           ${PIPE_COLS.map(c=>`<option value="${c.k}">${c.l}</option>`).join('')}
@@ -1976,6 +1976,9 @@ function renderPipeBody(){
     pipeBoardSetup();
     const el=document.getElementById('pipe-board');
     if(el && pipeScrollLeft) el.scrollLeft=pipeScrollLeft;
+    bulkRenderBar();
+    const bt=document.getElementById('bulk-toggle');
+    if(bt){ bt.textContent = bulkMode ? '✕ Done selecting' : '☑️ Select many'; bt.className = bulkMode ? 'btn btn-gold btn-sm' : 'btn btn-ghost btn-sm'; }
   },0);
 }
 // Don't redraw underneath someone who is scrolling or dragging
@@ -1998,12 +2001,16 @@ function renderPipeBoard(list){
     }).sort((a,b)=>new Date(a.since||0)-new Date(b.since||0));
     return `<div class="pipe-col" data-col="${c.k}"
       ondragover="pipeDragOver(event)" ondragleave="pipeDragLeave(event)" ondrop="pipeDrop(event,'${jsstr(String(c.k))}','${jsstr(c.l)}')">
-      <div class="pipe-col-head"><span>${c.l}${c.scanov?' <span title="Updated automatically by Scanovator" style="color:var(--blue);font-size:10px">🚚</span>':''}</span><span class="cnt">${its.length}</span></div>
+      <div class="pipe-col-head" ${bulkMode?`onclick="bulkSelectColumn('${jsstr(String(c.k))}')" style="cursor:pointer" title="Select everything in this column"`:''}><span>${bulkMode?'☑ ':''}${c.l}${c.scanov?' <span title="Updated automatically by Scanovator" style="color:var(--blue);font-size:10px">🚚</span>':''}</span><span class="cnt">${its.length}</span></div>
       ${its.map(it=>{
         const lvl=pipeStuckLevel(it);
-        return `<div class="pipe-card ${lvl===2?'crit':(lvl===1?'warn':'')}" draggable="true"
-          ondragstart="pipeDragStart(event,'${jsstr(it.id)}')" ondragend="pipeDragEnd(event)"
-          onclick="openPipeModal('${jsstr(it.id)}')">
+        const picked=bulkMode&&bulkSel.has(it.id);
+        return `<div class="pipe-card ${lvl===2?'crit':(lvl===1?'warn':'')}" draggable="${bulkMode?'false':'true'}"
+          data-bulk-id="${esc(it.id)}"
+          ${bulkMode?'':`ondragstart="pipeDragStart(event,'${jsstr(it.id)}')" ondragend="pipeDragEnd(event)"`}
+          style="${picked?'outline:3px solid var(--gold);background:var(--accent-soft)':''}"
+          onclick="${bulkMode?`bulkPick('${jsstr(it.id)}')`:`openPipeModal('${jsstr(it.id)}')`}">
+          ${bulkMode?`<div style="font-size:11px;font-weight:800;color:${picked?'var(--gold2)':'var(--ink3)'};margin-bottom:3px">${picked?'☑ selected':'☐ tap to select'}</div>`:''}
           <div class="pc-name">${esc(it.desc||it.id)}</div>
           <div class="pc-id">${esc(it.id)} · ${esc(orderIdOf(it.id))}</div>
           ${it.customer?`<div class="pc-cust">${esc(it.customer)}</div>`:''}
@@ -2071,6 +2078,157 @@ async function pipeDrop(e,colKey,colLabel){
   renderPipeBody();
 }
 function colLabel2(k){ try{ return colLabel(k); }catch(e){ return ''; } }
+// ========================================================================
+// MOVING MANY AT ONCE — by picking cards, or by scanning them
+// ========================================================================
+// When a row of pieces was never scanned forward, fixing them one at a time is the
+// slow part. Select them (or scan them) and move the whole lot in one action.
+let bulkMode=false;
+let bulkSel=new Set();
+
+function bulkToggle(){
+  bulkMode=!bulkMode;
+  if(!bulkMode) bulkSel.clear();
+  renderPipeBody();
+  bulkRenderBar();
+}
+function bulkPick(id){
+  if(bulkSel.has(id)) bulkSel.delete(id); else bulkSel.add(id);
+  pipeTouch();
+  renderPipeBody();
+  bulkRenderBar();
+}
+function bulkSelectColumn(colKey){
+  const list=pipeFilteredItems().filter(it=>String(it.col)===String(colKey));
+  const allIn=list.length && list.every(it=>bulkSel.has(it.id));
+  list.forEach(it=>{ if(allIn) bulkSel.delete(it.id); else bulkSel.add(it.id); });
+  renderPipeBody(); bulkRenderBar();
+}
+function bulkClear(){ bulkSel.clear(); renderPipeBody(); bulkRenderBar(); }
+
+function bulkRenderBar(){
+  let bar=document.getElementById('bulk-bar');
+  if(!bulkMode){ if(bar) bar.remove(); return; }
+  if(!bar){
+    bar=document.createElement('div'); bar.id='bulk-bar';
+    bar.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:9000;background:#14161f;color:#fff;'+
+      'padding:12px 16px;box-shadow:0 -6px 24px rgba(0,0,0,.28);display:flex;gap:10px;align-items:center;flex-wrap:wrap';
+    document.body.appendChild(bar);
+  }
+  const opts=[{v:'RESET',l:'Waiting for Shop'}].concat(
+    WORK_STAGES.map(function(s){return {v:s,l:'Waiting for '+s};}),
+    [{v:'READY',l:'Ready'}],
+    DELIVERY_STAGES.map(function(s){return {v:s,l:s};}));
+  bar.innerHTML=
+    '<strong style="font-size:15px;white-space:nowrap">'+bulkSel.size+' selected</strong>'+
+    '<button class="btn btn-ghost btn-sm" onclick="bulkScanOpen()" style="background:rgba(255,255,255,.12);color:#fff;border-color:transparent">📷 Add by scanning</button>'+
+    '<select id="bulk-stage" style="flex:1;min-width:170px;padding:8px 10px">'+
+      opts.map(function(o){return '<option value="'+esc(o.v)+'">'+esc(o.l)+'</option>';}).join('')+
+    '</select>'+
+    '<button class="btn btn-gold btn-sm" '+(bulkSel.size?'':'disabled style="opacity:.4"')+' onclick="bulkApply()">Move all '+(bulkSel.size||'')+'</button>'+
+    (bulkSel.size?'<button class="btn btn-ghost btn-sm" onclick="bulkClear()" style="color:#fff;border-color:rgba(255,255,255,.3)">Clear</button>':'')+
+    '<button class="btn btn-ghost btn-sm" onclick="bulkToggle()" style="color:#fff;border-color:rgba(255,255,255,.3)">Done</button>';
+}
+
+async function bulkApply(){
+  const sel=document.getElementById('bulk-stage');
+  if(!sel || !bulkSel.size) return;
+  const stage=sel.value;
+  const label=(sel.selectedOptions[0]||{}).textContent||stage;
+  const ids=[].concat(Array.from(bulkSel));
+  if(!confirm('Move '+ids.length+' piece'+(ids.length!==1?'s':'')+' to "'+label+'"?\n\nEach is logged as an admin override.')) return;
+  let ok=0, failed=0;
+  let items={}; try{ items=buildPipelineItems().items; }catch(e){}
+  for(const id of ids){
+    try{
+      const r=await postStageEventAdmin(id, stage, 'override', (items[id]||{}).desc||'');
+      if(r.ok) ok++; else failed++;
+    }catch(e){ failed++; }
+  }
+  await loadStageEvents();
+  toast('⚡ Moved '+ok+' to '+label+(failed?' · '+failed+' failed':''));
+  bulkSel.clear();
+  renderPipeBody(); bulkRenderBar();
+}
+
+function bulkScanOpen(){
+  let ov=document.getElementById('bulk-scan-ov');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='bulk-scan-ov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.94);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:18px';
+    ov.innerHTML='<div style="color:#fff;font-family:\'Outfit\',sans-serif;font-size:19px;font-weight:700;margin-bottom:4px">Scan the pieces</div>'+
+      '<div style="color:rgba(255,255,255,.7);font-size:12.5px;margin-bottom:12px">Each one is added to the selection. Scan as many as you like.</div>'+
+      '<video id="bulk-scan-video" playsinline style="width:100%;max-width:420px;border-radius:14px;background:#000"></video>'+
+      '<input id="bulk-scan-input" placeholder="…or type an item ID and press Enter" style="width:100%;max-width:420px;margin-top:10px;padding:11px;border-radius:9px;border:none;font-size:15px">'+
+      '<div id="bulk-scan-list" style="color:#fff;font-size:13px;margin-top:10px;max-height:22vh;overflow-y:auto;width:100%;max-width:420px"></div>'+
+      '<button onclick="bulkScanClose()" style="margin-top:12px;background:#fff;color:#12141c;border:none;border-radius:10px;padding:12px 30px;font-weight:700;font-size:15px;cursor:pointer">Done</button>';
+    document.body.appendChild(ov);
+    ov.querySelector('#bulk-scan-input').addEventListener('keydown',function(e){
+      if(e.key!=='Enter') return;
+      const v=e.target.value.trim(); e.target.value='';
+      if(v) bulkScanAdd(v);
+    });
+  }
+  ov.style.display='flex';
+  bulkScanList();
+  startBulkCamera();
+}
+function bulkScanClose(){
+  const ov=document.getElementById('bulk-scan-ov'); if(ov) ov.style.display='none';
+  try{ if(window._bulkStream) window._bulkStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
+  window._bulkStream=null;
+  renderPipeBody(); bulkRenderBar();
+}
+function bulkScanAdd(raw){
+  const m=String(raw).toUpperCase().replace(/[^A-Z0-9\-]/g,'').match(/T-?(\d+)-(\d+)(-[A-Z0-9]+)?/);
+  if(!m){ toast('Not a Glint label: '+String(raw).slice(0,20)); return; }
+  const id='T-'+m[1]+'-'+m[2]+(m[3]||'');
+  if(bulkSel.has(id)) return;
+  bulkSel.add(id);
+  bulkScanList();
+  bulkRenderBar();
+}
+function bulkScanList(){
+  const el=document.getElementById('bulk-scan-list'); if(!el) return;
+  let items={}; try{ items=buildPipelineItems().items; }catch(e){}
+  const arr=Array.from(bulkSel);
+  el.innerHTML=arr.map(function(id,i){
+    const it=items[id];
+    return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.12)">'+
+      '<span>'+(i+1)+'. '+esc(it&&it.desc?it.desc:id)+'</span><span style="opacity:.6">'+esc(id)+'</span></div>';
+  }).join('')||'<div style="opacity:.6">Nothing scanned yet</div>';
+}
+async function startBulkCamera(){
+  const video=document.getElementById('bulk-scan-video');
+  let cand=null, hits=0;
+  try{
+    window._bulkStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    video.srcObject=window._bulkStream; await video.play();
+  }catch(e){ return; }
+  const handle=function(code){
+    if(code===cand){ hits++; if(hits>=2){ bulkScanAdd(code); cand=null; hits=0; } }
+    else { cand=code; hits=1; }
+  };
+  if('BarcodeDetector' in window){
+    try{
+      const det=new BarcodeDetector({formats:['code_128','code_39','qr_code']});
+      const loop=async function(){
+        const ov=document.getElementById('bulk-scan-ov');
+        if(!ov||ov.style.display==='none') return;
+        try{ const b=await det.detect(video); if(b.length) handle(b[0].rawValue); }catch(e){}
+        setTimeout(loop,220);
+      };
+      loop(); return;
+    }catch(e){}
+  }
+  if(typeof ZXingBrowser!=='undefined'){
+    try{
+      const rd=new ZXingBrowser.BrowserMultiFormatReader();
+      rd.decodeFromVideoElement(video,function(res){ if(res) handle(res.getText?res.getText():res.text); });
+    }catch(e){}
+  }
+}
+
 function pipeJump(i){
   const el=document.getElementById('pipe-board'); if(!el) return;
   const col=el.children[i]; if(!col) return;
