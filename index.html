@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-11-g</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-12-a</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -261,6 +261,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
       <button onclick="toggleCamera()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);border:none;border-radius:50px;color:white;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer">✕ Close</button>
     </div>
   </div>
+
+  <div class="card" id="pack-box" style="display:none;border-left:4px solid var(--green)"></div>
 
   <div class="card" id="lookup-result" style="display:none;border-left:4px solid var(--gold)"></div>
 
@@ -1385,6 +1387,7 @@ function renderRoleButtons(workerRoles) {
 
 function selectRole(role) {
   setTimeout(()=>{ if(typeof loadWorkPriority==='function') loadWorkPriority(); }, 50);
+  setTimeout(()=>{ if(typeof renderPackBox==='function') renderPackBox(); }, 60);
   selectedRole = role;
   document.getElementById('scan-card').style.display = 'block';
   document.getElementById('scan-recent-card').style.display = 'block';
@@ -1797,20 +1800,146 @@ async function showLookup(itemId){
   playBeep(920,120);
 }
 
+// ========================================================================
+// PACKING BOXES — only for workers whose role is a packing step
+// ========================================================================
+// The packer opens a box, scans pieces into it, then closes it. Closing moves those
+// pieces to Packed and makes the box available to print from the Control Room.
+let currentBox=null;   // {box_id, order_id, customer, box_no, items:[]}
+
+function isPackingRole(role){
+  const r=String(role||'').toLowerCase();
+  return /pack/.test(r) && !/unpack/.test(r);
+}
+function packVisible(){ return isPackingRole(selectedRole); }
+
+async function packStartBox(orderId, customer){
+  // Next box number for this order
+  let no=1;
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/boxes?order_id=eq.'+encodeURIComponent(orderId)+'&select=box_no&order=box_no.desc&limit=1',
+      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const j=await r.json();
+    if(Array.isArray(j)&&j.length) no=(parseInt(j[0].box_no,10)||0)+1;
+  }catch(e){}
+  const box_id=orderId+'-B'+no;
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/boxes',{method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({box_id, order_id:orderId, box_no:no, customer:customer||'',
+                           packed_by:selectedWorker?selectedWorker.name:'', status:'open'})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+  }catch(e){ showToast('⚠️ '+t('boxCreateFail')+': '+(e.message||e)); return null; }
+  currentBox={box_id, order_id:orderId, customer:customer||'', box_no:no, items:[]};
+  renderPackBox();
+  showToast('📦 '+t('boxOpened')+' '+no+' — '+orderId);
+  return currentBox;
+}
+
+// Add a scanned piece to the open box
+async function packAddItem(itemId){
+  const info=itemCache[itemId]||{};
+  const orderId=(itemId.match(/^(T-\d+)/i)||[])[1]||'';
+
+  if(!currentBox){
+    // First scan opens a box for that order
+    await packStartBox(orderId, info.customer||'');
+    if(!currentBox) return;
+  }
+  // Never mix customers or orders in one box
+  if(currentBox.order_id!==orderId){
+    playErrorBeep();
+    showBlockingPrompt(t('wrongOrder'), t('wrongOrderBody')
+      .replace('%box', currentBox.order_id).replace('%item', orderId));
+    return;
+  }
+  // Already packed somewhere?
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/box_items?item_id=eq.'+encodeURIComponent(itemId)+'&select=box_id',
+      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const j=await r.json();
+    if(Array.isArray(j)&&j.length&&j[0].box_id!==currentBox.box_id){
+      playErrorBeep();
+      showBlockingPrompt(t('alreadyPacked'), t('alreadyPackedBody').replace('%box', j[0].box_id));
+      return;
+    }
+  }catch(e){}
+
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/box_items?on_conflict=item_id',{method:'POST',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json',
+               'Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify({item_id:itemId, box_id:currentBox.box_id, order_id:orderId,
+                           item_desc:info.name||'', added_by:selectedWorker?selectedWorker.name:''})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+  }catch(e){ playErrorBeep(); showToast('⚠️ '+t('boxAddFail')); return; }
+
+  if(!currentBox.items.some(x=>x.itemId===itemId))
+    currentBox.items.push({itemId, name:info.name||itemId});
+  playBeep(920,140);
+  if(navigator.vibrate) navigator.vibrate(80);
+  renderPackBox();
+  showToast('📦 '+t('addedToBox')+' '+currentBox.box_no+' — '+(info.name||itemId));
+}
+
+async function packCloseBox(){
+  if(!currentBox||!currentBox.items.length){ showToast(t('boxEmpty')); return; }
+  if(!confirm(t('closeBoxConfirm').replace('%n', currentBox.box_no).replace('%c', currentBox.items.length))) return;
+  try{
+    await fetch(SUPABASE_URL+'/rest/v1/boxes?box_id=eq.'+encodeURIComponent(currentBox.box_id),{method:'PATCH',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({status:'closed', closed_at:new Date().toISOString()})});
+  }catch(e){ showToast('⚠️ '+t('boxCloseFail')); return; }
+
+  // Everything in the box moves to Packed
+  for(const it of currentBox.items){
+    try{
+      await fetch(SUPABASE_URL+'/rest/v1/stage_events',{method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({item_id:it.itemId, item_desc:it.name||'', stage:'Packed', action:'override',
+                             worker:selectedWorker?selectedWorker.name:''})});
+    }catch(e){}
+  }
+  showToast('✅ '+t('boxClosed').replace('%n', currentBox.box_no).replace('%c', currentBox.items.length));
+  currentBox=null;
+  renderPackBox();
+}
+
+function renderPackBox(){
+  const el=document.getElementById('pack-box');
+  if(!el) return;
+  if(!packVisible()){ el.style.display='none'; return; }
+  el.style.display='block';
+  if(!currentBox){
+    el.innerHTML='<div class="card-label">📦 '+t('packing')+'</div>'+
+      '<div style="font-size:12.5px;color:var(--ink3)">'+t('packHint')+'</div>';
+    return;
+  }
+  el.innerHTML='<div class="card-label">📦 '+t('box')+' '+currentBox.box_no+' — '+esc2(currentBox.order_id)+
+      (currentBox.customer?' · '+esc2(currentBox.customer):'')+'</div>'+
+    '<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">'+currentBox.items.length+' '+t('piecesInBox')+'</div>'+
+    currentBox.items.map(function(x,i){
+      return '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'+
+        '<span>'+(i+1)+'. '+esc2(x.name)+'</span><span style="color:var(--ink3);font-size:11px">'+esc2(x.itemId)+'</span></div>';
+    }).join('')+
+    '<button class="gen-btn" style="width:100%;margin-top:10px;background:var(--green);color:#fff;border:none;padding:13px;font-size:15px;font-weight:700" onclick="packCloseBox()">✅ '+t('closeBox')+'</button>';
+}
+function esc2(s){ return String(s==null?'':s).replace(/[<>&]/g,function(m){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[m];}); }
+
 // ===== LANGUAGES =====
 const LANGS={en:'English', es:'Español', he:'עברית'};
 const STRINGS={
-  en:{ workNext:'🎯 Work on these first', lvlUrgent:'Urgent', lvlSoon:'Soon', lvlNormal:'No rush', workNextHint:'Everything on your bench, most pressing first, orders nearly finished, and pieces waiting longest.',
+  en:{ workNext:'🎯 Work on these first', packing:'Packing', packHint:'Scan the first piece and a new box opens automatically.', box:'Box', piecesInBox:'pieces in this box', closeBox:'Close this box', closeBoxConfirm:'Close box %n with %c pieces?', boxOpened:'Opened box', addedToBox:'Added to box', boxClosed:'Box %n closed — %c pieces moved to Packed', boxEmpty:'Scan a piece into the box first', boxCreateFail:'Could not open the box', boxAddFail:'Could not add to the box', boxCloseFail:'Could not close the box', wrongOrder:'Different order', wrongOrderBody:'This box is for %box but that piece belongs to %item. Close this box first, or scan a piece from %box.', alreadyPacked:'Already packed', alreadyPackedBody:'That piece is already in %box.', lvlUrgent:'Urgent', lvlSoon:'Soon', lvlNormal:'No rush', workNextHint:'Everything on your bench, most pressing first, orders nearly finished, and pieces waiting longest.',
        language:'Language', settings:'Settings', scanItem:'Scan item', chooseRole:'What are you doing now?',
        chooseRoleHint:'👇 Tap one to start — you can\'t scan until you do.', loggedInAs:'Logged in as', logOut:'Log out',
        useCamera:'📷 Use the camera to scan', recentScans:'Your recent scans', noScans:'No scans in this session yet.',
        enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', customer:'Customer', area:'Area', due:'Due', services:'Services', alreadyDone:'Already done', lastActivity:'Last activity', photos:'Photos', videos:'Videos', noPriorityYet:'No list has been sent from the office yet.', nothingWaiting:'Nothing waiting for this step right now.', roleNoStage:'%s is not one of the pipeline steps, so there is no list for it.', stagesKnown:'Lists exist for', refresh:'↻ Refresh', ghostWarn:'This has been running far too long — it is probably left over from before.', ghostClear:'Close it', ghostConfirm:'Close this leftover timer?', ghostCleared:'Leftover timer closed', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
-  es:{ workNext:'🎯 Trabaja primero en estos', lvlUrgent:'Urgente', lvlSoon:'Pronto', lvlNormal:'Sin prisa', workNextHint:'Todo lo que tienes, lo más urgente primero de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
+  es:{ workNext:'🎯 Trabaja primero en estos', packing:'Embalaje', packHint:'Escanea la primera pieza y se abre una caja nueva.', box:'Caja', piecesInBox:'piezas en esta caja', closeBox:'Cerrar esta caja', closeBoxConfirm:'¿Cerrar la caja %n con %c piezas?', boxOpened:'Caja abierta', addedToBox:'Añadido a la caja', boxClosed:'Caja %n cerrada — %c piezas pasaron a Embalado', boxEmpty:'Escanea una pieza primero', boxCreateFail:'No se pudo abrir la caja', boxAddFail:'No se pudo añadir a la caja', boxCloseFail:'No se pudo cerrar la caja', wrongOrder:'Pedido distinto', wrongOrderBody:'Esta caja es de %box pero esa pieza es de %item. Cierra esta caja primero.', alreadyPacked:'Ya está embalada', alreadyPackedBody:'Esa pieza ya está en %box.', lvlUrgent:'Urgente', lvlSoon:'Pronto', lvlNormal:'Sin prisa', workNextHint:'Todo lo que tienes, lo más urgente primero de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
        language:'Idioma', settings:'Ajustes', scanItem:'Escanear artículo', chooseRole:'¿Qué estás haciendo ahora?',
        chooseRoleHint:'👇 Toca uno para empezar; no podrás escanear hasta que lo hagas.', loggedInAs:'Sesión iniciada como', logOut:'Finalizar la sesión',
        useCamera:'📷 Usa la cámara para escanear', recentScans:'Tus escaneos recientes', noScans:'Aún no hay escaneos en esta sesión.',
        enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', customer:'Cliente', area:'Zona', due:'Entrega', services:'Servicios', alreadyDone:'Ya hecho', lastActivity:'Última actividad', photos:'Fotos', videos:'Videos', noPriorityYet:'La oficina aún no ha enviado ninguna lista.', nothingWaiting:'Ahora mismo no hay nada esperando en este paso.', roleNoStage:'%s no es uno de los pasos del proceso, así que no hay lista.', stagesKnown:'Hay listas para', refresh:'↻ Actualizar', ghostWarn:'Esto lleva demasiado tiempo en marcha — probablemente quedó de antes.', ghostClear:'Cerrarlo', ghostConfirm:'¿Cerrar este temporizador olvidado?', ghostCleared:'Temporizador cerrado', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
-  he:{ workNext:'🎯 עבדו קודם על אלה', lvlUrgent:'דחוף', lvlSoon:'בקרוב', lvlNormal:'ללא לחץ', workNextHint:'כל מה שאצלך, הדחוף ביותר קודם, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
+  he:{ workNext:'🎯 עבדו קודם על אלה', packing:'אריזה', packHint:'סרקו את הפריט הראשון ותיפתח קופסה חדשה.', box:'קופסה', piecesInBox:'פריטים בקופסה', closeBox:'סגירת הקופסה', closeBoxConfirm:'לסגור קופסה %n עם %c פריטים?', boxOpened:'נפתחה קופסה', addedToBox:'נוסף לקופסה', boxClosed:'קופסה %n נסגרה — %c פריטים עברו לארוז', boxEmpty:'סרקו פריט קודם', boxCreateFail:'לא ניתן לפתוח קופסה', boxAddFail:'לא ניתן להוסיף לקופסה', boxCloseFail:'לא ניתן לסגור את הקופסה', wrongOrder:'הזמנה אחרת', wrongOrderBody:'הקופסה הזו של %box אבל הפריט שייך ל־%item. סגרו קודם את הקופסה.', alreadyPacked:'כבר ארוז', alreadyPackedBody:'הפריט כבר נמצא ב־%box.', lvlUrgent:'דחוף', lvlSoon:'בקרוב', lvlNormal:'ללא לחץ', workNextHint:'כל מה שאצלך, הדחוף ביותר קודם, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
        language:'שפה', settings:'הגדרות', scanItem:'סריקת פריט', chooseRole:'מה אתה עושה עכשיו?',
        chooseRoleHint:'👇 הקישו על אחד כדי להתחיל — אי אפשר לסרוק לפני כן.', loggedInAs:'מחובר בתור', logOut:'התנתקות',
        useCamera:'📷 השתמשו במצלמה לסריקה', recentScans:'הסריקות האחרונות שלך', noScans:'אין עדיין סריקות בפעילות הזו.',
@@ -1973,6 +2102,16 @@ async function processScan(itemId) {
         ? '↩️ Logged as extra work — this counts as another paid step'
         : '↩️ Logged as a redo — same price, no extra step');
     }
+  }
+
+  // Packing roles: the scan puts the piece in the open box rather than timing work
+  if (packVisible()) {
+    dbg('packing scan');
+    await Promise.race([resolveItemInfo(itemId), new Promise(r=>setTimeout(r,2500))]);
+    await packAddItem(itemId);
+    document.getElementById('scan-input').value = '';
+    setTimeout(() => document.getElementById('scan-input').focus(), 100);
+    return;
   }
 
   // Status-only roles: one scan records the step and finishes — no timer
