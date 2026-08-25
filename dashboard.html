@@ -295,7 +295,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-12-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-12-c</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -480,6 +480,32 @@ const PROXIES = [
 // Route RepairDesk through our own Edge Function so the key lives on the server.
 // Falls back to the old public proxies if the function isn't deployed yet.
 let edgeProxyOk=null;
+// Older tickets load in the background once the dashboard is already usable, so the
+// whole history is searchable without making every page wait for it.
+let olderTicketsLoaded=false, olderTicketsLoading=false;
+async function loadOlderTicketsInBackground(totalPages){
+  if(olderTicketsLoaded||olderTicketsLoading) return;
+  olderTicketsLoading=true;
+  try{
+    const seen=new Set((allTickets||[]).map(t=>getOrderId(t)));
+    for(let page=3; page<=totalPages && page<=60; page++){
+      const d=await fetchRD('tickets?per_page=250&page='+page+'&default_order=1');
+      const batch=(d.data&&d.data.ticketData)||[];
+      if(!batch.length) break;
+      batch.forEach(function(t){
+        const o=getOrderId(t);
+        if(o&&!seen.has(o)){ seen.add(o); allTickets.push(t); }
+        const id=t.summary&&t.summary.id;
+        if(o&&id) oidMap[o]=id;
+      });
+      try{ localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); }catch(_){}
+      await new Promise(function(r){ setTimeout(r,150); });   // stay out of the way
+    }
+    olderTicketsLoaded=true;
+    _svcIdx=null;
+  }catch(e){ /* the recent tickets still work */ }
+  olderTicketsLoading=false;
+}
 async function fetchRD(path, fresh){
   // Public CORS proxies cache aggressively, so anything added to a ticket after the
   // first fetch would keep showing the old version. A changing parameter defeats that.
@@ -827,7 +853,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-12-a';
+const APP_VERSION='2026-08-12-c';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -2648,6 +2674,8 @@ async function loadTickets(){
       const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
       page++;
     } while(page<=totalPages && page<=2);
+    // Only the first two pages hold up the screen; the rest arrives quietly behind it
+    if(totalPages>2) loadOlderTicketsInBackground(totalPages);
     allTickets=fetched;
     // Warm the order_id -> internal ticket id map while we have the list
     fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
@@ -3393,6 +3421,8 @@ async function ensureTicketsLoaded(){
       const pg=data.data&&data.data.pagination; totalPages=pg?parseInt(pg.total_pages):1;
       page++;
     } while(page<=totalPages && page<=2);
+    // Only the first two pages hold up the screen; the rest arrives quietly behind it
+    if(totalPages>2) loadOlderTicketsInBackground(totalPages);
     allTickets=fetched;
     fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
     localStorage.setItem('glint_oid_map',JSON.stringify(oidMap));
@@ -5842,7 +5872,7 @@ async function renderOrderDetailPage(oid){
         ${services?`<div style="font-size:11.5px;color:var(--gold2);margin-top:4px">${esc(services)}</div>`:''}
         ${note?`<div style="font-size:11.5px;color:var(--red);margin-top:2px">⚠️ ${esc(note)}</div>`:''}
         ${workerList?`<div style="font-size:11px;color:var(--ink3);margin-top:2px">👷 ${workerList}</div>`:''}
-        ${pre.length?`<div class="photo-grid" style="margin-top:8px;max-width:340px" onclick="event.stopPropagation()">${pre.map(u=>`<img loading="lazy" decoding="async" src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')}</div>`:''}
+        ${pre.length?`<div class="photo-grid" style="margin-top:8px;max-width:340px" onclick="event.stopPropagation()">${pre.slice(0,6).map(u=>`<img loading="lazy" decoding="async" src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')}</div>`:''}
       </div>`;
     }
   } else {
@@ -6075,15 +6105,26 @@ async function renderItemDetailPage(itemId){
     const ir=await sb('item_images?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.desc');
     const ours=(Array.isArray(ir)?ir:[]);
     const pre=window._itemPreImgs||[];
-    if(ours.length||pre.length){
-      photosHtml='<div class="card">';
+    {
+      photosHtml='<div class="card">'+
+        `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+          <div class="card-label" style="margin:0">Photos &amp; Videos</div>
+          <button class="btn btn-gold btn-sm" onclick="addPhotosFromDashboard('${jsstr(itemId)}','${jsstr(name||'')}')">📷 Add photos</button>
+        </div>`;
       const isVid=u=>/\.(mp4|mov|webm|m4v)(\?|$)/i.test(u||'');
       const vids=ours.filter(i=>isVid(i.image_url));
       const pics=ours.filter(i=>!isVid(i.image_url));
       if(pics.length){
-        photosHtml+=`<div class="card-label">Our Photos (${pics.length})</div><div class="photo-grid">`+
-          pics.map(i=>`<div><img loading="lazy" decoding="async" src="${thumbUrl(i.image_url,320)}" onerror="this.onerror=null;this.src='${jsstr(i.image_url)}'" onclick="lightbox('${jsstr(i.image_url)}')">
-            <div style="font-size:10px;color:var(--ink3);margin-top:3px;text-align:center">${esc(i.role||'')}${i.worker?'<br>'+esc(i.worker):''}</div></div>`).join('')+'</div>';
+        // Only the first few load. Dozens of photos at once is what made this slow.
+        const FIRST=6;
+        const head=pics.slice(0,FIRST), rest=pics.slice(FIRST);
+        const cell=i=>`<div><img loading="lazy" decoding="async" src="${thumbUrl(i.image_url,260)}" onerror="this.onerror=null;this.src='${jsstr(i.image_url)}'" onclick="lightbox('${jsstr(i.image_url)}')">
+            <div style="font-size:10px;color:var(--ink3);margin-top:3px;text-align:center">${esc(i.role||'')}${i.worker?'<br>'+esc(i.worker):''}
+            ${i.id?`<br><span class="clickable" style="color:var(--red)" onclick="event.stopPropagation();deleteItemImage(${i.id},'${jsstr(itemId)}')">remove</span>`:''}</div></div>`;
+        photosHtml+=`<div class="card-label">Our Photos (${pics.length})</div>
+          <div class="photo-grid" id="pg-head">${head.map(cell).join('')}</div>
+          ${rest.length?`<div class="photo-grid" id="pg-rest" style="display:none">${rest.map(cell).join('')}</div>
+            <button class="btn btn-ghost btn-sm" id="pg-more" style="margin-top:8px" onclick="document.getElementById('pg-rest').style.display='grid';this.remove()">Show the other ${rest.length} photo${rest.length!==1?'s':''}</button>`:''}`;
       }
       if(vids.length){
         // Nothing downloads until play is pressed, so the page stays fast
@@ -6098,6 +6139,9 @@ async function renderItemDetailPage(itemId){
       if(pre.length){
         photosHtml+=`<div class="card-label" style="margin-top:14px">Intake Photos — RepairDesk (${pre.length})</div><div class="photo-grid">`+
           pre.map(u=>`<img src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')+'</div>';
+      }
+      if(!pics.length && !vids.length && !pre.length){
+        photosHtml+='<div style="color:var(--ink3);font-style:italic;font-size:13px;padding:4px 0">No photos yet — use “Add photos” to upload some.</div>';
       }
       photosHtml+='</div>';
     }
@@ -6182,6 +6226,74 @@ function thumbUrl(url, w){
               + '?width=' + (w||400) + '&quality=60&resize=contain';
   }catch(e){ return url; }
 }
+// ========================================================================
+// ADDING PHOTOS FROM THE DASHBOARD
+// ========================================================================
+// Same storage the workers' phones use, so a photo added here shows on their app
+// and vice versa. Files are shrunk before upload, as they are on the phone.
+function addPhotosFromDashboard(itemId, itemName){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/*,video/*'; inp.multiple=true;
+  inp.onchange=async ()=>{
+    const files=Array.from(inp.files||[]);
+    if(!files.length) return;
+    await uploadDashFiles(files, itemId, itemName);
+  };
+  inp.click();
+}
+function shrinkImage(file, maxEdge){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(), url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const scale=Math.min(1, maxEdge/Math.max(img.width,img.height));
+      const cv=document.createElement('canvas');
+      cv.width=Math.round(img.width*scale); cv.height=Math.round(img.height*scale);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(b=>b?resolve(b):reject(new Error('could not process the image')),'image/jpeg',0.72);
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('could not read the image')); };
+    img.src=url;
+  });
+}
+async function uploadDashFiles(files, itemId, itemName){
+  let done=0, failed=0;
+  for(const f of files){
+    const isVideo=/^video\//.test(f.type);
+    toast('⬆️ Uploading '+(done+failed+1)+' of '+files.length+'…');
+    try{
+      let body=f, ext='.jpg', ctype='image/jpeg';
+      if(isVideo){
+        if(f.size>25*1024*1024){ toast('⚠️ Video too big — keep it under about 20 seconds'); failed++; continue; }
+        ext=(f.name.match(/\.(mp4|mov|webm|m4v)$/i)||['.mp4'])[0]; ctype=f.type||'video/mp4';
+      } else {
+        body=await shrinkImage(f, 1200);
+      }
+      const fname=(isVideo?'vid_':'')+itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+'_'+(done+failed)+ext;
+      const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{
+        method:'POST',
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':ctype,'x-upsert':'true'},
+        body});
+      if(!up.ok){
+        let why=''; try{ const j=await up.json(); why=j.message||j.error||''; }catch(_){}
+        throw new Error('HTTP '+up.status+(why?' · '+String(why).slice(0,60):''));
+      }
+      const url=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
+      await sb('item_images',{method:'POST',headers:{'Prefer':'return=minimal'},
+        body:JSON.stringify({item_id:itemId, item_desc:itemName||'', image_url:url, worker:'Office', role:'Office'})});
+      done++;
+    }catch(e){ failed++; toast('⚠️ '+(e.message||e)); }
+  }
+  toast(done?('✅ Added '+done+' file'+(done!==1?'s':'')+(failed?' · '+failed+' failed':'')):'Nothing was uploaded');
+  if(done) renderItemDetailPage(itemId);
+}
+async function deleteItemImage(id, itemId){
+  if(!confirm('Remove this photo from the item?')) return;
+  const r=await sb('item_images?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Removed'); renderItemDetailPage(itemId); }
+  else toast('Could not remove it');
+}
+
 function lightbox(url){ window.open(url,'_blank'); }
 
 // ========================================================================
