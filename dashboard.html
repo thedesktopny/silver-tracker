@@ -6,7 +6,15 @@
 <title>Glint — Control Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script>
+// The scanner app loads this from jsdelivr and works; the dashboard used cdnjs and the
+// barcodes came out blank, so that host is evidently blocked here. Try the other one
+// if the first fails, rather than silently printing labels with no barcode.
+if (typeof JsBarcode === 'undefined') {
+  document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.6/JsBarcode.all.min.js"><\/script>');
+}
+</script>
 <script src="https://unpkg.com/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
 <style>
 :root{
@@ -295,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-12-c</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-12-d</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -694,9 +702,13 @@ function getDeviceNote(device, ticket){
   return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(hasMeaning).join(' · ');
 }
 function makeBarcode(text){
+  if(typeof JsBarcode==='undefined'){
+    toast('⚠️ The barcode library did not load — labels would print without a barcode. Reload the page.');
+    return '';
+  }
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
   try{ JsBarcode(svg,text,{format:'CODE128',width:3.5,height:110,displayValue:false,margin:8,background:'#fff',lineColor:'#000'}); return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svg)))); }
-  catch(e){ return ''; }
+  catch(e){ toast('⚠️ Could not draw the barcode: '+(e.message||e)); return ''; }
 }
 
 // ========================================================================
@@ -853,7 +865,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-12-c';
+const APP_VERSION='2026-08-12-d';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -2335,7 +2347,7 @@ function printBoxLabels(orderId, onlyBoxId){
   const total=boxesFor(orderId).length;
   const W=labelSize.width, H=labelSize.height;
   const html=`<html><head><meta charset="utf-8"><title>Box labels</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.6/JsBarcode.all.min.js"><\/script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
     <style>
       @page{size:${W}mm ${H}mm;margin:0}
       body{margin:0;font-family:Arial,Helvetica,sans-serif}
@@ -2965,6 +2977,9 @@ async function printSelected(){
   for(const it of items){ it.noteEs = it.note ? await translateCached(it.note) : ''; }
 
   const withBc=items.map(it=>({...it,bc:makeBarcode(it.itemId)}));
+  if(withBc.some(x=>!x.bc)){
+    if(!confirm('The barcode could not be drawn for '+withBc.filter(x=>!x.bc).length+' label(s).\n\nPrinting now would give labels that cannot be scanned. Reload the page and try again.\n\nPrint anyway?')) return;
+  }
   const labelsHtml=withBc.map(it=>{
     const oid=orderIdOf(it.itemId);
     // Scale note text down as it gets longer so both languages always fit
