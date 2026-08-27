@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-12-c</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-12-d</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -955,8 +955,40 @@ const PR_PROXIES=[
   u=>'https://thingproxy.freeboard.io/fetch/'+u,
   u=>'https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u)
 ];
+// RepairDesk now goes through our own Edge Function, the same as the Control Room.
+// The free public proxies this used to rely on have all failed: one now demands a
+// paid key, one's domain no longer exists, and the rest block the request. Going
+// through our own function also keeps the RepairDesk key off the phones.
+const EDGE_NAMES_S=['quick-responder','api-proxy','api-proxy.ts'];
+let EDGE_NAME_S=localStorage.getItem('st_edge_name')||EDGE_NAMES_S[0];
 async function prFetch(targetUrl){
+  // Turn the full URL back into the path the function expects
+  let path='';
+  try{
+    const u=new URL(targetUrl);
+    path=u.pathname.replace(/^.*\/v1\//,'')+ (u.search||'');
+    path=path.replace(/[?&]api_key=[^&]*/,'').replace(/^&/,'?');
+    if(path.includes('&')&&!path.includes('?')) path=path.replace('&','?');
+  }catch(e){ path=targetUrl; }
+
+  const names=[EDGE_NAME_S].concat(EDGE_NAMES_S.filter(function(n){return n!==EDGE_NAME_S;}));
   let lastErr=null;
+  for(const name of names){
+    try{
+      const r=await fetch(SUPABASE_URL+'/functions/v1/'+name,{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_KEY,'apikey':SUPABASE_KEY},
+        body:JSON.stringify({action:'repairdesk', path})
+      });
+      if(r.status===404){ lastErr=new Error('no function called '+name); continue; }
+      if(!r.ok){ lastErr=new Error('HTTP '+r.status); continue; }
+      const j=await r.json();
+      if(EDGE_NAME_S!==name){ EDGE_NAME_S=name; localStorage.setItem('st_edge_name',name); }
+      return j;
+    }catch(e){ lastErr=e; }
+  }
+
+  // Last resort: the old public proxies, in case the function isn't deployed yet
   for(const make of PR_PROXIES){
     try{
       const resp=await fetch(make(targetUrl));
@@ -965,7 +997,7 @@ async function prFetch(targetUrl){
       try{ return JSON.parse(txt); }catch(e){ lastErr=new Error('bad response'); continue; }
     }catch(e){ lastErr=e; }
   }
-  throw lastErr||new Error('All proxies failed');
+  throw lastErr||new Error('Could not reach RepairDesk');
 }
 function prOid(t){ return (t.summary&&t.summary.order_id)||''; }
 function prCust(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
