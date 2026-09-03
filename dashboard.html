@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-g</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-j</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-g';
+const APP_VERSION='2026-08-13-j';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5701,7 +5701,10 @@ async function renderKpiPage(){
   document.getElementById('content').innerHTML=
     `<div class="page-head"><div><div class="page-title">Weekly KPIs</div>
       <div class="page-sub">Sunday to Friday. Sales come from your tickets; the rest from the three RepairDesk reports.</div></div>
-      <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter this week's figures</button></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments from RepairDesk</button>
+        <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter tax &amp; fees</button>
+      </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
   await ensureTicketsLoaded();
   await loadKpiWeeks();
@@ -5758,15 +5761,55 @@ function drawKpi(){
         <td>${r.entered?money(r.tax):'<span style="color:var(--ink3)">—</span>'}</td>
         <td style="color:${r.fees?'var(--orange)':'var(--ink3)'}">${r.entered?money(r.fees):'—'}</td>
         <td style="font-weight:700;color:${r.net?'var(--green)':'var(--ink3)'}">${r.entered?money(r.net):'—'}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="kpiEnter('${r.k}')">${r.entered?'Edit':'Enter'}</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" title="Pull payments from RepairDesk" onclick="kpiPullPayments('${r.k}')">↓</button>
+          <button class="btn btn-ghost btn-sm" onclick="kpiEnter('${r.k}')">${r.entered?'Edit':'Enter'}</button></td>
       </tr>`).join('')}
       </tbody></table>
       <div style="font-size:12px;color:var(--ink3);margin-top:10px;line-height:1.7">
         <strong>New sales</strong> is worked out from your tickets, with estimates left out.<br>
-        <strong>Payments</strong> from the transaction log · <strong>Sales tax</strong> from the tax report · <strong>Card fees</strong> from the batch report.<br>
+        <strong>Payments</strong> pulled straight from RepairDesk's transaction log (payments and refunds only) · <strong>Sales tax</strong> from the tax report · <strong>Card fees</strong> from the batch report.<br>
         <strong>Net</strong> = payments − sales tax − card fees.
       </div>
     </div>`;
+}
+// Payments now come straight from RepairDesk's transaction log. Type_id=1,2 is
+// payments and refunds only — the other row types are cash-drawer movements, not sales,
+// so including them would overstate the week badly.
+async function kpiFetchPayments(weekKeyStr){
+  const start=new Date(weekKeyStr+'T00:00:00');
+  const end=new Date(start); end.setDate(end.getDate()+6);      // Sunday through Saturday
+  const from=Math.floor(start.getTime()/1000);
+  const to=Math.floor(end.getTime()/1000)-1;
+  const money2=s=>parseFloat(String(s||'').replace(/[^0-9.\-]/g,''))||0;
+  try{
+    const d=await fetchRD('v1/report/transactionlogs?from='+from+'&to='+to+'&Type_id=1,2');
+    const data=(d&&d.data)||{};
+    const rows=data.results||[];
+    // Sum the rows ourselves rather than trusting a combined total
+    const total=rows.reduce((a,r)=>a+money2(r.amount),0);
+    const byMethod={};
+    rows.forEach(r=>{ const k=r.payment_method||'Other'; byMethod[k]=(byMethod[k]||0)+money2(r.amount); });
+    return {ok:true, total, rows:rows.length, byMethod};
+  }catch(e){ return {ok:false, why:e.message||String(e)}; }
+}
+async function kpiPullPayments(which){
+  const key=which||weekKey(new Date());
+  toast('Reading the transaction log…');
+  const res=await kpiFetchPayments(key);
+  if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
+  const methods=Object.entries(res.byMethod).map(([k,v])=>k+' '+money(v)).join(' · ');
+  if(!confirm('Week of '+weekLabel(key)+'\n\nPayments and refunds: '+money(res.total)+
+              '\nFrom '+res.rows+' transactions\n'+(methods?'\n'+methods:'')+
+              '\n\nSave this as the payments figure?')) return;
+  const existing=kpiWeeks.find(w=>w.week_start===key)||{};
+  const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({week_start:key, payments:res.total,
+      sales_tax:existing.sales_tax||null, cc_fees:existing.cc_fees||null,
+      updated_at:new Date().toISOString()})});
+  if(r.ok){ toast('✅ Payments saved'); await loadKpiWeeks(); drawKpi(); }
+  else toast('Could not save');
 }
 async function kpiEnter(which){
   const key=which||weekKey(new Date());
@@ -5799,14 +5842,14 @@ async function kpiEnter(which){
 // Scanovator's driver notes appear on RepairDesk tickets, so something out there can
 // write to them. Their public docs only describe reading, so rather than wait on
 // support this tries the endpoints most likely to exist and reports what each says.
+// Confirmed from RepairDesk's API docs — POST /ticket/addnote takes:
+//   id        the ticket id            type   0 = internal note, 1 = diagnostic note
+//   note      the text                 is_flag 0 = normal, 1 = flagged
+//   deviceId  optional, the specific piece on the ticket
+// Earlier attempts failed because we sent ticket_id instead of id, and a word for the
+// type instead of 0 or 1. RepairDesk answers 200 either way, which hid the mistake.
 const RD_NOTE_ATTEMPTS=[
-  // The documented endpoint is POST /ticket/addnote. The docs list the endpoint but not
-  // the field names, so these are the shapes worth trying.
-  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({ticket_id:id, note:t, type:'diagnostic'})},
-  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({ticket_id:id, notes:t, note_type:'diagnostic'})},
-  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({id, note:t})},
-  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({ticket_id:id, msg_text:t, tittle:'Diagnostic Notes'})},
-  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({ticket_id:id, note:t, is_private:0})}
+  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({id:parseInt(id,10), type:1, note:t, is_flag:0})}
 ];
 async function probeRepairDeskWrite(){
   const el=document.getElementById('rd-probe-result');
@@ -5839,7 +5882,10 @@ async function probeRepairDeskWrite(){
     lines.push(`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">
       <span style="font-family:monospace;flex:1;min-width:0">${a.method} ${esc(path)}</span>
       <strong style="color:var(--ink3);white-space:nowrap">${res.status||'failed'}</strong></div>
-      ${res.body&&!worked?`<div style="font-size:11px;color:var(--ink3);padding-bottom:6px;font-family:monospace;word-break:break-all">${esc(String(res.body).slice(0,180))}</div>`:''}`);
+      <div style="font-size:11px;color:var(--ink2);padding:0 0 8px;font-family:monospace;word-break:break-all;background:var(--surface2);border-radius:6px;padding:6px 8px;margin-bottom:6px">
+        <span style="color:var(--ink3)">sent:</span> ${esc(JSON.stringify(a.payload('…', tid)))}<br>
+        <span style="color:var(--ink3)">back:</span> ${esc(String(res.body||'(nothing)').slice(0,400))}
+      </div>`);
     el.innerHTML='<div>'+lines.join('')+'</div>';
     await new Promise(r=>setTimeout(r,400));   // don't hammer their API
   }
@@ -5866,11 +5912,11 @@ async function probeRepairDeskWrite(){
           <div style="margin-top:8px;opacity:.95">Tell me which one and I'll send your notes through it.</div>
         </div>`
       : `<div style="background:var(--orange-soft);color:var(--orange);border-radius:9px;padding:12px 14px;margin-top:10px;font-size:13px">
-          <strong>Every call returned success, but no note appeared on the ticket.</strong>
-          RepairDesk answers 200 even for endpoints that don't exist, so those ticks meant nothing —
-          this check re-read the ticket and none of the test notes are there.
-          <div style="margin-top:8px">That points to Scanovator using a private integration rather than the public API.
-          Worth telling RepairDesk exactly that: Scanovator writes driver notes to your tickets, and you'd like to do the same.</div>
+          <strong>Nothing saved — but read what RepairDesk sent back above.</strong>
+          The endpoint <code>ticket/addnote</code> is in their documentation, so it exists; the field names in what we sent
+          are almost certainly wrong. Their reply usually names the field it wanted.
+          <div style="margin-top:8px">Send me those messages and I'll correct the fields. If they say nothing useful,
+          the documentation page for <code>POST /ticket/addnote</code> lists the parameters — that would settle it.</div>
         </div>`);
 }
 function rdProbeSettingsHtml(){
@@ -6838,18 +6884,31 @@ async function sendItemMessage(itemId, desc){
 // Push a note to RepairDesk using the documented endpoint. The exact field names are
 // confirmed by the tester in Settings and remembered, so this uses whatever worked.
 async function pushNoteToRepairDesk(itemId, text){
-  const shape=localStorage.getItem('glint_rd_note_shape');
-  if(!shape) return {skipped:true};
+  if(localStorage.getItem('glint_rd_notes_off')==='1') return {skipped:true};
   try{
-    const tid=await resolveTicketId(orderIdOf(itemId));
-    if(!tid) return {ok:false};
-    const build=RD_NOTE_ATTEMPTS[parseInt(shape,10)];
-    if(!build) return {ok:false};
-    const r=await edgeCall({action:'repairdesk_write', path:'ticket/addnote', method:'POST',
-      payload:build.payload(text, tid)});
+    const oid=orderIdOf(itemId);
+    const tid=await resolveTicketId(oid);
+    if(!tid) return {ok:false, why:'ticket not found'};
+
+    // Attach it to the specific piece when we can work out which device it is
+    let deviceId=null;
+    try{
+      const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+      const num=parseInt(String(itemId).split('-')[2])||1;
+      const dev=t&&t.devices?t.devices[num-1]:null;
+      if(dev) deviceId=parseInt(dev.id||(dev.device&&dev.device.id),10)||null;
+    }catch(e){}
+
+    const payload={id:parseInt(tid,10), type:1, note:text, is_flag:0};
+    if(deviceId) payload.deviceId=deviceId;
+
+    const r=await edgeCall({action:'repairdesk_write', path:'ticket/addnote', method:'POST', payload});
     const j=await r.json();
-    return {ok:!!j.ok};
-  }catch(e){ return {ok:false}; }
+    // RepairDesk returns 200 even on failure, so read success from the body
+    let body={}; try{ body=JSON.parse(j.body||'{}'); }catch(_){}
+    const ok = body.success===true || /added successfully/i.test(String(j.body||''));
+    return {ok, why:(body.data&&body.data.message)||body.message||''};
+  }catch(e){ return {ok:false, why:e.message||String(e)}; }
 }
 async function addItemNote(itemId){
   const el=document.getElementById('note-input');
@@ -6862,7 +6921,8 @@ async function addItemNote(itemId){
     toast('✅ Note added');
     // Also send it to RepairDesk, once the tester has confirmed the field names
     pushNoteToRepairDesk(itemId, note).then(res=>{
-      if(res && res.ok) toast('↗ Also added to RepairDesk');
+      if(!res || res.skipped) return;
+      toast(res.ok ? '↗ Also added to RepairDesk' : ('RepairDesk did not take the note'+(res.why?': '+res.why:'')));
     });
     renderItemDetailPage(itemId);
   }
