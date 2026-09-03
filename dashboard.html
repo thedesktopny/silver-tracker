@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-12-d</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-e</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -393,12 +393,15 @@ const NAV_ITEMS = [
   {route:'reports', label:'Reports', icon:'▤'},
   {route:'insights', label:'Insights', icon:'◆'},
   {route:'ask', label:'Ask Glint', icon:'✨'},
+  {route:'inbox', label:'Inbox', icon:'📬', badge:'inbox-badge'},
   {route:'priority', label:'What to Work On', icon:'🎯'},
   {route:'boxes', label:'Boxes', icon:'📦'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
   {route:'hold', label:'On Hold', icon:'⏸️'},
   {route:'timeline', label:'Day Timeline', icon:'🕘'},
   {route:'production', label:'Production', icon:'📈'},
+  {route:'kpi', label:'Weekly KPIs', icon:'📊'},
+  {route:'inventory', label:'Inventory', icon:'📦'},
   {route:'costs', label:'Costs', icon:'💵'},
   {route:'orders', label:'Orders', icon:'▦'},
   {route:'history', label:'History', icon:'≡'},
@@ -743,7 +746,7 @@ function renderSidebar(){
   const route=currentRoute();
   try{ _attnCount = (typeof attentionCount==='function' && scans.length) ? attentionCount() : 0; }catch(e){ _attnCount=0; }
   document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.map(n=>
-    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}${n.route==='attention'&&_attnCount?`<span style="margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">${_attnCount}</span>`:''}</a>`
+    `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}${n.route==='attention'&&_attnCount?`<span style="margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">${_attnCount}</span>`:''}${n.route==='inbox'?`<span id="inbox-badge" style="margin-left:auto;background:var(--gold);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:${notifUnread?'inline-flex':'none'};align-items:center;justify-content:center;padding:0 6px">${notifUnread||''}</span>`:''}</a>`
   ).join('');
 }
 function startClock(){
@@ -846,7 +849,7 @@ function navigate(hash){ location.hash=hash; closeNav(); }
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -865,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-12-d';
+const APP_VERSION='2026-08-13-e';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -917,11 +920,14 @@ const ROUTE_RENDERERS={
   photofind: renderPhotoFindPage,
   attention: renderAttentionPage,
   priority: renderPriorityPage,
+  inbox: renderInboxPage,
   boxes: renderBoxesPage,
   hold: renderHoldPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
   costs: renderCostsPage,
+  inventory: renderInventoryPage,
+  kpi: renderKpiPage,
   orders: renderOrdersListPage,
   history: renderHistoryPage,
   workers: renderWorkersPage,
@@ -1032,7 +1038,7 @@ async function bootstrap(){
   const loaders=[
     ['scans', loadAllScans], ['workers', loadWorkers], ['roles', loadRoles],
     ['stage events', loadStageEvents], ['labels', loadPipeLabels], ['stages', loadPipeStages],
-    ['delivery status', loadExternalStatus], ['due dates', loadDueOverrides], ['hold places', loadHoldPlaces],
+    ['notification rules', loadNotifyRules], ['inbox', loadMyNotifs], ['delivery status', loadExternalStatus], ['due dates', loadDueOverrides], ['hold places', loadHoldPlaces],
     ['live sessions', loadLiveSessions]
   ];
   const results=await Promise.allSettled(loaders.map(([,fn],i)=>
@@ -2644,6 +2650,7 @@ function itemPipeCardHtml(itemId){
       ${it.scanovStatus?(()=>{
         const m=scanovMeta[orderIdOf(it.id)]||{};
         return `<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 ${it.scanovInbound?'Collected from customer':'Scanovator: '+esc(it.scanovStatus)}${m.driver?' · '+esc(m.driver):''}${m.when?' · '+fmtDate(m.when):''}</span>`
+          + (m.receipt?` <a href="${esc(m.receipt)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:var(--surface2);color:var(--ink);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px;text-decoration:none;margin-left:6px">📷 ${it.scanovInbound?'Pickup photo':'Delivery photo'}</a>`:'')
           + (m.receipt?` <a href="${esc(m.receipt)}" target="_blank" style="font-size:11.5px;font-weight:700;color:var(--gold);padding:5px 0">Delivery receipt ↗</a>`:'');
       })():''}
       ${it.rdStatus?`<span style="background:var(--surface2);color:var(--ink2);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">RepairDesk: ${esc(it.rdStatus)}</span>`:''}
@@ -4708,7 +4715,12 @@ async function putOnHold(itemId, desc){
   const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
     body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:HOLD_KINDS[kind].label+'::'+reason,
                          action:'hold', worker:'Admin'})});
-  if(r.ok){ toast('⏸️ On hold — '+HOLD_KINDS[kind].label); await loadStageEvents(); router(); }
+  if(r.ok){
+    toast('⏸️ On hold — '+HOLD_KINDS[kind].label);
+    fireNotification('hold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
+      title:(desc||itemId)+' put on hold — '+HOLD_KINDS[kind].label, body:reason});
+    await loadStageEvents(); router();
+  }
   else {
     let why=''; try{ const j=await r.json(); why=j.message||j.error||''; }catch(_){}
     toast('Could not save the hold'+(why?': '+String(why).slice(0,70):' — is the stage_events table set up?'));
@@ -4759,6 +4771,8 @@ async function releaseHold(itemId, desc){
   await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
     body:JSON.stringify({item_id:itemId, note:'Off hold: '+res.note, worker:'Office', role:'Office'})}).catch(()=>{});
   toast(res.go==='shop'?'📦 Back to Waiting for Shop':'▶ Back in the pipeline');
+  fireNotification('unhold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
+    title:(desc||itemId)+' taken off hold', body:res.note});
   await loadStageEvents(); await loadAllScans(); router();
 }
 // Add an update to a hold without releasing it
@@ -5325,7 +5339,530 @@ function renderPriorityPage(){
   document.getElementById('content').innerHTML=html;
 }
 
+// ========================================================================
+// NOTIFICATIONS — automatic alerts, and messages on an item
+// ========================================================================
+// Rules are set once in Settings ("when an item goes on hold, tell Rowena") and then
+// fire on their own. Messages are written on an item and reach whoever is @mentioned.
+// Both land in the same inbox, on the dashboard and on the workers' phones.
+let notifyRules=[], myNotifs=[], notifUnread=0;
+
+async function loadNotifyRules(){
+  try{ const r=await sbList('notify_rules?select=*&limit=200',2); notifyRules=Array.isArray(r)?r:[]; }
+  catch(e){ notifyRules=[]; }
+}
+
+// Send an alert to everyone a rule names. Never throws — a failed notification must
+// never stop the thing that triggered it.
+async function fireNotification(event, opts){
+  try{
+    if(!notifyRules.length) await loadNotifyRules();
+    const o=opts||{};
+    const matches=notifyRules.filter(r=>{
+      if(!r.active) return false;
+      if(r.event!==event) return false;
+      if(r.stage && o.stage && String(r.stage).toLowerCase()!==String(o.stage).toLowerCase()) return false;
+      return true;
+    });
+    if(!matches.length) return;
+
+    const people=[...new Set(matches.flatMap(r=>r.recipients||[]))].filter(Boolean);
+    if(!people.length) return;
+
+    const rows=people.map(p=>({
+      recipient:p, kind:'alert', item_id:o.itemId||null, order_id:o.orderId||null,
+      item_desc:o.desc||'', title:o.title||event, body:o.body||'', from_who:o.from||'System'
+    }));
+    await sb('notifications',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(rows)});
+  }catch(e){ /* notifications are never allowed to break the action */ }
+}
+
+// Post a message on an item; anyone @mentioned gets it in their inbox
+async function postItemMessage(itemId, body, author, desc){
+  const mentions=[...String(body).matchAll(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*)/g)].map(m=>m[1]);
+  const orderId=(String(itemId).match(/^(T-\d+)/i)||[])[1]||null;
+  const r=await sb('item_messages',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, order_id:orderId, author, body, mentions})});
+  if(!r.ok) return r;
+
+  // Match a mention to a real worker name, so "@Row" reaches Rowena
+  const names=(workers||[]).map(w=>w.name).filter(Boolean);
+  const hit=[...new Set(mentions.map(m=>{
+    const low=m.toLowerCase();
+    return names.find(n=>n.toLowerCase()===low)
+        || names.find(n=>n.toLowerCase().startsWith(low))
+        || null;
+  }).filter(Boolean))].filter(n=>n!==author);
+
+  if(hit.length){
+    await sb('notifications',{method:'POST',headers:{'Prefer':'return=minimal'},
+      body:JSON.stringify(hit.map(p=>({
+        recipient:p, kind:'message', item_id:itemId, order_id:orderId, item_desc:desc||'',
+        title:author+' mentioned you', body:String(body).slice(0,300), from_who:author
+      })))}).catch(()=>{});
+  }
+  return r;
+}
+
+// ===== INBOX =====
+let inboxWho=localStorage.getItem('glint_inbox_who')||'Admin';
+async function loadMyNotifs(){
+  try{
+    const r=await sbList('notifications?recipient=eq.'+encodeURIComponent(inboxWho)+
+      '&select=*&order=created_at.desc&limit=200',2);
+    myNotifs=Array.isArray(r)?r:[];
+    notifUnread=myNotifs.filter(n=>!n.read_at).length;
+  }catch(e){ myNotifs=[]; notifUnread=0; }
+  const b=document.getElementById('inbox-badge');
+  if(b){ b.textContent=notifUnread||''; b.style.display=notifUnread?'inline-block':'none'; }
+}
+async function markNotifRead(id){
+  await sb('notifications?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({read_at:new Date().toISOString()})});
+  await loadMyNotifs(); renderInboxPage();
+}
+async function markAllRead(){
+  const ids=myNotifs.filter(n=>!n.read_at).map(n=>n.id);
+  if(!ids.length) return;
+  await sb('notifications?id=in.('+ids.join(',')+')',{method:'PATCH',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({read_at:new Date().toISOString()})});
+  await loadMyNotifs(); renderInboxPage();
+}
+async function setInboxWho(){
+  const names=(workers||[]).map(w=>w.name).filter(Boolean);
+  const pick=prompt('Whose inbox?\n\n'+names.map((n,i)=>(i+1)+'. '+n).join('\n')+'\n\nOr type a name:', inboxWho);
+  if(pick===null) return;
+  const n=parseInt(pick,10);
+  inboxWho=(n&&names[n-1])?names[n-1]:String(pick).trim();
+  localStorage.setItem('glint_inbox_who',inboxWho);
+  await loadMyNotifs(); renderInboxPage();
+}
+async function renderInboxPage(){
+  document.getElementById('content').innerHTML=
+    `<div class="page-head"><div><div class="page-title">Inbox</div>
+      <div class="page-sub">Alerts and messages for <strong>${esc(inboxWho)}</strong></div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="setInboxWho()">Switch person</button>
+        <button class="btn btn-sm" onclick="markAllRead()">Mark all read</button>
+      </div></div><div id="inbox-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
+  await loadMyNotifs();
+  const el=document.getElementById('inbox-body'); if(!el) return;
+  if(!myNotifs.length){
+    el.innerHTML='<div class="card"><div class="empty">Nothing here yet. Alerts arrive when the rules you set in Settings are triggered.</div></div>';
+    return;
+  }
+  el.innerHTML='<div class="card">'+myNotifs.map(n=>{
+    const unread=!n.read_at;
+    return `<div style="display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);${unread?'':'opacity:.6'}">
+      <div style="width:9px;height:9px;border-radius:50%;background:${unread?'var(--gold)':'transparent'};margin-top:6px;flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:${unread?'700':'600'};font-size:14px">${n.kind==='message'?'💬 ':'🔔 '}${esc(n.title||'')}</div>
+        ${n.body?`<div style="font-size:13px;color:var(--ink2);margin-top:3px;white-space:pre-wrap">${esc(n.body)}</div>`:''}
+        <div style="font-size:11.5px;color:var(--ink3);margin-top:4px">
+          ${n.item_desc?esc(n.item_desc)+' · ':''}${n.item_id?`<span class="clickable" onclick="navigate('${h('item',n.item_id).replace(/'/g,"\\'")}')">${esc(n.item_id)}</span> · `:''}${fmtDateFull(n.created_at)}
+        </div>
+      </div>
+      ${unread?`<button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="markNotifRead(${n.id})">Mark read</button>`:''}
+    </div>`;
+  }).join('')+'</div>';
+}
+
+// ===== RULES, in Settings =====
+async function ruleAdd(){
+  const ev=document.getElementById('rule-event').value;
+  const stage=document.getElementById('rule-stage').value.trim();
+  const who=document.getElementById('rule-who').value.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!who.length){ toast('Add at least one name'); return; }
+  const r=await sb('notify_rules',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({event:ev, stage:stage||null, recipients:who, active:true})});
+  if(r.ok){ toast('✅ Rule added'); await loadNotifyRules(); renderSettingsPage(); }
+  else toast('Could not add the rule');
+}
+async function ruleDelete(id){
+  if(!confirm('Remove this rule?')) return;
+  const r=await sb('notify_rules?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Removed'); await loadNotifyRules(); renderSettingsPage(); }
+}
+const RULE_EVENTS=[
+  {v:'hold',      l:'An item is put on hold'},
+  {v:'unhold',    l:'An item comes off hold'},
+  {v:'rework',    l:'An item is sent back for rework'},
+  {v:'stage',     l:'An item reaches a stage'},
+  {v:'packed',    l:'An item is packed into a box'},
+  {v:'delivered', l:'An item is delivered'}
+];
+function rulesSettingsHtml(){
+  return `<div class="card" style="max-width:640px">
+    <div class="card-label">Who gets told what</div>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">
+      Set it once and it happens on its own. Everyone named gets it in their Inbox — on the computer and on their phone.
+    </div>
+    ${notifyRules.length?notifyRules.map(r=>`
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc((RULE_EVENTS.find(e=>e.v===r.event)||{}).l||r.event)}${r.stage?' — '+esc(r.stage):''}</div>
+          <div style="font-size:11.5px;color:var(--ink3)">→ ${esc((r.recipients||[]).join(', '))}</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="ruleDelete(${r.id})">✕</button>
+      </div>`).join(''):'<div style="color:var(--ink3);font-style:italic;font-size:13px;padding:4px 0 10px">No rules yet</div>'}
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div class="row" style="flex-wrap:wrap;gap:8px">
+        <select id="rule-event" style="flex:2;min-width:190px">
+          ${RULE_EVENTS.map(e=>`<option value="${e.v}">${e.l}</option>`).join('')}
+        </select>
+        <input id="rule-stage" placeholder="Stage (only for 'reaches a stage')" style="flex:1;min-width:150px">
+      </div>
+      <div class="row" style="margin-top:8px;gap:8px">
+        <input id="rule-who" placeholder="Who to tell — names separated by commas" style="flex:1">
+        <button class="btn btn-sm" onclick="ruleAdd()">+ Add</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ========================================================================
+// INVENTORY COSTS — what you spend on supplies, and what it's for
+// ========================================================================
+// Costs only: log a purchase, tag it to a service. Nothing counts down, so there's
+// no stock figure to keep accurate. Feeds the profit picture on Production.
+let invRows=[];
+let invMonths=12;
+async function loadInventory(){
+  try{ const r=await sbList('inventory_costs?select=*&order=purchased.desc&limit=2000',2); invRows=Array.isArray(r)?r:[]; }
+  catch(e){ invRows=null; }
+}
+function invInWindow(){
+  const cut=new Date(); cut.setMonth(cut.getMonth()-invMonths);
+  return (invRows||[]).filter(r=>new Date(r.purchased||r.created_at)>=cut);
+}
+function money(v){ return '$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+
+async function renderInventoryPage(){
+  document.getElementById('content').innerHTML=
+    `<div class="page-head"><div><div class="page-title">Inventory Costs</div>
+      <div class="page-sub">What you spend on supplies, and which service it goes against</div></div>
+      <button class="btn btn-gold btn-sm" onclick="invAdd()">+ Add a purchase</button></div>
+     <div id="inv-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
+  await loadInventory();
+  drawInventory();
+}
+function drawInventory(){
+  const el=document.getElementById('inv-body'); if(!el) return;
+  if(invRows===null){
+    el.innerHTML='<div class="card"><div class="empty">The inventory table is not set up yet — run <strong>add-inventory.sql</strong> in Supabase.</div></div>';
+    return;
+  }
+  const rows=invInWindow();
+  const total=rows.reduce((a,r)=>a+(+r.amount||0),0);
+
+  // By service, biggest first
+  const byService={};
+  rows.forEach(r=>{ const k=r.service||'General'; byService[k]=(byService[k]||0)+(+r.amount||0); });
+  const services=Object.entries(byService).sort((a,b)=>b[1]-a[1]);
+
+  // By month, for the trend
+  const byMonth={};
+  rows.forEach(r=>{
+    const d=new Date(r.purchased||r.created_at);
+    const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    byMonth[k]=(byMonth[k]||0)+(+r.amount||0);
+  });
+  const months=Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?1:-1).slice(0,12);
+  const maxM=Math.max(...months.map(m=>m[1]),1);
+
+  el.innerHTML=`
+    <div class="stat-grid">
+      <div class="stat-tile" style="border-left:4px solid var(--gold)">
+        <div class="stat-num" style="font-size:26px">${money(total)}</div>
+        <div class="stat-label">Spent, last ${invMonths} months</div></div>
+      <div class="stat-tile">
+        <div class="stat-num" style="font-size:26px">${months.length?money(total/months.length):'$0'}</div>
+        <div class="stat-label">Average per month</div></div>
+      <div class="stat-tile">
+        <div class="stat-num" style="font-size:26px">${rows.length}</div>
+        <div class="stat-label">Purchases logged</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Where the money goes</div>
+      ${services.length?services.map(([s,v])=>`
+        <div style="padding:9px 0;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">
+            <span style="font-weight:600">${esc(s)}</span>
+            <span style="font-weight:700;color:var(--gold2)">${money(v)}</span>
+          </div>
+          <div style="height:6px;background:var(--surface2);border-radius:4px;margin-top:5px;overflow:hidden">
+            <div style="height:100%;width:${Math.round(v/total*100)}%;background:var(--gold)"></div>
+          </div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:3px">${Math.round(v/total*100)}% of spending</div>
+        </div>`).join(''):'<div class="empty">Nothing logged yet</div>'}
+    </div>
+
+    ${months.length>1?`<div class="card">
+      <div class="card-label">By month</div>
+      ${months.map(([m,v])=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:5px 0">
+          <span style="width:66px;font-size:12px;color:var(--ink3)">${m}</span>
+          <div style="flex:1;height:18px;background:var(--surface2);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${Math.round(v/maxM*100)}%;background:var(--accent,#4f46e5)"></div>
+          </div>
+          <span style="width:88px;text-align:right;font-size:12.5px;font-weight:600">${money(v)}</span>
+        </div>`).join('')}
+    </div>`:''}
+
+    <div class="card">
+      <div class="card-label">Every purchase</div>
+      ${rows.length?`<table><thead><tr><th>Date</th><th>Item</th><th>Service</th><th>Supplier</th><th>Amount</th><th></th></tr></thead><tbody>
+        ${rows.map(r=>`<tr>
+          <td style="color:var(--ink3);white-space:nowrap">${esc(String(r.purchased||'').slice(0,10))}</td>
+          <td style="font-weight:600">${esc(r.item_name)}${r.quantity?`<br><span style="font-size:11px;color:var(--ink3)">${esc(r.quantity)}</span>`:''}</td>
+          <td>${esc(r.service||'General')}</td>
+          <td style="color:var(--ink3)">${esc(r.supplier||'')}</td>
+          <td style="font-weight:700">${money(+r.amount||0)}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="invDelete(${r.id})">✕</button></td>
+        </tr>`).join('')}
+      </tbody></table>`:'<div class="empty">No purchases logged yet</div>'}
+    </div>`;
+}
+
+async function invAdd(){
+  const name=prompt('What did you buy?\n\ne.g. Lacquer, polishing compound, gloves');
+  if(name===null||!name.trim()) return;
+  const amtRaw=prompt('How much did it cost?\n\nJust the number, e.g. 340.50');
+  if(amtRaw===null) return;
+  const amount=parseFloat(String(amtRaw).replace(/[^0-9.]/g,''));
+  if(!amount||amount<=0){ toast('Enter a number for the cost'); return; }
+
+  const opts=['General'].concat(WORK_STAGES);
+  const pick=prompt('Which service is it for?\n\n'+opts.map((o,i)=>(i+1)+'. '+o).join('\n')+'\n\nType the number:','1');
+  if(pick===null) return;
+  const n=parseInt(pick,10);
+  const service=(n&&opts[n-1]&&opts[n-1]!=='General')?opts[n-1]:null;
+
+  const qty=prompt('How much of it? (optional)\n\ne.g. 5 gallons, 2 cases')||'';
+  const supplier=prompt('Supplier? (optional)')||'';
+
+  const r=await sb('inventory_costs',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_name:name.trim(), service, amount, quantity:qty.trim()||null,
+                         supplier:supplier.trim()||null, purchased:new Date().toISOString().slice(0,10)})});
+  if(r.ok){ toast('✅ Logged '+money(amount)); await loadInventory(); drawInventory(); }
+  else {
+    let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
+    toast('Could not save: '+(why||('HTTP '+r.status)));
+  }
+}
+async function invDelete(id){
+  if(!confirm('Remove this purchase?')) return;
+  const r=await sb('inventory_costs?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Removed'); await loadInventory(); drawInventory(); }
+  else toast('Could not remove it');
+}
+
+// ========================================================================
+// WEEKLY KPIs — Sunday to Friday
+// ========================================================================
+// Sales come straight from the ticket data we already hold. The other figures live in
+// RepairDesk reports the API doesn't expose, so those are entered or pasted each week.
+let kpiWeeks=[];
+function weekStartOf(d){
+  const x=new Date(d); x.setHours(0,0,0,0);
+  x.setDate(x.getDate()-x.getDay());          // back to Sunday
+  return x;
+}
+function weekKey(d){ return weekStartOf(d).toISOString().slice(0,10); }
+function weekLabel(iso){
+  const s=new Date(iso+'T00:00:00'), e=new Date(s); e.setDate(e.getDate()+5);   // Sun–Fri
+  const f=x=>x.toLocaleDateString([], {month:'short',day:'numeric'});
+  return f(s)+' – '+f(e);
+}
+async function loadKpiWeeks(){
+  try{ const r=await sbList('kpi_weeks?select=*&order=week_start.desc&limit=60',2); kpiWeeks=Array.isArray(r)?r:[]; }
+  catch(e){ kpiWeeks=null; }
+}
+// New sales per week from tickets, excluding anything still an estimate
+function kpiSalesByWeek(){
+  const out={};
+  (allTickets||[]).forEach(t=>{
+    const s=t.summary||{};
+    const status=String(s.status||s.ticket_status||'').toLowerCase();
+    if(status.includes('estimate')) return;                 // not a sale yet
+    const created=s.created_date||s.created_at||s.created||null;
+    if(!created) return;
+    const d=new Date(isNaN(created)?created:(+created*1000));
+    if(isNaN(d)) return;
+    const total=parseFloat(s.total||s.net_total||s.grand_total||0)||0;
+    if(!total) return;
+    const k=weekKey(d);
+    out[k]=(out[k]||0)+total;
+  });
+  return out;
+}
+async function renderKpiPage(){
+  document.getElementById('content').innerHTML=
+    `<div class="page-head"><div><div class="page-title">Weekly KPIs</div>
+      <div class="page-sub">Sunday to Friday. Sales come from your tickets; the rest from the three RepairDesk reports.</div></div>
+      <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter this week's figures</button></div>
+     <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
+  await ensureTicketsLoaded();
+  await loadKpiWeeks();
+  drawKpi();
+}
+function drawKpi(){
+  const el=document.getElementById('kpi-body'); if(!el) return;
+  if(kpiWeeks===null){
+    el.innerHTML='<div class="card"><div class="empty">The KPI table is not set up yet — run <strong>add-kpi.sql</strong> in Supabase.</div></div>';
+    return;
+  }
+  const sales=kpiSalesByWeek();
+  // Every week we have either sales or entered figures for
+  const keys=[...new Set([...Object.keys(sales), ...kpiWeeks.map(w=>w.week_start)])].sort().reverse().slice(0,12);
+  const byKey={}; kpiWeeks.forEach(w=>byKey[w.week_start]=w);
+
+  const rows=keys.map(k=>{
+    const w=byKey[k]||{};
+    const pay=+w.payments||0, tax=+w.sales_tax||0, fees=+w.cc_fees||0;
+    return {k, sales:sales[k]||0, pay, tax, fees, net:pay-tax-fees, entered:!!byKey[k]};
+  });
+  const cur=rows[0]||{}, prev=rows[1]||{};
+  const delta=(a,b)=>{ if(!b) return ''; const p=(a-b)/b*100;
+    return `<span style="font-size:11.5px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span>`; };
+
+  el.innerHTML=`
+    <div class="stat-grid">
+      <div class="stat-tile" style="border-left:4px solid var(--gold)">
+        <div class="stat-num" style="font-size:24px">${money(cur.sales||0)}</div>
+        <div class="stat-label">New sales ${delta(cur.sales||0, prev.sales||0)}</div></div>
+      <div class="stat-tile">
+        <div class="stat-num" style="font-size:24px">${money(cur.pay||0)}</div>
+        <div class="stat-label">Payments taken ${delta(cur.pay||0, prev.pay||0)}</div></div>
+      <div class="stat-tile">
+        <div class="stat-num" style="font-size:24px">${money(cur.tax||0)}</div>
+        <div class="stat-label">Sales tax collected</div></div>
+      <div class="stat-tile">
+        <div class="stat-num" style="font-size:24px;color:var(--orange)">${money(cur.fees||0)}</div>
+        <div class="stat-label">Card fees paid</div></div>
+      <div class="stat-tile" style="border-left:4px solid var(--green)">
+        <div class="stat-num" style="font-size:24px;color:var(--green)">${money(cur.net||0)}</div>
+        <div class="stat-label">Net ${delta(cur.net||0, prev.net||0)}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Week by week <span style="font-weight:600;text-transform:none;color:var(--ink3)">— Sunday to Friday</span></div>
+      <table><thead><tr>
+        <th>Week</th><th>New sales</th><th>Payments</th><th>Sales tax</th><th>Card fees</th><th>Net</th><th></th>
+      </tr></thead><tbody>
+      ${rows.map(r=>`<tr>
+        <td style="font-weight:600;white-space:nowrap">${weekLabel(r.k)}</td>
+        <td style="font-weight:600">${money(r.sales)}</td>
+        <td>${r.entered?money(r.pay):'<span style="color:var(--ink3)">—</span>'}</td>
+        <td>${r.entered?money(r.tax):'<span style="color:var(--ink3)">—</span>'}</td>
+        <td style="color:${r.fees?'var(--orange)':'var(--ink3)'}">${r.entered?money(r.fees):'—'}</td>
+        <td style="font-weight:700;color:${r.net?'var(--green)':'var(--ink3)'}">${r.entered?money(r.net):'—'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="kpiEnter('${r.k}')">${r.entered?'Edit':'Enter'}</button></td>
+      </tr>`).join('')}
+      </tbody></table>
+      <div style="font-size:12px;color:var(--ink3);margin-top:10px;line-height:1.7">
+        <strong>New sales</strong> is worked out from your tickets, with estimates left out.<br>
+        <strong>Payments</strong> from the transaction log · <strong>Sales tax</strong> from the tax report · <strong>Card fees</strong> from the batch report.<br>
+        <strong>Net</strong> = payments − sales tax − card fees.
+      </div>
+    </div>`;
+}
+async function kpiEnter(which){
+  const key=which||weekKey(new Date());
+  const existing=kpiWeeks.find(w=>w.week_start===key)||{};
+  const ask=(label,cur)=>{
+    const v=prompt(label+'\n\nWeek of '+weekLabel(key)+'\n\nJust the number.', cur!=null?String(cur):'');
+    if(v===null) return null;
+    return parseFloat(String(v).replace(/[^0-9.\-]/g,''))||0;
+  };
+  const payments=ask('Payments processed — total from the transaction log', existing.payments);
+  if(payments===null) return;
+  const tax=ask('Sales tax collected — from the tax report', existing.sales_tax);
+  if(tax===null) return;
+  const fees=ask('Card fees paid — from the batch report', existing.cc_fees);
+  if(fees===null) return;
+
+  const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({week_start:key, payments, sales_tax:tax, cc_fees:fees, updated_at:new Date().toISOString()})});
+  if(r.ok){ toast('✅ Saved — net '+money(payments-tax-fees)); await loadKpiWeeks(); drawKpi(); }
+  else {
+    let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
+    toast('Could not save: '+(why||('HTTP '+r.status)));
+  }
+}
+
+// ========================================================================
+// FINDING OUT IF WE CAN WRITE NOTES TO REPAIRDESK
+// ========================================================================
+// Scanovator's driver notes appear on RepairDesk tickets, so something out there can
+// write to them. Their public docs only describe reading, so rather than wait on
+// support this tries the endpoints most likely to exist and reports what each says.
+const RD_NOTE_ATTEMPTS=[
+  {path:'tickets/{id}/notes',   method:'POST', payload:t=>({note:t, type:'diagnostic'})},
+  {path:'tickets/{id}/note',    method:'POST', payload:t=>({note:t})},
+  {path:'notes',                method:'POST', payload:(t,id)=>({ticket_id:id, note:t})},
+  {path:'ticket/notes',         method:'POST', payload:(t,id)=>({ticket_id:id, note:t})},
+  {path:'tickets/{id}/comment', method:'POST', payload:t=>({comment:t})},
+  {path:'tickets/{id}',         method:'PUT',  payload:t=>({note:t})},
+  {path:'tickets/{id}',         method:'PATCH',payload:t=>({diagnostic_notes:t})}
+];
+async function probeRepairDeskWrite(){
+  const el=document.getElementById('rd-probe-result');
+  const oid=(document.getElementById('rd-probe-ticket')||{}).value||'';
+  if(!oid.trim()){ toast('Enter a ticket number first'); return; }
+  el.innerHTML='<div style="color:var(--ink3);font-size:13px">Working through the possibilities…</div>';
+
+  let tid=null;
+  try{ tid=await resolveTicketId(oid.trim().toUpperCase()); }catch(e){}
+  if(!tid){ el.innerHTML='<div style="color:var(--red);font-size:13px">Could not find '+esc(oid)+' in RepairDesk.</div>'; return; }
+
+  const text='Test note from Glint Control Room — please ignore. '+new Date().toLocaleString();
+  const lines=[];
+  for(const a of RD_NOTE_ATTEMPTS){
+    const path=a.path.replace('{id}', tid);
+    let res;
+    try{
+      const r=await edgeCall({action:'repairdesk_write', path, method:a.method, payload:a.payload(text, tid)});
+      res=await r.json();
+    }catch(e){ res={status:0, ok:false, body:String(e.message||e)}; }
+
+    const worked=res.ok && res.status>=200 && res.status<300;
+    lines.push(`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+      <span style="font-family:monospace;flex:1;min-width:0">${a.method} ${esc(path)}</span>
+      <strong style="color:${worked?'var(--green)':(res.status===404?'var(--ink3)':'var(--orange)')};white-space:nowrap">
+        ${worked?'✓ WORKED':(res.status||'failed')}</strong></div>
+      ${res.body&&!worked?`<div style="font-size:11px;color:var(--ink3);padding-bottom:6px;font-family:monospace;word-break:break-all">${esc(String(res.body).slice(0,180))}</div>`:''}`);
+    el.innerHTML='<div>'+lines.join('')+'</div>';
+    await new Promise(r=>setTimeout(r,400));   // don't hammer their API
+  }
+
+  const anyWorked=lines.some(l=>l.includes('✓ WORKED'));
+  el.innerHTML='<div>'+lines.join('')+'</div>'+
+    (anyWorked
+      ? `<div style="background:var(--green);color:#fff;border-radius:9px;padding:11px 13px;margin-top:10px;font-size:13px">
+          <strong>One of them worked.</strong> Open ${esc(oid)} in RepairDesk and check the test note actually appeared — a 200 doesn't always mean it saved. If it's there, tell me which line succeeded and I'll wire notes through properly.</div>`
+      : `<div style="background:var(--orange-soft);color:var(--orange);border-radius:9px;padding:11px 13px;margin-top:10px;font-size:13px">
+          <strong>None of the obvious endpoints accepted a note.</strong> That points to Scanovator using a private integration rather than the public API. Worth asking RepairDesk directly — mention that Scanovator writes driver notes to your tickets and ask how.</div>`);
+}
+function rdProbeSettingsHtml(){
+  return `<div class="card" style="max-width:640px">
+    <div class="card-label">Can we write notes back to RepairDesk?</div>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">
+      Scanovator's driver notes land on your RepairDesk tickets, so a way in exists — their public documentation just doesn't describe one.
+      This tries the likely endpoints against a real ticket and shows what each returns. It writes a note clearly marked as a test.
+    </div>
+    <div class="row">
+      <div class="field"><input id="rd-probe-ticket" placeholder="A ticket to test on, e.g. T-1103"></div>
+      <button class="btn btn-sm" onclick="probeRepairDeskWrite()">Try it</button>
+    </div>
+    <div id="rd-probe-result" style="margin-top:10px"></div>
+  </div>`;
+}
+
 async function renderProductionPage(){
+  if(typeof invRows==='undefined'||invRows===null||!invRows.length){ try{ await loadInventory(); }catch(e){} }
 
   prodValueCache={}; prodValueSrc={}; _unitsIdx=null;
   document.getElementById('content').innerHTML='<div class="card"><div class="empty">Loading production data…</div></div>';
@@ -5644,6 +6181,30 @@ function renderInsightsBody(){
     itemTypeAgg[type].ms+=s.ms; itemTypeAgg[type].count++;
   });
   const itemRows=Object.entries(itemTypeAgg).map(([t,d])=>({type:t,avg:d.ms/d.count,total:d.ms,count:d.count})).sort((a,b)=>b.avg-a.avg);
+  // Supplies set against the work finished in the same period — revenue alone hides this
+  html+=(function(){
+    try{
+      if(!Array.isArray(invRows)||!invRows.length) return '';
+      const from=new Date(); from.setMonth(from.getMonth()-1);
+      const supplies=invRows.filter(r=>new Date(r.purchased||r.created_at)>=from)
+                            .reduce((a,r)=>a+(+r.amount||0),0);
+      if(!supplies) return '';
+      const pct=totalValue?supplies/totalValue*100:0;
+      return `<div class="card">
+        <div class="card-label">Supplies against work finished <span style="font-weight:600;text-transform:none;color:var(--ink3)">— last 30 days</span></div>
+        <div style="display:flex;gap:26px;flex-wrap:wrap;margin-top:4px">
+          <div><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">Work finished</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:22px;font-weight:800">${money(totalValue)}</div></div>
+          <div><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">Supplies bought</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:22px;font-weight:800;color:var(--orange)">${money(supplies)}</div></div>
+          <div><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">Supplies as a share</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:22px;font-weight:800">${pct.toFixed(1)}%</div></div>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">Purchases don't line up exactly with the work they're used on, so treat this as a trend rather than an exact margin.</div>
+      </div>`;
+    }catch(e){ return ''; }
+  })();
+
   html+=`<div class="card">
     <div class="card-label">Items That Take Longest <span style="font-weight:600;text-transform:none;color:var(--ink3)">— average time per work session, by item type</span></div>
     <div style="overflow-x:auto"><table><thead><tr><th>Item Type</th><th>Avg per Session</th><th>Total Time</th><th>Sessions</th></tr></thead><tbody>
@@ -5811,7 +6372,15 @@ async function renderOrderDetailPage(oid){
         const shown=due||(info?fmtDue(info.date):'');
         return '<br>Due: <strong>'+(shown?esc(shown):'not set')+'</strong>'
           + (info?' <span style="color:var(--ink3);font-size:11.5px">('+esc(info.src)+')</span>':'')
-          + ' <button class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:11px;margin-left:6px" onclick="setDueDate(\''+jsstr(oid)+'\')">✏️ Edit</button>';
+          + ' <button class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:11px;margin-left:6px" onclick="setDueDate(\''+jsstr(oid)+'\')">✏️ Edit</button>'
+          + (function(){
+              // Scanovator sends back a photo from the pickup or the drop-off — proof of
+              // what went out and what came back. We already store it; now it's visible.
+              const m=scanovMeta[oid];
+              if(!m||!m.receipt) return '';
+              return '<br><a href="'+esc(m.receipt)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:12.5px;font-weight:700;padding:6px 12px;border-radius:20px;text-decoration:none;margin-top:6px">📷 Courier photo'
+                + (m.driver?' — '+esc(m.driver):'') + (m.when?' · '+fmtDate(m.when):'') + '</a>';
+            })();
       })()}</div></div>`;
   }
 
@@ -6113,6 +6682,23 @@ async function renderItemDetailPage(itemId){
           <button class="btn btn-gold btn-sm" onclick="addItemNote('${jsstr(itemId)}')">Add note</button>
         </div>`
       + '</div>';
+
+    // Conversation — type @name to send it to someone's inbox
+    let msgs=[];
+    try{ msgs=await sb('item_messages?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.asc&limit=100'); }catch(e){}
+    notesHtml+=`<div class="card">
+      <div class="card-label">💬 Conversation${Array.isArray(msgs)&&msgs.length?' ('+msgs.length+')':''}</div>
+      <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">Type <strong>@name</strong> to send it straight to that person's inbox.</div>
+      ${(Array.isArray(msgs)?msgs:[]).map(m=>`
+        <div style="padding:9px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:13.5px;white-space:pre-wrap">${esc(m.body).replace(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*)/g,'<strong style="color:var(--gold2)">@$1</strong>')}</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:3px">${esc(m.author)} · ${fmtDateFull(m.created_at)}</div>
+        </div>`).join('')||'<div style="color:var(--ink3);font-style:italic;font-size:13px;padding:4px 0 8px">No messages yet</div>'}
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-top:10px">
+        <textarea id="msg-input" rows="2" placeholder="Write a message — @Rowena can you check this one" style="flex:1;resize:vertical"></textarea>
+        <button class="btn btn-gold btn-sm" onclick="sendItemMessage('${jsstr(itemId)}','${jsstr(name||'')}')">Send</button>
+      </div>
+    </div>`;
   }catch(err){ notesErr=(err&&err.message)||String(err); }
 
   let photosHtml='', photosErr='';
@@ -6214,6 +6800,14 @@ async function quickNote(itemId, name){
   else toast('Could not save the note');
 }
 // Notes written here appear on the workers' phones when they scan the piece
+async function sendItemMessage(itemId, desc){
+  const el=document.getElementById('msg-input');
+  const body=(el&&el.value||'').trim();
+  if(!body){ toast('Type a message first'); return; }
+  const r=await postItemMessage(itemId, body, inboxWho||'Office', desc);
+  if(r&&r.ok){ if(el) el.value=''; toast('💬 Sent'); renderItemDetailPage(itemId); }
+  else toast('Could not send');
+}
 async function addItemNote(itemId){
   const el=document.getElementById('note-input');
   const note=(el&&el.value||'').trim();
@@ -6659,6 +7253,10 @@ async function renderSettingsPage(){
   }catch(e){}
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
+    ${rulesSettingsHtml()}
+
+    ${rdProbeSettingsHtml()}
+
     <div class="card" style="max-width:640px">
       <div class="card-label">On-Hold Places</div>
       <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">When a piece leaves the shop, you pick where it went. Keep this list matching the places you actually send work.</div>
