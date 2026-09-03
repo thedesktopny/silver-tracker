@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-j</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-k</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-j';
+const APP_VERSION='2026-08-13-k';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5702,7 +5702,8 @@ async function renderKpiPage(){
     `<div class="page-head"><div><div class="page-title">Weekly KPIs</div>
       <div class="page-sub">Sunday to Friday. Sales come from your tickets; the rest from the three RepairDesk reports.</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments from RepairDesk</button>
+        <button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments</button>
+        <button class="btn btn-sm" onclick="kpiPullTax()">↓ Pull tax</button>
         <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter tax &amp; fees</button>
       </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
@@ -5792,6 +5793,51 @@ async function kpiFetchPayments(weekKeyStr){
     rows.forEach(r=>{ const k=r.payment_method||'Other'; byMethod[k]=(byMethod[k]||0)+money2(r.amount); });
     return {ok:true, total, rows:rows.length, byMethod};
   }catch(e){ return {ok:false, why:e.message||String(e)}; }
+}
+// Tax comes from each invoice's total_tax. Note this is filtered by the date the
+// invoice was RAISED, not when it was paid — RepairDesk offers no payment-date filter
+// for invoices — so it won't reconcile exactly with the cash-basis payments figure.
+async function kpiFetchTax(weekKeyStr){
+  const start=new Date(weekKeyStr+'T00:00:00');
+  const end=new Date(start); end.setDate(end.getDate()+6);
+  const from=Math.floor(start.getTime()/1000);
+  const to=Math.floor(end.getTime()/1000)-1;
+  const money2=s=>parseFloat(String(s||'').replace(/[^0-9.\-]/g,''))||0;
+  let tax=0, count=0, page=1, pages=1;
+  try{
+    do{
+      const d=await fetchRD('invoices?from_date='+from+'&to_date='+to+'&page='+page+'&pagesize=50');
+      const data=(d&&d.data)||{};
+      const list=data.invoiceData||[];
+      list.forEach(inv=>{
+        const s=inv.summary||{};
+        tax+=money2(s.total_tax);
+        count++;
+      });
+      const pg=data.pagination||{};
+      pages=parseInt(pg.total_pages,10)||1;
+      page++;
+      if(page>20) break;                       // don't run away on a huge week
+    } while(page<=pages);
+    return {ok:true, tax, count};
+  }catch(e){ return {ok:false, why:e.message||String(e)}; }
+}
+async function kpiPullTax(which){
+  const key=which||weekKey(new Date());
+  toast('Adding up the tax on the invoices…');
+  const res=await kpiFetchTax(key);
+  if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
+  if(!confirm('Week of '+weekLabel(key)+'\n\nTax on invoices raised: '+money(res.tax)+
+              '\nAcross '+res.count+' invoices\n\n'+
+              'Note: this counts invoices RAISED this week, not payments taken this week, '+
+              'so it will not match your tax report exactly.\n\nSave it anyway?')) return;
+  const existing=kpiWeeks.find(w=>w.week_start===key)||{};
+  const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({week_start:key, payments:existing.payments||null, sales_tax:res.tax,
+      cc_fees:existing.cc_fees||null, updated_at:new Date().toISOString()})});
+  if(r.ok){ toast('✅ Tax saved'); await loadKpiWeeks(); drawKpi(); }
+  else toast('Could not save');
 }
 async function kpiPullPayments(which){
   const key=which||weekKey(new Date());
