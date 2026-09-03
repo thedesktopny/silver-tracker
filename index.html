@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-12-e</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-13-a</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -237,6 +237,8 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
     <div style="font-size:12.5px;color:var(--ink2);margin-bottom:10px">👇 Tap one to start — you can't scan until you do.</div>
     <div class="worker-row" id="role-row"></div>
   </div>
+
+  <div class="card" id="worker-inbox" style="display:none;border-left:4px solid var(--gold)"></div>
 
   <div class="card" id="work-next" style="display:none;border-left:4px solid var(--red)"></div>
 
@@ -1386,6 +1388,8 @@ async function syncActiveWorkFromServer(){
 }
 
 function activateWorkerOnDevice(w) {
+  // Messages should arrive as soon as someone logs in, not only once they pick a role
+  setTimeout(function(){ if(typeof loadWorkerInbox==="function") loadWorkerInbox(); }, 300);
   selectedWorker = w;
   selectedRole = null;
   document.getElementById('login-card').style.display = 'none';
@@ -1435,6 +1439,8 @@ function selectRole(role) {
   renderActiveWork();
   renderOpenSessions();
   loadWorkPriority();
+  loadWorkerInbox();
+  if(!window._inboxTimer) window._inboxTimer=setInterval(loadWorkerInbox, 120000);
   if (activeWork) startActiveWorkTimer();
   syncActiveWorkFromServer();
   setTimeout(() => document.getElementById('scan-input').focus(), 150);
@@ -2017,20 +2023,65 @@ async function runSpeedTest(){
   }
 }
 
+
+// ===== INBOX ON THE PHONE =====
+// The same notifications the office sees, filtered to this worker.
+let wNotifs=[], wUnread=0;
+async function loadWorkerInbox(){
+  if(!selectedWorker) return;
+  try{
+    const r=await fetch(SUPABASE_URL+'/rest/v1/notifications?recipient=eq.'+
+      encodeURIComponent(selectedWorker.name)+'&select=*&order=created_at.desc&limit=60',
+      {headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY}});
+    const j=await r.json();
+    wNotifs=Array.isArray(j)?j:[];
+    wUnread=wNotifs.filter(n=>!n.read_at).length;
+  }catch(e){ wNotifs=[]; wUnread=0; }
+  renderWorkerInbox();
+}
+async function markWorkerNotifRead(id){
+  try{
+    await fetch(SUPABASE_URL+'/rest/v1/notifications?id=eq.'+id,{method:'PATCH',
+      headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({read_at:new Date().toISOString()})});
+  }catch(e){}
+  loadWorkerInbox();
+}
+function renderWorkerInbox(){
+  const el=document.getElementById('worker-inbox');
+  if(!el) return;
+  if(!selectedWorker || !wNotifs.length){ el.style.display='none'; return; }
+  el.style.display='block';
+  const unread=wNotifs.filter(n=>!n.read_at);
+  const show=unread.length?unread:wNotifs.slice(0,3);
+  el.innerHTML='<div class="card-label">'+(unread.length?'🔔 ':'📬 ')+t('inbox')+
+      (unread.length?' ('+unread.length+')':'')+'</div>'+
+    show.slice(0,6).map(function(n){
+      return '<div style="padding:9px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:13.5px;font-weight:'+(n.read_at?'600':'700')+'">'+
+          (n.kind==='message'?'💬 ':'🔔 ')+esc2(n.title||'')+'</div>'+
+        (n.body?'<div style="font-size:12.5px;color:var(--ink2);margin-top:2px;white-space:pre-wrap">'+esc2(n.body)+'</div>':'')+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">'+
+          '<span style="font-size:11px;color:var(--ink3)">'+(n.item_desc?esc2(n.item_desc)+' · ':'')+esc2(n.item_id||'')+'</span>'+
+          (n.read_at?'':'<button class="gen-btn" style="font-size:10.5px;padding:4px 10px" onclick="markWorkerNotifRead('+n.id+')">'+t('markRead')+'</button>')+
+        '</div></div>';
+    }).join('');
+}
+
 // ===== LANGUAGES =====
 const LANGS={en:'English', es:'Español', he:'עברית'};
 const STRINGS={
-  en:{ workNext:'🎯 Work on these first', packing:'Packing', packHint:'Scan the first piece and a new box opens automatically.', box:'Box', piecesInBox:'pieces in this box', closeBox:'Close this box', closeBoxConfirm:'Close box %n with %c pieces?', boxOpened:'Opened box', addedToBox:'Added to box', boxClosed:'Box %n closed — %c pieces moved to Packed', boxEmpty:'Scan a piece into the box first', boxCreateFail:'Could not open the box', boxAddFail:'Could not add to the box', boxCloseFail:'Could not close the box', wrongOrder:'Different order', wrongOrderBody:'This box is for %box but that piece belongs to %item. Close this box first, or scan a piece from %box.', alreadyPacked:'Already packed', alreadyPackedBody:'That piece is already in %box.', lvlUrgent:'Urgent', lvlSoon:'Soon', lvlNormal:'No rush', workNextHint:'Everything on your bench, most pressing first, orders nearly finished, and pieces waiting longest.',
+  en:{ workNext:'🎯 Work on these first', inbox:'Your messages', markRead:'Got it', packing:'Packing', packHint:'Scan the first piece and a new box opens automatically.', box:'Box', piecesInBox:'pieces in this box', closeBox:'Close this box', closeBoxConfirm:'Close box %n with %c pieces?', boxOpened:'Opened box', addedToBox:'Added to box', boxClosed:'Box %n closed — %c pieces moved to Packed', boxEmpty:'Scan a piece into the box first', boxCreateFail:'Could not open the box', boxAddFail:'Could not add to the box', boxCloseFail:'Could not close the box', wrongOrder:'Different order', wrongOrderBody:'This box is for %box but that piece belongs to %item. Close this box first, or scan a piece from %box.', alreadyPacked:'Already packed', alreadyPackedBody:'That piece is already in %box.', lvlUrgent:'Urgent', lvlSoon:'Soon', lvlNormal:'No rush', workNextHint:'Everything on your bench, most pressing first, orders nearly finished, and pieces waiting longest.',
        language:'Language', settings:'Settings', scanItem:'Scan item', chooseRole:'What are you doing now?',
        chooseRoleHint:'👇 Tap one to start — you can\'t scan until you do.', loggedInAs:'Logged in as', logOut:'Log out',
        useCamera:'📷 Use the camera to scan', recentScans:'Your recent scans', noScans:'No scans in this session yet.',
        enter:'Enter', addPhoto:'📸 Photo', addVideo:'🎥 Video', stillRunning:'⏱️ Still running', stop:'Stop' , checkItem:"Check an item — don't start work", lookupOn:'🔍 Scan a label to look it up', lookupWaiting:'Waiting for a scan…', checkResult:'Item details', notes:'Notes', noNotes:'No notes on this piece.', customer:'Customer', area:'Area', due:'Due', services:'Services', alreadyDone:'Already done', lastActivity:'Last activity', photos:'Photos', videos:'Videos', noPriorityYet:'No list has been sent from the office yet.', nothingWaiting:'Nothing waiting for this step right now.', roleNoStage:'%s is not one of the pipeline steps, so there is no list for it.', stagesKnown:'Lists exist for', refresh:'↻ Refresh', ghostWarn:'This has been running far too long — it is probably left over from before.', ghostClear:'Close it', ghostConfirm:'Close this leftover timer?', ghostCleared:'Leftover timer closed', close:'Close', topPriority:'This is the top one to do', highPriority:'Good — this is near the top of the list', notPriority:'Not on the priority list. Suggested first'},
-  es:{ workNext:'🎯 Trabaja primero en estos', packing:'Embalaje', packHint:'Escanea la primera pieza y se abre una caja nueva.', box:'Caja', piecesInBox:'piezas en esta caja', closeBox:'Cerrar esta caja', closeBoxConfirm:'¿Cerrar la caja %n con %c piezas?', boxOpened:'Caja abierta', addedToBox:'Añadido a la caja', boxClosed:'Caja %n cerrada — %c piezas pasaron a Embalado', boxEmpty:'Escanea una pieza primero', boxCreateFail:'No se pudo abrir la caja', boxAddFail:'No se pudo añadir a la caja', boxCloseFail:'No se pudo cerrar la caja', wrongOrder:'Pedido distinto', wrongOrderBody:'Esta caja es de %box pero esa pieza es de %item. Cierra esta caja primero.', alreadyPacked:'Ya está embalada', alreadyPackedBody:'Esa pieza ya está en %box.', lvlUrgent:'Urgente', lvlSoon:'Pronto', lvlNormal:'Sin prisa', workNextHint:'Todo lo que tienes, lo más urgente primero de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
+  es:{ workNext:'🎯 Trabaja primero en estos', inbox:'Tus mensajes', markRead:'Entendido', packing:'Embalaje', packHint:'Escanea la primera pieza y se abre una caja nueva.', box:'Caja', piecesInBox:'piezas en esta caja', closeBox:'Cerrar esta caja', closeBoxConfirm:'¿Cerrar la caja %n con %c piezas?', boxOpened:'Caja abierta', addedToBox:'Añadido a la caja', boxClosed:'Caja %n cerrada — %c piezas pasaron a Embalado', boxEmpty:'Escanea una pieza primero', boxCreateFail:'No se pudo abrir la caja', boxAddFail:'No se pudo añadir a la caja', boxCloseFail:'No se pudo cerrar la caja', wrongOrder:'Pedido distinto', wrongOrderBody:'Esta caja es de %box pero esa pieza es de %item. Cierra esta caja primero.', alreadyPacked:'Ya está embalada', alreadyPackedBody:'Esa pieza ya está en %box.', lvlUrgent:'Urgente', lvlSoon:'Pronto', lvlNormal:'Sin prisa', workNextHint:'Todo lo que tienes, lo más urgente primero de entrega, pedidos casi terminados y piezas que llevan más tiempo esperando.',
        language:'Idioma', settings:'Ajustes', scanItem:'Escanear artículo', chooseRole:'¿Qué estás haciendo ahora?',
        chooseRoleHint:'👇 Toca uno para empezar; no podrás escanear hasta que lo hagas.', loggedInAs:'Sesión iniciada como', logOut:'Finalizar la sesión',
        useCamera:'📷 Usa la cámara para escanear', recentScans:'Tus escaneos recientes', noScans:'Aún no hay escaneos en esta sesión.',
        enter:'Ingresar', addPhoto:'📸 Foto', addVideo:'🎥 Video', stillRunning:'⏱️ Aún en marcha', stop:'Detener' , checkItem:'Consultar un artículo — sin empezar a trabajar', lookupOn:'🔍 Escanea una etiqueta para consultarla', lookupWaiting:'Esperando un escaneo…', checkResult:'Detalles del artículo', notes:'Notas', noNotes:'Esta pieza no tiene notas.', customer:'Cliente', area:'Zona', due:'Entrega', services:'Servicios', alreadyDone:'Ya hecho', lastActivity:'Última actividad', photos:'Fotos', videos:'Videos', noPriorityYet:'La oficina aún no ha enviado ninguna lista.', nothingWaiting:'Ahora mismo no hay nada esperando en este paso.', roleNoStage:'%s no es uno de los pasos del proceso, así que no hay lista.', stagesKnown:'Hay listas para', refresh:'↻ Actualizar', ghostWarn:'Esto lleva demasiado tiempo en marcha — probablemente quedó de antes.', ghostClear:'Cerrarlo', ghostConfirm:'¿Cerrar este temporizador olvidado?', ghostCleared:'Temporizador cerrado', close:'Cerrar', topPriority:'Esta es la primera que hay que hacer', highPriority:'Bien — está entre las primeras de la lista', notPriority:'No está en la lista de prioridad. Se sugiere primero'},
-  he:{ workNext:'🎯 עבדו קודם על אלה', packing:'אריזה', packHint:'סרקו את הפריט הראשון ותיפתח קופסה חדשה.', box:'קופסה', piecesInBox:'פריטים בקופסה', closeBox:'סגירת הקופסה', closeBoxConfirm:'לסגור קופסה %n עם %c פריטים?', boxOpened:'נפתחה קופסה', addedToBox:'נוסף לקופסה', boxClosed:'קופסה %n נסגרה — %c פריטים עברו לארוז', boxEmpty:'סרקו פריט קודם', boxCreateFail:'לא ניתן לפתוח קופסה', boxAddFail:'לא ניתן להוסיף לקופסה', boxCloseFail:'לא ניתן לסגור את הקופסה', wrongOrder:'הזמנה אחרת', wrongOrderBody:'הקופסה הזו של %box אבל הפריט שייך ל־%item. סגרו קודם את הקופסה.', alreadyPacked:'כבר ארוז', alreadyPackedBody:'הפריט כבר נמצא ב־%box.', lvlUrgent:'דחוף', lvlSoon:'בקרוב', lvlNormal:'ללא לחץ', workNextHint:'כל מה שאצלך, הדחוף ביותר קודם, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
+  he:{ workNext:'🎯 עבדו קודם על אלה', inbox:'ההודעות שלך', markRead:'הבנתי', packing:'אריזה', packHint:'סרקו את הפריט הראשון ותיפתח קופסה חדשה.', box:'קופסה', piecesInBox:'פריטים בקופסה', closeBox:'סגירת הקופסה', closeBoxConfirm:'לסגור קופסה %n עם %c פריטים?', boxOpened:'נפתחה קופסה', addedToBox:'נוסף לקופסה', boxClosed:'קופסה %n נסגרה — %c פריטים עברו לארוז', boxEmpty:'סרקו פריט קודם', boxCreateFail:'לא ניתן לפתוח קופסה', boxAddFail:'לא ניתן להוסיף לקופסה', boxCloseFail:'לא ניתן לסגור את הקופסה', wrongOrder:'הזמנה אחרת', wrongOrderBody:'הקופסה הזו של %box אבל הפריט שייך ל־%item. סגרו קודם את הקופסה.', alreadyPacked:'כבר ארוז', alreadyPackedBody:'הפריט כבר נמצא ב־%box.', lvlUrgent:'דחוף', lvlSoon:'בקרוב', lvlNormal:'ללא לחץ', workNextHint:'כל מה שאצלך, הדחוף ביותר קודם, הזמנות שכמעט הושלמו, ופריטים שממתינים הכי הרבה זמן.',
        language:'שפה', settings:'הגדרות', scanItem:'סריקת פריט', chooseRole:'מה אתה עושה עכשיו?',
        chooseRoleHint:'👇 הקישו על אחד כדי להתחיל — אי אפשר לסרוק לפני כן.', loggedInAs:'מחובר בתור', logOut:'התנתקות',
        useCamera:'📷 השתמשו במצלמה לסריקה', recentScans:'הסריקות האחרונות שלך', noScans:'אין עדיין סריקות בפעילות הזו.',
