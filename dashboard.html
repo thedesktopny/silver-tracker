@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-e</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-f</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-e';
+const APP_VERSION='2026-08-13-f';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5818,10 +5818,17 @@ async function probeRepairDeskWrite(){
   try{ tid=await resolveTicketId(oid.trim().toUpperCase()); }catch(e){}
   if(!tid){ el.innerHTML='<div style="color:var(--red);font-size:13px">Could not find '+esc(oid)+' in RepairDesk.</div>'; return; }
 
-  const text='Test note from Glint Control Room — please ignore. '+new Date().toLocaleString();
+  // RepairDesk returns 200 for endpoints that don't exist, so the status tells us
+  // nothing. Each attempt gets its own marker, and afterwards we re-read the ticket
+  // and see which markers actually landed. That is the only trustworthy test.
+  const stamp=Date.now();
   const lines=[];
-  for(const a of RD_NOTE_ATTEMPTS){
+  const markers={};
+  for(let i=0;i<RD_NOTE_ATTEMPTS.length;i++){
+    const a=RD_NOTE_ATTEMPTS[i];
     const path=a.path.replace('{id}', tid);
+    const text='GLINTTEST'+stamp+'-'+i+' please ignore';
+    markers[i]={text, label:a.method+' '+path};
     let res;
     try{
       const r=await edgeCall({action:'repairdesk_write', path, method:a.method, payload:a.payload(text, tid)});
@@ -5831,20 +5838,36 @@ async function probeRepairDeskWrite(){
     const worked=res.ok && res.status>=200 && res.status<300;
     lines.push(`<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px">
       <span style="font-family:monospace;flex:1;min-width:0">${a.method} ${esc(path)}</span>
-      <strong style="color:${worked?'var(--green)':(res.status===404?'var(--ink3)':'var(--orange)')};white-space:nowrap">
-        ${worked?'✓ WORKED':(res.status||'failed')}</strong></div>
+      <strong style="color:var(--ink3);white-space:nowrap">${res.status||'failed'}</strong></div>
       ${res.body&&!worked?`<div style="font-size:11px;color:var(--ink3);padding-bottom:6px;font-family:monospace;word-break:break-all">${esc(String(res.body).slice(0,180))}</div>`:''}`);
     el.innerHTML='<div>'+lines.join('')+'</div>';
     await new Promise(r=>setTimeout(r,400));   // don't hammer their API
   }
 
-  const anyWorked=lines.some(l=>l.includes('✓ WORKED'));
+  // Now read the ticket back and see which markers are actually on it
+  el.innerHTML='<div>'+lines.join('')+'</div><div style="margin-top:10px;color:var(--ink3);font-size:13px">Reading the ticket back to see what actually saved…</div>';
+  await new Promise(r=>setTimeout(r,1500));
+  let landed=[];
+  try{
+    const d=await fetchRD('tickets/'+tid, true);
+    const blob=JSON.stringify(d||{});
+    landed=Object.entries(markers).filter(([i,m])=>blob.includes(m.text)).map(([i,m])=>m.label);
+  }catch(e){}
+
   el.innerHTML='<div>'+lines.join('')+'</div>'+
-    (anyWorked
-      ? `<div style="background:var(--green);color:#fff;border-radius:9px;padding:11px 13px;margin-top:10px;font-size:13px">
-          <strong>One of them worked.</strong> Open ${esc(oid)} in RepairDesk and check the test note actually appeared — a 200 doesn't always mean it saved. If it's there, tell me which line succeeded and I'll wire notes through properly.</div>`
-      : `<div style="background:var(--orange-soft);color:var(--orange);border-radius:9px;padding:11px 13px;margin-top:10px;font-size:13px">
-          <strong>None of the obvious endpoints accepted a note.</strong> That points to Scanovator using a private integration rather than the public API. Worth asking RepairDesk directly — mention that Scanovator writes driver notes to your tickets and ask how.</div>`);
+    (landed.length
+      ? `<div style="background:var(--green);color:#fff;border-radius:9px;padding:12px 14px;margin-top:10px;font-size:13px">
+          <strong>These actually saved a note:</strong>
+          <div style="font-family:monospace;font-size:12px;margin-top:6px">${landed.map(esc).join('<br>')}</div>
+          <div style="margin-top:8px;opacity:.95">Tell me which one and I'll send your notes through it.</div>
+        </div>`
+      : `<div style="background:var(--orange-soft);color:var(--orange);border-radius:9px;padding:12px 14px;margin-top:10px;font-size:13px">
+          <strong>Every call returned success, but no note appeared on the ticket.</strong>
+          RepairDesk answers 200 even for endpoints that don't exist, so those ticks meant nothing —
+          this check re-read the ticket and none of the test notes are there.
+          <div style="margin-top:8px">That points to Scanovator using a private integration rather than the public API.
+          Worth telling RepairDesk exactly that: Scanovator writes driver notes to your tickets, and you'd like to do the same.</div>
+        </div>`);
 }
 function rdProbeSettingsHtml(){
   return `<div class="card" style="max-width:640px">
