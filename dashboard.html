@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-m</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-o</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-m';
+const APP_VERSION='2026-08-13-o';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5722,7 +5722,7 @@ async function renderKpiPage(){
     `<div class="page-head"><div><div class="page-title">Weekly KPIs</div>
       <div class="page-sub">Sunday to Friday. Sales come from your tickets; the rest from the three RepairDesk reports.</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments</button>
+        <input type="date" id="kpi-goto" onchange="kpiGoToWeek(this.value)" title="Jump to the week containing this date" style="padding:7px 10px;font-size:13px"><button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments</button>
         <button class="btn btn-sm" onclick="kpiPullTax()">↓ Pull tax</button>
         <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter tax &amp; fees</button>
         <button class="btn btn-ghost btn-sm" onclick="kpiDiagnose()">?</button>
@@ -5756,19 +5756,22 @@ function drawKpi(){
   const rows=keys.map(k=>{
     const w=byKey[k]||{};
     const pay=+w.payments||0, tax=+w.sales_tax||0, fees=+w.cc_fees||0;
-    return {k, sales:sales[k]||0, pay, tax, fees, net:pay-tax-fees, entered:!!byKey[k]};
+    const hasPay=!!(w.payments!=null && +w.payments>0);
+    // Net only means anything once payments are in. Without them it read as a loss.
+    return {k, sales:sales[k]||0, pay, tax, fees,
+            net:hasPay?(pay-tax-fees):null, hasPay, entered:!!byKey[k]};
   });
   const cur=rows[0]||{}, prev=rows[1]||{};
   const delta=(a,b)=>{ if(!b) return ''; const p=(a-b)/b*100;
     return `<span style="font-size:11.5px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span>`; };
 
-  el.innerHTML=`
+  el.innerHTML=kpiFocusHtml()+`
     <div class="stat-grid">
       <div class="stat-tile" style="border-left:4px solid var(--gold)">
         <div class="stat-num" style="font-size:24px">${money(cur.sales||0)}</div>
         <div class="stat-label">New sales ${delta(cur.sales||0, prev.sales||0)}</div></div>
       <div class="stat-tile">
-        <div class="stat-num" style="font-size:24px">${money(cur.pay||0)}</div>
+        <div class="stat-num" style="font-size:24px">${cur.hasPay?money(cur.pay):'—'}</div>
         <div class="stat-label">Payments taken ${delta(cur.pay||0, prev.pay||0)}</div></div>
       <div class="stat-tile">
         <div class="stat-num" style="font-size:24px">${money(cur.tax||0)}</div>
@@ -5777,7 +5780,7 @@ function drawKpi(){
         <div class="stat-num" style="font-size:24px;color:var(--orange)">${money(cur.fees||0)}</div>
         <div class="stat-label">Card fees paid</div></div>
       <div class="stat-tile" style="border-left:4px solid var(--green)">
-        <div class="stat-num" style="font-size:24px;color:var(--green)">${money(cur.net||0)}</div>
+        <div class="stat-num" style="font-size:24px;color:var(--green)">${cur.net!=null?money(cur.net):'—'}</div>
         <div class="stat-label">Net ${delta(cur.net||0, prev.net||0)}</div></div>
     </div>
 
@@ -5792,10 +5795,10 @@ function drawKpi(){
       ${rows.map(r=>`<tr>
         <td style="font-weight:600;white-space:nowrap">${weekLabel(r.k)}</td>
         <td style="font-weight:600">${money(r.sales)}</td>
-        <td>${r.entered?money(r.pay):'<span style="color:var(--ink3)">—</span>'}</td>
+        <td>${r.hasPay?money(r.pay):'<span style="color:var(--ink3)">—</span>'}</td>
         <td>${r.entered?money(r.tax):'<span style="color:var(--ink3)">—</span>'}</td>
         <td style="color:${r.fees?'var(--orange)':'var(--ink3)'}">${r.entered?money(r.fees):'—'}</td>
-        <td style="font-weight:700;color:${r.net?'var(--green)':'var(--ink3)'}">${r.entered?money(r.net):'—'}</td>
+        <td style="font-weight:700;color:${r.net!=null?'var(--green)':'var(--ink3)'}">${r.net!=null?money(r.net):'—'}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" title="Pull payments from RepairDesk" onclick="kpiPullPayments('${r.k}')">↓</button>
           <button class="btn btn-ghost btn-sm" onclick="kpiEnter('${r.k}')">${r.entered?'Edit':'Enter'}</button></td>
@@ -5804,6 +5807,7 @@ function drawKpi(){
       ${(function(){
         const t=rows.reduce((a,r)=>({sales:a.sales+r.sales, pay:a.pay+r.pay, tax:a.tax+r.tax, fees:a.fees+r.fees, net:a.net+r.net}),
                             {sales:0,pay:0,tax:0,fees:0,net:0});
+        t.net=rows.reduce((a,r)=>a+(r.net||0),0);
         return `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:2px solid var(--border);font-size:13px">
           <div><span style="color:var(--ink3)">Total over ${rows.length} weeks:</span></div>
           <div><strong>${money(t.sales)}</strong> <span style="color:var(--ink3)">sales</span></div>
@@ -5874,6 +5878,48 @@ async function kpiFetchTax(weekKeyStr){
     return {ok:true, tax, count};
   }catch(e){ return {ok:false, why:e.message||String(e)}; }
 }
+// Pick any date and see that week on its own — no scrolling back through months
+let kpiFocusWeek=null;
+function kpiGoToWeek(dateStr){
+  if(!dateStr){ kpiFocusWeek=null; drawKpi(); return; }
+  kpiFocusWeek=weekKey(new Date(dateStr+'T12:00:00'));
+  drawKpi();
+  setTimeout(function(){ var el=document.getElementById('kpi-focus'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
+}
+function kpiClearFocus(){
+  kpiFocusWeek=null;
+  var g=document.getElementById('kpi-goto'); if(g) g.value='';
+  drawKpi();
+}
+function kpiFocusHtml(){
+  if(!kpiFocusWeek) return '';
+  var sales=kpiSalesByWeek();
+  var w=kpiWeeks.find(function(x){return x.week_start===kpiFocusWeek;})||{};
+  var pay=+w.payments||0, tax=+w.sales_tax||0, fees=+w.cc_fees||0;
+  var hasPay=!!(w.payments!=null && +w.payments>0);
+  var net=hasPay?(pay-tax-fees):null;
+  function cell(label,val,col){
+    return '<div style="min-width:128px"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">'
+      +label+'</div><div style="font-size:21px;font-weight:800;'+(col?'color:'+col:'')+'">'+val+'</div></div>';
+  }
+  return '<div class="card" id="kpi-focus" style="border:2px solid var(--gold)">'
+   +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
+   +'<div><div class="card-label" style="margin:0">Week of '+weekLabel(kpiFocusWeek)+'</div>'
+   +'<div style="font-size:11.5px;color:var(--ink3)">'+kpiFocusWeek+' &middot; Sunday to Friday</div></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+   +'<button class="btn btn-sm" onclick="kpiPullPayments(\''+kpiFocusWeek+'\')">&darr; Payments</button>'
+   +'<button class="btn btn-sm" onclick="kpiPullTax(\''+kpiFocusWeek+'\')">&darr; Tax</button>'
+   +'<button class="btn btn-gold btn-sm" onclick="kpiEnter(\''+kpiFocusWeek+'\')">Enter figures</button>'
+   +'<button class="btn btn-ghost btn-sm" onclick="kpiClearFocus()">&times;</button>'
+   +'</div></div>'
+   +'<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px">'
+   +cell('New sales', money(sales[kpiFocusWeek]||0))
+   +cell('Payments', hasPay?money(pay):'&mdash;')
+   +cell('Sales tax', w.sales_tax!=null?money(tax):'&mdash;')
+   +cell('Card fees', w.cc_fees!=null?money(fees):'&mdash;','var(--orange)')
+   +cell('Net', net!=null?money(net):'&mdash;','var(--green)')
+   +'</div></div>';
+}
 async function kpiPullTax(which){
   const key=which||weekKey(new Date());
   toast('Adding up the tax on the invoices…');
@@ -5896,7 +5942,15 @@ async function kpiPullPayments(which){
   toast('Reading the transaction log…');
   const res=await kpiFetchPayments(key);
   if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
-  if(!res.rows){ toast('RepairDesk returned no transactions for that week — check the dates, or that payments were taken.'); return; }
+  if(!res.rows){
+    alert('RepairDesk returned no transactions for the week of '+weekLabel(key)+'.\n\n'+
+      'That usually means one of:\n'+
+      '• the report endpoint is not enabled on your API key\n'+
+      '• no payments were recorded that week\n'+
+      '• the endpoint path differs on your account\n\n'+
+      'Nothing has been saved. Enter the figure by hand if you need it now.');
+    return;
+  }
   const methods=Object.entries(res.byMethod).map(([k,v])=>k+' '+money(v)).join(' · ');
   if(!confirm('Week of '+weekLabel(key)+'\n\nPayments and refunds: '+money(res.total)+
               '\nFrom '+res.rows+' transactions\n'+(methods?'\n'+methods:'')+
