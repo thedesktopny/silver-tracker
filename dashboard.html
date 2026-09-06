@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-k</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-m</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-k';
+const APP_VERSION='2026-08-13-m';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5664,6 +5664,7 @@ async function invDelete(id){
 // Sales come straight from the ticket data we already hold. The other figures live in
 // RepairDesk reports the API doesn't expose, so those are entered or pasted each week.
 let kpiWeeks=[];
+let kpiWeeksBack=12;   // how many weeks the table shows
 function weekStartOf(d){
   const x=new Date(d); x.setHours(0,0,0,0);
   x.setDate(x.getDate()-x.getDay());          // back to Sunday
@@ -5686,16 +5687,35 @@ function kpiSalesByWeek(){
     const s=t.summary||{};
     const status=String(s.status||s.ticket_status||'').toLowerCase();
     if(status.includes('estimate')) return;                 // not a sale yet
-    const created=s.created_date||s.created_at||s.created||null;
+    const created=s.created_date||s.created_at||s.created||s.order_date||null;
     if(!created) return;
-    const d=new Date(isNaN(created)?created:(+created*1000));
+    let d;
+    if(isNaN(created)) d=new Date(created);
+    else { const n=+created; d=new Date(n>1e12 ? n : n*1000); }   // seconds or milliseconds
     if(isNaN(d)) return;
-    const total=parseFloat(s.total||s.net_total||s.grand_total||0)||0;
+    const cash=v=>parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''))||0;
+    const total=cash(s.total)||cash(s.net_total)||cash(s.grand_total)||cash(s.total_amount);
     if(!total) return;
     const k=weekKey(d);
     out[k]=(out[k]||0)+total;
   });
   return out;
+}
+// Shows what the ticket data actually looks like, so a wrong field name is obvious
+function kpiDiagnose(){
+  const t=(allTickets||[])[0];
+  if(!t){ toast('No tickets loaded yet'); return; }
+  const s=t.summary||{};
+  const sales=kpiSalesByWeek();
+  const weeks=Object.keys(sales).length;
+  alert('First ticket looks like:\n\n'+
+    'total: '+JSON.stringify(s.total)+'\n'+
+    'created_date: '+JSON.stringify(s.created_date)+'\n'+
+    'status: '+JSON.stringify(s.status||s.ticket_status)+'\n\n'+
+    'Tickets loaded: '+(allTickets||[]).length+'\n'+
+    'Weeks with sales: '+weeks+'\n'+
+    'This week: '+money(sales[weekKey(new Date())]||0)+
+    '\n\nIf total or created_date look wrong, send me this and I will correct the field names.');
 }
 async function renderKpiPage(){
   document.getElementById('content').innerHTML=
@@ -5705,6 +5725,7 @@ async function renderKpiPage(){
         <button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments</button>
         <button class="btn btn-sm" onclick="kpiPullTax()">↓ Pull tax</button>
         <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter tax &amp; fees</button>
+        <button class="btn btn-ghost btn-sm" onclick="kpiDiagnose()">?</button>
       </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
   await ensureTicketsLoaded();
@@ -5718,8 +5739,18 @@ function drawKpi(){
     return;
   }
   const sales=kpiSalesByWeek();
-  // Every week we have either sales or entered figures for
-  const keys=[...new Set([...Object.keys(sales), ...kpiWeeks.map(w=>w.week_start)])].sort().reverse().slice(0,12);
+  // A continuous run of weeks back from today, so you can look at any past week even
+  // if nothing was recorded for it yet — not only weeks that already have figures.
+  const back=kpiWeeksBack||12;
+  const keys=[];
+  const cursor=weekStartOf(new Date());
+  for(let i=0;i<back;i++){
+    keys.push(cursor.toISOString().slice(0,10));
+    cursor.setDate(cursor.getDate()-7);
+  }
+  // Anything older that already has figures should still be reachable
+  [...Object.keys(sales), ...kpiWeeks.map(w=>w.week_start)].forEach(k=>{ if(!keys.includes(k)) keys.push(k); });
+  keys.sort().reverse();
   const byKey={}; kpiWeeks.forEach(w=>byKey[w.week_start]=w);
 
   const rows=keys.map(k=>{
@@ -5751,7 +5782,10 @@ function drawKpi(){
     </div>
 
     <div class="card">
-      <div class="card-label">Week by week <span style="font-weight:600;text-transform:none;color:var(--ink3)">— Sunday to Friday</span></div>
+      <div class="card-label">Week by week <span style="font-weight:600;text-transform:none;color:var(--ink3)">— Sunday to Friday</span>
+        <span style="float:right;font-weight:600;text-transform:none">
+          ${[8,12,26,52,104].map(n=>`<button class="btn ${back===n?'btn-gold':'btn-ghost'} btn-sm" style="padding:3px 9px;font-size:11px" onclick="kpiWeeksBack=${n};drawKpi()">${n>=52?(n/52)+'y':n+'w'}</button>`).join(' ')}
+        </span></div>
       <table><thead><tr>
         <th>Week</th><th>New sales</th><th>Payments</th><th>Sales tax</th><th>Card fees</th><th>Net</th><th></th>
       </tr></thead><tbody>
@@ -5767,6 +5801,16 @@ function drawKpi(){
           <button class="btn btn-ghost btn-sm" onclick="kpiEnter('${r.k}')">${r.entered?'Edit':'Enter'}</button></td>
       </tr>`).join('')}
       </tbody></table>
+      ${(function(){
+        const t=rows.reduce((a,r)=>({sales:a.sales+r.sales, pay:a.pay+r.pay, tax:a.tax+r.tax, fees:a.fees+r.fees, net:a.net+r.net}),
+                            {sales:0,pay:0,tax:0,fees:0,net:0});
+        return `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:2px solid var(--border);font-size:13px">
+          <div><span style="color:var(--ink3)">Total over ${rows.length} weeks:</span></div>
+          <div><strong>${money(t.sales)}</strong> <span style="color:var(--ink3)">sales</span></div>
+          <div><strong>${money(t.pay)}</strong> <span style="color:var(--ink3)">payments</span></div>
+          <div><strong style="color:var(--green)">${money(t.net)}</strong> <span style="color:var(--ink3)">net</span></div>
+        </div>`;
+      })()}
       <div style="font-size:12px;color:var(--ink3);margin-top:10px;line-height:1.7">
         <strong>New sales</strong> is worked out from your tickets, with estimates left out.<br>
         <strong>Payments</strong> pulled straight from RepairDesk's transaction log (payments and refunds only) · <strong>Sales tax</strong> from the tax report · <strong>Card fees</strong> from the batch report.<br>
@@ -5784,9 +5828,17 @@ async function kpiFetchPayments(weekKeyStr){
   const to=Math.floor(end.getTime()/1000)-1;
   const money2=s=>parseFloat(String(s||'').replace(/[^0-9.\-]/g,''))||0;
   try{
-    const d=await fetchRD('v1/report/transactionlogs?from='+from+'&to='+to+'&Type_id=1,2');
-    const data=(d&&d.data)||{};
-    const rows=data.results||[];
+    // The docs show both /report/transactionlogs and /v1/report/transactionlogs, and the
+    // base URL already ends in /v1 — so try the plain one first, then the prefixed one.
+    let d=null, data={}, rows=[];
+    for(const pth of ['report/transactionlogs','v1/report/transactionlogs']){
+      try{
+        d=await fetchRD(pth+'?from='+from+'&to='+to+'&Type_id=1,2');
+        data=(d&&d.data)||{};
+        rows=data.results||[];
+        if(rows.length || data.summary) break;
+      }catch(e){}
+    }
     // Sum the rows ourselves rather than trusting a combined total
     const total=rows.reduce((a,r)=>a+money2(r.amount),0);
     const byMethod={};
@@ -5844,6 +5896,7 @@ async function kpiPullPayments(which){
   toast('Reading the transaction log…');
   const res=await kpiFetchPayments(key);
   if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
+  if(!res.rows){ toast('RepairDesk returned no transactions for that week — check the dates, or that payments were taken.'); return; }
   const methods=Object.entries(res.byMethod).map(([k,v])=>k+' '+money(v)).join(' · ');
   if(!confirm('Week of '+weekLabel(key)+'\n\nPayments and refunds: '+money(res.total)+
               '\nFrom '+res.rows+' transactions\n'+(methods?'\n'+methods:'')+
