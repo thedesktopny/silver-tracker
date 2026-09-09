@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-p</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-s</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-p';
+const APP_VERSION='2026-08-13-s';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5724,9 +5724,11 @@ async function renderKpiPage(){
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <input type="date" id="kpi-goto" onchange="kpiGoToWeek(this.value)" title="Jump to the week containing this date" style="padding:7px 10px;font-size:13px"><button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments</button>
         <button class="btn btn-sm" onclick="kpiPullTax()">↓ Pull tax</button>
+        <button class="btn btn-sm" onclick="kpiFillAll()">⟳ Fill all weeks shown</button>
         <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter tax &amp; fees</button>
         <button class="btn btn-ghost btn-sm" onclick="kpiDiagnose()">?</button>
         <button class="btn btn-ghost btn-sm" onclick="kpiTestTransactionLog()">Test payments</button>
+        <button class="btn btn-ghost btn-sm" onclick="kpiTestTax()">Test tax</button>
       </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
   await ensureTicketsLoaded();
@@ -5762,6 +5764,7 @@ function drawKpi(){
     return {k, sales:sales[k]||0, pay, tax, fees,
             net:hasPay?(pay-tax-fees):null, hasPay, entered:!!byKey[k]};
   });
+  window._kpiRowKeys=rows.map(r=>r.k);
   const cur=rows[0]||{}, prev=rows[1]||{};
   const delta=(a,b)=>{ if(!b) return ''; const p=(a-b)/b*100;
     return `<span style="font-size:11.5px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span>`; };
@@ -5797,8 +5800,8 @@ function drawKpi(){
         <td style="font-weight:600;white-space:nowrap">${weekLabel(r.k)}</td>
         <td style="font-weight:600">${money(r.sales)}</td>
         <td>${r.hasPay?money(r.pay):'<span style="color:var(--ink3)">—</span>'}</td>
-        <td>${r.entered?money(r.tax):'<span style="color:var(--ink3)">—</span>'}</td>
-        <td style="color:${r.fees?'var(--orange)':'var(--ink3)'}">${r.entered?money(r.fees):'—'}</td>
+        <td>${r.tax?money(r.tax):'<span style="color:var(--ink3)">—</span>'}</td>
+        <td style="color:${r.fees?'var(--orange)':'var(--ink3)'}">${r.fees?money(r.fees):'—'}</td>
         <td style="font-weight:700;color:${r.net!=null?'var(--green)':'var(--ink3)'}">${r.net!=null?money(r.net):'—'}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" title="Pull payments from RepairDesk" onclick="kpiPullPayments('${r.k}')">↓</button>
@@ -5892,6 +5895,42 @@ function kpiClearFocus(){
   var g=document.getElementById('kpi-goto'); if(g) g.value='';
   drawKpi();
 }
+// Same idea as the payments test: show exactly what the invoice call returns
+async function kpiTestTax(){
+  const key=kpiFocusWeek||weekKey(new Date());
+  const start=new Date(key+'T00:00:00');
+  const end=new Date(start); end.setDate(end.getDate()+6);
+  const from=Math.floor(start.getTime()/1000), to=Math.floor(end.getTime()/1000)-1;
+  const paths=[
+    'invoices?from_date='+from+'&to_date='+to+'&page=1&pagesize=50',
+    'invoices?from_date='+from+'&to_date='+to+'&page=0&pagesize=50',
+    'invoices?from_datetime='+from+'&to_datetime='+to+'&page=1&pagesize=50',
+    'invoices?page=1&pagesize=5'
+  ];
+  var out='Week of '+weekLabel(key)+'\nfrom='+from+'  to='+to+'\n\n';
+  for(var i=0;i<paths.length;i++){
+    var line;
+    try{
+      var r=await edgeCall({action:'repairdesk', path:paths[i]});
+      var txt=await r.text();
+      var j=null; try{ j=JSON.parse(txt); }catch(_){}
+      if(!j){ line='not JSON: '+txt.slice(0,110); }
+      else if(j.error){ line='blocked by our proxy: '+j.error; }
+      else {
+        var d=j.data||{};
+        var list=d.invoiceData||[];
+        var pg=d.pagination||{};
+        var firstTax=list.length&&list[0].summary?list[0].summary.total_tax:'(none)';
+        line='success='+j.success+'  invoices='+list.length+
+             '  total_records='+(pg.total_records!=null?pg.total_records:'?')+
+             '  first total_tax='+firstTax;
+      }
+    }catch(e){ line='failed: '+(e.message||e); }
+    out+=paths[i].split('?')[0]+' '+(paths[i].split('?')[1]||'').slice(0,46)+'\n   '+line+'\n\n';
+  }
+  out+='The last line has no date filter — if that returns invoices but the dated ones\nreturn none, the date parameters are the problem.';
+  alert(out);
+}
 function kpiFocusHtml(){
   if(!kpiFocusWeek) return '';
   var sales=kpiSalesByWeek();
@@ -5926,6 +5965,7 @@ async function kpiPullTax(which){
   toast('Adding up the tax on the invoices…');
   const res=await kpiFetchTax(key);
   if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
+  if(!res.count){ alert('No invoices found for the week of '+weekLabel(key)+'.\n\nNothing saved — use "Test tax" to see what the invoice call returns.'); return; }
   if(!confirm('Week of '+weekLabel(key)+'\n\nTax on invoices raised: '+money(res.tax)+
               '\nAcross '+res.count+' invoices\n\n'+
               'Note: this counts invoices RAISED this week, not payments taken this week, '+
@@ -5977,6 +6017,38 @@ async function kpiTestTransactionLog(){
   out+='If every path shows rows=0 but your RepairDesk transaction log has payments\n'+
        'that week, the endpoint is likely not enabled on your API key.';
   alert(out);
+}
+// Fill in every week on screen in one go, rather than pressing the arrow on each row
+async function kpiFillAll(){
+  const weeks=(window._kpiRowKeys||[]).slice();
+  if(!weeks.length){ toast('Nothing to fill'); return; }
+  if(!confirm('Fetch payments and tax for all '+weeks.length+' weeks shown?\n\n'+
+              'This reads from RepairDesk for each week, so it takes a moment.\n'+
+              'Anything already filled in will be overwritten.')) return;
+  let done=0, failed=0;
+  for(const k of weeks){
+    toast('Week '+(done+failed+1)+' of '+weeks.length+'…');
+    try{
+      const pay=await kpiFetchPayments(k);
+      const tax=await kpiFetchTax(k);
+      if(!pay.ok && !tax.ok){ failed++; continue; }
+      const existing=kpiWeeks.find(w=>w.week_start===k)||{};
+      // Only save figures we actually retrieved. A week with no invoices found is not
+      // a week with zero tax — saving it as zero is how the misleading rows appeared.
+      const payVal = (pay.ok && pay.rows) ? pay.total : (existing.payments!=null?existing.payments:null);
+      const taxVal = (tax.ok && tax.count) ? tax.tax   : (existing.sales_tax!=null?existing.sales_tax:null);
+      const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
+        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+        body:JSON.stringify({week_start:k, payments:payVal, sales_tax:taxVal,
+          cc_fees: existing.cc_fees!=null?existing.cc_fees:null,
+          updated_at:new Date().toISOString()})});
+      r.ok?done++:failed++;
+    }catch(e){ failed++; }
+  }
+  await loadKpiWeeks();
+  drawKpi();
+  toast('✅ Filled '+done+' week'+(done!==1?'s':'')+(failed?' · '+failed+' failed':'')+
+        '. Card fees still need entering by hand.');
 }
 async function kpiPullPayments(which){
   const key=which||weekKey(new Date());
@@ -7196,9 +7268,16 @@ async function uploadDashFiles(files, itemId, itemName){
       await sb('item_images',{method:'POST',headers:{'Prefer':'return=minimal'},
         body:JSON.stringify({item_id:itemId, item_desc:itemName||'', image_url:url, worker:'Office', role:'Office'})});
       done++;
-    }catch(e){ failed++; toast('⚠️ '+(e.message||e)); }
+    }catch(e){ failed++; problems.push((f.name||'file')+': '+(e.message||e)); }
   }
-  toast(done?('✅ Added '+done+' file'+(done!==1?'s':'')+(failed?' · '+failed+' failed':'')):'Nothing was uploaded');
+  if(done) toast('✅ Added '+done+' file'+(done!==1?'s':''));
+  // Say what actually went wrong rather than a bare "nothing was uploaded"
+  if(failed || (problems.length && !done)){
+    alert('Uploaded '+done+' of '+files.length+' file'+(files.length!==1?'s':'')+'.\n\n'+
+      problems.join('\n')+
+      '\n\nIf this mentions permission, policy or row-level security, the item-photos '+
+      'bucket needs to allow uploads. If it names the file, try a JPG or PNG.');
+  }
   if(done) renderItemDetailPage(itemId);
 }
 async function deleteItemImage(id, itemId){
