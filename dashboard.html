@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-13-s</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-a</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -578,7 +578,7 @@ async function resolveTicketId(oid){
   // the map is cached, so this deep scan only happens once per unknown order.
   try{
     let pages=99;
-    for(let page=1; page<=pages && page<=40; page++){
+    for(let page=1; page<=pages && page<=8; page++){        // was 40 — far too slow to wait on
       const d=await fetchRD(`tickets?per_page=250&page=${page}&default_order=1`);
       const batch=(d.data&&d.data.ticketData)||[];
       batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-13-s';
+const APP_VERSION='2026-08-14-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -6681,7 +6681,7 @@ function renderOrdersList(){
 // ========================================================================
 async function renderOrderDetailPage(oid){
   const el=document.getElementById('content');
-  el.innerHTML='<div class="empty">Loading order…</div>';
+  el.innerHTML='<div class="empty">Loading order…<div style="font-size:12px;color:var(--ink3);margin-top:6px">Showing what we have while RepairDesk responds</div></div>';
   // Gather scan data for this order
   const orderScans=scans.filter(s=>orderIdOf(s.item_id)===oid);
   const itemsMap={};
@@ -6698,7 +6698,23 @@ async function renderOrderDetailPage(oid){
 
   // Fetch RepairDesk detail (customer info, service, notes, intake photos)
   let t=null;
-  try{ const tid=await resolveTicketId(oid); if(tid){ const d=await fetchRD(`tickets/${tid}`); if(d&&d.data) t=d.data; } }catch(e){}
+  // Looking up an unknown order used to page through up to 40 pages of tickets before
+  // anything appeared — a minute of blank screen. Give it a few seconds, then draw the
+  // page with what we already have from the scans; the rest fills in when it arrives.
+  try{
+    const detail=(async()=>{
+      const tid=await resolveTicketId(oid);
+      if(!tid) return null;
+      const d=await fetchRD(`tickets/${tid}`);
+      return (d&&d.data)||null;
+    })();
+    const quick=await Promise.race([detail, new Promise(r=>setTimeout(()=>r('slow'),4000))]);
+    if(quick && quick!=='slow') t=quick;
+    else if(quick==='slow'){
+      // Carry on without it, and refresh once it lands
+      detail.then(d=>{ if(d && currentRoute()==='order' && currentParam()===oid){ toast('Ticket details loaded'); renderOrderDetailPage(oid); } }).catch(()=>{});
+    }
+  }catch(e){}
 
   let html=`<div class="page-head"><div><div class="page-title">${esc(oid)}</div><div class="page-sub">${esc(customer||(t?getCustomerName(t):'—'))}</div></div>
     <button class="btn btn-ghost btn-sm" onclick="navigate('${h('orders')}')">← Back to Orders</button></div>`;
