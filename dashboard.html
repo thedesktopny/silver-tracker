@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-b</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -868,7 +868,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-a';
+const APP_VERSION='2026-08-14-b';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5663,6 +5663,7 @@ async function invDelete(id){
 // ========================================================================
 // Sales come straight from the ticket data we already hold. The other figures live in
 // RepairDesk reports the API doesn't expose, so those are entered or pasted each week.
+let _orderDetailCache={};   // orders already fetched this session
 let kpiWeeks=[];
 let kpiWeeksBack=12;   // how many weeks the table shows
 function weekStartOf(d){
@@ -6701,18 +6702,29 @@ async function renderOrderDetailPage(oid){
   // Looking up an unknown order used to page through up to 40 pages of tickets before
   // anything appeared — a minute of blank screen. Give it a few seconds, then draw the
   // page with what we already have from the scans; the rest fills in when it arrives.
+  if(_orderDetailCache[oid]){ t=_orderDetailCache[oid]; }
   try{
     const detail=(async()=>{
+      if(_orderDetailCache[oid]) return _orderDetailCache[oid];
       const tid=await resolveTicketId(oid);
       if(!tid) return null;
       const d=await fetchRD(`tickets/${tid}`);
-      return (d&&d.data)||null;
+      const got=(d&&d.data)||null;
+      if(got) _orderDetailCache[oid]=got;
+      return got;
     })();
-    const quick=await Promise.race([detail, new Promise(r=>setTimeout(()=>r('slow'),4000))]);
+    // Only pause long enough to catch an answer that's already cached. Anything slower
+    // arrives after the page is drawn — there's no reason to stare at a blank screen.
+    const quick=await Promise.race([detail, new Promise(r=>setTimeout(()=>r('slow'),350))]);
     if(quick && quick!=='slow') t=quick;
     else if(quick==='slow'){
       // Carry on without it, and refresh once it lands
-      detail.then(d=>{ if(d && currentRoute()==='order' && currentParam()===oid){ toast('Ticket details loaded'); renderOrderDetailPage(oid); } }).catch(()=>{});
+      detail.then(d=>{
+        if(d && currentRoute()==='order' && currentParam()===oid){
+          _orderDetailCache[oid]=d;                 // so the redraw doesn't fetch again
+          renderOrderDetailPage(oid);
+        }
+      }).catch(()=>{});
     }
   }catch(e){}
 
