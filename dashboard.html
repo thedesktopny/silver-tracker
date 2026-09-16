@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-b</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-c</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -574,11 +574,26 @@ async function resolveTicketId(oid){
     const hit=allTickets.find(x=>getOrderId(x)===oid);
     if(hit&&hit.summary&&hit.summary.id){ oidMap[oid]=hit.summary.id; localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); return oidMap[oid]; }
   }
-  // Older tickets sit beyond the first pages. Keep paging until we find it or run out —
-  // the map is cached, so this deep scan only happens once per unknown order.
+  // Ask RepairDesk for this one ticket rather than paging through thousands. Their
+  // list endpoint takes a keyword, so an old order like T-604 is found in one request
+  // instead of twenty — paging was both slow and capped, so old tickets went missing.
+  try{
+    const num=String(oid).replace(/^T-/i,'');
+    for(const q of [oid, num]){
+      const d=await fetchRD('tickets?keyword='+encodeURIComponent(q)+'&per_page=50&page=1');
+      const batch=(d&&d.data&&d.data.ticketData)||[];
+      batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+      if(oidMap[oid]){
+        try{ localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); }catch(_){}
+        return oidMap[oid];
+      }
+    }
+  }catch(e){}
+
+  // Fall back to paging if the search finds nothing
   try{
     let pages=99;
-    for(let page=1; page<=pages && page<=8; page++){        // was 40 — far too slow to wait on
+    for(let page=1; page<=pages && page<=40; page++){      // rare now that search runs first
       const d=await fetchRD(`tickets?per_page=250&page=${page}&default_order=1`);
       const batch=(d.data&&d.data.ticketData)||[];
       batch.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
@@ -868,7 +883,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-b';
+const APP_VERSION='2026-08-14-c';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
