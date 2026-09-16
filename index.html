@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-13-a</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-14-a</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1570,11 +1570,22 @@ const DOUBLE_SCAN_MS = 3000; // ignore the same barcode re-scanned within 3 seco
 
 // Turn on by tapping the build number. Shows exactly what each scan does, so a scan
 // that appears to do nothing can be diagnosed instead of guessed at.
-let SCAN_DEBUG = localStorage.getItem('st_debug')==='1';
+// The diagnostic panel is off. It was for tracing the scanning problems and the workers
+// don't need it. Turning it on now takes a deliberate five taps on the build number.
+let SCAN_DEBUG = false;
+try{ localStorage.removeItem('st_debug'); }catch(e){}
+let _dbgTaps=0, _dbgTapAt=0;
 function toggleScanDebug(){
-  SCAN_DEBUG=!SCAN_DEBUG;
-  localStorage.setItem('st_debug', SCAN_DEBUG?'1':'0');
-  showToast(SCAN_DEBUG?'🔧 Scan details ON — tap the build number to turn off':'Scan details off');
+  const now=Date.now();
+  if(now-_dbgTapAt>1500) _dbgTaps=0;
+  _dbgTapAt=now; _dbgTaps++;
+  if(SCAN_DEBUG){                      // one tap closes it again
+    SCAN_DEBUG=false; _dbgTaps=0; dbgRender(); showToast('Scan details off');
+    return;
+  }
+  if(_dbgTaps<5) return;               // ignore stray taps
+  SCAN_DEBUG=true; _dbgTaps=0;
+  showToast('🔧 Scan details on — tap the build number once to hide');
   dbgRender();
 }
 let dbgLines=[];
@@ -1598,15 +1609,14 @@ function dbgRender(){
 }
 // Any uncaught error anywhere in the app now shows on screen
 window.addEventListener('error', e=>{
+  // Recorded either way, but only shown if someone has deliberately opened the panel
   dbgLines.unshift('❌ ERROR: '+e.message+(e.lineno?' (line '+e.lineno+')':''));
-  if(!SCAN_DEBUG){ SCAN_DEBUG=true; }
   dbgRender();
 });
 window.addEventListener('unhandledrejection', e=>{
   const m=String((e.reason&&e.reason.message)||e.reason||'');
   if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return;
   dbgLines.unshift('❌ ERROR: '+m);
-  if(!SCAN_DEBUG){ SCAN_DEBUG=true; }
   dbgRender();
 });
 
