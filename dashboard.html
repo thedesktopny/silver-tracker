@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-c</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-e</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -883,7 +883,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-c';
+const APP_VERSION='2026-08-14-e';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -4734,6 +4734,10 @@ async function putOnHold(itemId, desc){
     toast('⏸️ On hold — '+HOLD_KINDS[kind].label);
     fireNotification('hold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
       title:(desc||itemId)+' put on hold — '+HOLD_KINDS[kind].label, body:reason});
+    // Put it on the RepairDesk ticket too, so it's visible to whoever looks there
+    pushNoteToRepairDesk(itemId, 'SENT OUT: '+(desc||itemId)+' → '+HOLD_KINDS[kind].label+
+      (reason?' — '+reason:''))
+      .then(r=>{ if(r&&r.ok) toast('↗ Noted on the RepairDesk ticket'); });
     await loadStageEvents(); router();
   }
   else {
@@ -4788,6 +4792,8 @@ async function releaseHold(itemId, desc){
   toast(res.go==='shop'?'📦 Back to Waiting for Shop':'▶ Back in the pipeline');
   fireNotification('unhold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
     title:(desc||itemId)+' taken off hold', body:res.note});
+  pushNoteToRepairDesk(itemId, 'BACK IN: '+(desc||itemId)+' — '+res.note)
+    .then(r=>{ if(r&&r.ok) toast('↗ Noted on the RepairDesk ticket'); });
   await loadStageEvents(); await loadAllScans(); router();
 }
 // Add an update to a hold without releasing it
@@ -4835,6 +4841,60 @@ function askHoldKind(name){
   });
 }
 
+// Where a piece has been, permanently. computeHolds only reports what is on hold NOW,
+// so once a piece came back from the platers the trip vanished from view even though
+// the events were still stored. This reads the whole history instead.
+function repairHistoryFor(itemId){
+  const evs=(stageEvents||[])
+    .filter(e=>e.item_id===itemId && (e.action==='hold'||e.action==='unhold'))
+    .sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  const trips=[]; let open=null;
+  evs.forEach(e=>{
+    if(e.action==='hold'){
+      const raw=e.stage||'';
+      const hasPlace=raw.includes('::');
+      const place=hasPlace?raw.split('::')[0]:'';
+      const reason=hasPlace?raw.split('::').slice(1).join('::'):raw;
+      // An update carries no place, so it belongs to the trip already open rather than
+      // starting a new one — otherwise chasing a supplier looked like a second trip.
+      if(open && (!hasPlace || open.place===place)){
+        open.updates.push({reason, at:e.created_at});
+      } else {
+        if(open) trips.push(open);
+        open={place, reason, at:e.created_at, updates:[], back:null};
+      }
+    } else if(e.action==='unhold'){
+      if(open){ open.back=e.created_at; open.backNote=(e.stage||''); trips.push(open); open=null; }
+    }
+  });
+  if(open) trips.push(open);
+  return trips.reverse();          // most recent first
+}
+function repairHistoryHtml(itemId){
+  const trips=repairHistoryFor(itemId);
+  if(!trips.length) return '';
+  const day=86400000;
+  return `<div class="card" style="border-left:4px solid var(--blue)">
+    <div class="card-label">🔧 Where this piece has been (${trips.length})</div>
+    ${trips.map(tr=>{
+      const k=holdKindOf(tr.place);
+      const end=tr.back?new Date(tr.back):new Date();
+      const days=Math.max(0,Math.floor((end-new Date(tr.at))/day));
+      const away=!tr.back;
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);${away?'background:var(--orange-soft);border-radius:8px;padding:11px;margin-bottom:6px':''}">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <span style="font-weight:700;font-size:14px;color:${away?'var(--orange)':'var(--ink)'}">
+            ${away?'⏸️ Out now — ':'✓ '}${esc(k.label||tr.place)}</span>
+          <span style="font-size:11.5px;color:var(--ink3);white-space:nowrap">
+            ${fmtDate(tr.at)}${tr.back?' → '+fmtDate(tr.back):''} · ${days}d</span>
+        </div>
+        ${tr.reason?`<div style="font-size:12.5px;color:var(--ink2);margin-top:3px">${esc(tr.reason)}</div>`:''}
+        ${tr.updates.map(u=>`<div style="font-size:12px;color:var(--ink3);margin-top:2px">↳ ${esc(u.reason)} <span style="opacity:.7">${fmtDate(u.at)}</span></div>`).join('')}
+        ${tr.backNote?`<div style="font-size:12px;color:var(--green);margin-top:3px">↩ ${esc(tr.backNote)}</div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
+}
 function renderHoldPage(){
   const holds=computeHolds();
   const list=Object.entries(holds).map(([id,h])=>({id,...h}))
@@ -6574,6 +6634,45 @@ function renderInsightsBody(){
 // ========================================================================
 // PAGE: ORDERS (list)
 // ========================================================================
+// Older orders aren't in the loaded ticket list, so searching for them found nothing.
+// Ask RepairDesk for the term directly and show what comes back.
+async function searchRepairDeskOrders(q){
+  const el=document.getElementById('orders-list');
+  let found=[];
+  try{
+    for(const term of [q, q.replace(/^T-/i,'')]){
+      const d=await fetchRD('tickets?keyword='+encodeURIComponent(term)+'&per_page=50&page=1');
+      const batch=(d&&d.data&&d.data.ticketData)||[];
+      batch.forEach(t=>{
+        const o=getOrderId(t); const id=t.summary&&t.summary.id;
+        if(o&&id) oidMap[o]=id;
+        if(o&&!found.some(f=>getOrderId(f)===o)) found.push(t);
+      });
+      if(found.length) break;
+    }
+    try{ localStorage.setItem('glint_oid_map',JSON.stringify(oidMap)); }catch(_){}
+    // Keep them so the rest of the dashboard can use them too
+    found.forEach(t=>{ if(!allTickets.some(x=>getOrderId(x)===getOrderId(t))) allTickets.push(t); });
+    _svcIdx=null;
+  }catch(e){}
+
+  if(!el) return;
+  if(!found.length){
+    el.innerHTML='<div class="card"><div class="empty">Nothing found for “'+esc(q)+'” — here or in RepairDesk.</div></div>';
+    return;
+  }
+  el.innerHTML='<div class="card"><div class="card-label">Found in RepairDesk ('+found.length+')</div>'+
+    found.map(t=>{
+      const o=getOrderId(t), s=t.summary||{};
+      const cust=(s.customer&&(s.customer.fullName||s.customer.fullname))||'';
+      return `<div class="clickable" style="display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border)"
+        onclick="navigate('${h('order',o).replace(/'/g,"\\'")}')">
+        <div><div style="font-weight:700;font-size:15px">${esc(o)}</div>
+          <div style="font-size:11.5px;color:var(--ink3)">${esc(cust)}${s.status?' · '+esc(s.status):''}</div></div>
+        <span style="color:var(--ink3)">›</span></div>`;
+    }).join('')+
+    '<div style="font-size:12px;color:var(--ink3);padding-top:10px">These were not in the loaded list, so they came straight from RepairDesk.</div></div>';
+}
 function renderOrdersListPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head">
@@ -6662,6 +6761,12 @@ function renderOrdersList(){
   });
   const el=document.getElementById('orders-list');
   if(!list.length){
+    const q=((document.getElementById('orders-search')||{}).value||'').trim();
+    if(q.length>=3){
+      el.innerHTML='<div class="card"><div class="empty">Nothing here matches — asking RepairDesk…</div></div>';
+      searchRepairDeskOrders(q);
+      return;
+    }
     el.innerHTML='<div class="card"><div class="empty">No orders'+(dueFilter!=='all'?' due in that period':' match')+'</div></div>';
     return;
   }
@@ -6894,6 +6999,7 @@ async function renderItemDetailPage(itemId){
       <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="updateHold('${jsstr(itemId)}','${jsstr(name||'')}')">✏️ Add an update</button>
     </div>`;
   }
+  html+=repairHistoryHtml(itemId);
 
   html+=`<div class="card" style="text-align:center">
     <div class="card-label" style="margin-bottom:4px">Total Time Worked</div>
