@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-14-a</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-14-b</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1838,7 +1838,7 @@ async function showLookup(itemId){
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:6px">
         ${pics.slice(0,6).map(i=>`<img loading="lazy" decoding="async" src="${thumbUrl(i.image_url,180)}"
           onerror="this.onerror=null;this.src='${i.image_url}'"
-          onclick="window.open('${i.image_url}','_blank')"
+          data-full="${i.image_url}" onclick="wLightbox('${i.image_url}')"
           style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;cursor:pointer;background:var(--surface2)">`).join('')}
         ${pics.length>6?`<div style="grid-column:1/-1;font-size:11.5px;color:var(--ink3);text-align:center;padding-top:4px">+ ${pics.length-6} more — open the item on the computer to see them all</div>`:''}
       </div>
@@ -2077,6 +2077,50 @@ function renderWorkerInbox(){
         '</div></div>';
     }).join('');
 }
+
+// ===== PHOTO VIEWER =====
+// Photos used to open in a new tab, so you had to close each one to see the next.
+let _wUrls=[], _wAt=0;
+function wLightbox(url){
+  try{
+    _wUrls=[].slice.call(document.querySelectorAll('#lookup-result img[data-full]'))
+      .map(function(i){ return i.getAttribute('data-full'); }).filter(Boolean);
+  }catch(e){ _wUrls=[]; }
+  if(!_wUrls.length) _wUrls=[url];
+  _wAt=Math.max(0,_wUrls.indexOf(url));
+  var ov=document.getElementById('w-lb');
+  if(!ov){
+    ov=document.createElement('div'); ov.id='w-lb';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(10,11,15,.95);z-index:10000;display:flex;align-items:center;justify-content:center';
+    ov.innerHTML='<img id="w-lb-img" style="max-width:94vw;max-height:84vh;border-radius:10px;object-fit:contain">'
+      +'<div id="w-lb-n" style="position:absolute;top:16px;left:0;right:0;text-align:center;color:#fff;font-size:13px;opacity:.85"></div>'
+      +'<button id="w-lb-p" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:50px;height:50px;font-size:25px">&lsaquo;</button>'
+      +'<button id="w-lb-x" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:50px;height:50px;font-size:25px">&rsaquo;</button>'
+      +'<button id="w-lb-c" style="position:absolute;top:12px;right:14px;background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:19px">&times;</button>';
+    document.body.appendChild(ov);
+    ov.querySelector('#w-lb-p').onclick=function(e){ e.stopPropagation(); wStep(-1); };
+    ov.querySelector('#w-lb-x').onclick=function(e){ e.stopPropagation(); wStep(1); };
+    ov.querySelector('#w-lb-c').onclick=function(){ ov.style.display='none'; };
+    ov.onclick=function(e){ if(e.target===ov) ov.style.display='none'; };
+    var x0=null;
+    ov.addEventListener('touchstart',function(e){ x0=e.touches[0].clientX; },{passive:true});
+    ov.addEventListener('touchend',function(e){
+      if(x0==null) return;
+      var dx=e.changedTouches[0].clientX-x0; x0=null;
+      if(Math.abs(dx)>45) wStep(dx<0?1:-1);
+    },{passive:true});
+  }
+  ov.style.display='flex';
+  wShow();
+}
+function wShow(){
+  var img=document.getElementById('w-lb-img'); if(!img) return;
+  img.src=_wUrls[_wAt];
+  var n=document.getElementById('w-lb-n'); if(n) n.textContent=(_wAt+1)+' / '+_wUrls.length;
+  var one=_wUrls.length<2;
+  ['w-lb-p','w-lb-x'].forEach(function(id){ var b=document.getElementById(id); if(b) b.style.display=one?'none':'block'; });
+}
+function wStep(d){ if(!_wUrls.length) return; _wAt=(_wAt+d+_wUrls.length)%_wUrls.length; wShow(); }
 
 // ===== LANGUAGES =====
 const LANGS={en:'English', es:'Español', he:'עברית'};
