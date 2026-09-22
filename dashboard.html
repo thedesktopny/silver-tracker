@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-h</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-i</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -614,11 +614,24 @@ let _hoodIdx=null;
 function hoodFor(oid){
   if(!_hoodIdx){
     _hoodIdx={};
+    // The printed labels carry the city for every piece and are always loaded, so they
+    // are the reliable source. The ticket LIST often omits group and city — those only
+    // come back on a full ticket fetch — which is why the list was coming up empty.
+    (pipeLabels||[]).forEach(l=>{
+      const o=orderIdOf(l.item_id); const city=(l.city||'').trim();
+      if(o && city && !_hoodIdx[o]) _hoodIdx[o]=city;
+    });
+    (scans||[]).forEach(s=>{
+      const o=orderIdOf(s.item_id); const city=(s.city||'').trim();
+      if(o && city && city!=='undefined' && !_hoodIdx[o]) _hoodIdx[o]=city;
+    });
+    // Tickets we have in full are better still — a group beats a bare city
     (allTickets||[]).forEach(t=>{
       const o=getOrderId(t); if(!o) return;
       const g=(getCustomerGroup(t)||'').trim();
       const city=(getCustomerCity(t)||'').trim();
-      _hoodIdx[o]=(g && !/^individual$/i.test(g)) ? g : city;
+      const best=(g && !/^individual$/i.test(g)) ? g : city;
+      if(best) _hoodIdx[o]=best;
     });
   }
   return _hoodIdx[oid]||'';
@@ -938,7 +951,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-h';
+const APP_VERSION='2026-08-14-i';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1095,7 +1108,7 @@ async function loadStageEvents(){
   }catch(e){ stageEvents=[]; }
   _unitsIdx=null;
 }
-async function loadPipeLabels(){ try{ const r=await sbList('labels?select=item_id,item_name,customer,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=(Array.isArray(r)?r:[]).map(l=>({...l, item_id:normalizeItemId(l.item_id)})); }catch(e){ pipeLabels=[]; } }
+async function loadPipeLabels(){ try{ const r=await sbList('labels?select=item_id,item_name,customer,city,printed_at&order=printed_at.desc&limit=2000'); pipeLabels=(Array.isArray(r)?r:[]).map(l=>({...l, item_id:normalizeItemId(l.item_id)})); }catch(e){ pipeLabels=[]; } }
 
 async function bootstrap(){
   startClock();
