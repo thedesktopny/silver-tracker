@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-g</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-h</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -513,7 +513,8 @@ async function loadOlderTicketsInBackground(totalPages){
       await new Promise(function(r){ setTimeout(r,150); });   // stay out of the way
     }
     olderTicketsLoaded=true;
-    _svcIdx=null;
+    _svcIdx=null; _hoodIdx=null;
+    try{ refreshHoodSelect(); }catch(e){}
   }catch(e){ /* the recent tickets still work */ }
   olderTicketsLoading=false;
 }
@@ -635,12 +636,25 @@ function setHood(v){
   else if(currentRoute()==='orders') renderOrdersList();
 }
 function hoodSelectHtml(){
+  // Always render it. It used to return nothing while tickets were still loading,
+  // so the control simply never appeared. It fills itself in once they arrive.
   const hs=allHoods();
-  if(!hs.length) return '';
-  return `<select onchange="setHood(this.value)" title="Neighbourhood" style="padding:7px 10px;font-size:13px;max-width:170px">
+  return `<select id="hood-select" onchange="setHood(this.value)" title="Filter by area" style="padding:7px 10px;font-size:13px;max-width:180px;flex-shrink:0">
     <option value="all"${hoodFilter==='all'?' selected':''}>📍 All areas</option>
     ${hs.map(h=>`<option value="${esc(h)}"${hoodFilter===h?' selected':''}>${esc(h)}</option>`).join('')}
+    ${hs.length?'':'<option disabled>loading areas…</option>'}
   </select>`;
+}
+// Refill the list once the ticket data lands
+function refreshHoodSelect(){
+  const sel=document.getElementById('hood-select');
+  if(!sel) return;
+  const hs=allHoods();
+  if(!hs.length) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="all">📍 All areas</option>'+
+    hs.map(h=>'<option value="'+esc(h)+'">'+esc(h)+'</option>').join('');
+  sel.value=hs.includes(cur)?cur:'all';
 }
 function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
 function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return (s.customer.customer_group_name||'').trim(); } return ''; }
@@ -924,7 +938,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-g';
+const APP_VERSION='2026-08-14-h';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -2010,6 +2024,8 @@ function renderPipelinePage(){
     </div>
     <div id="pipe-body"></div>`;
   renderPipeBody();
+  setTimeout(refreshHoodSelect,300);
+  setTimeout(refreshHoodSelect,2500);
 }
 function pipeSetView(v){
   pipeView=v;
@@ -6741,6 +6757,8 @@ function renderOrdersListPage(){
     <div id="orders-list"></div>
   `;
   renderOrdersList();
+  setTimeout(refreshHoodSelect,300);
+  setTimeout(refreshHoodSelect,2500);
 }
 // Which orders fall inside the chosen window
 function dueDateFor(oid){
