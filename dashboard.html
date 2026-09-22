@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-f</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-g</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -607,6 +607,41 @@ async function resolveTicketId(oid){
   return null; // never guess — wrong data is worse than no data
 }
 function getCustomerName(t){ const s=t.summary; return s&&s.customer?(s.customer.fullName||'Unknown').trim():'Unknown'; }
+// Neighbourhood for an order: the customer group (Monsey, Lakewood, Borough Park…)
+// where one is set, otherwise their city. Used to filter the pipeline and orders.
+let _hoodIdx=null;
+function hoodFor(oid){
+  if(!_hoodIdx){
+    _hoodIdx={};
+    (allTickets||[]).forEach(t=>{
+      const o=getOrderId(t); if(!o) return;
+      const g=(getCustomerGroup(t)||'').trim();
+      const city=(getCustomerCity(t)||'').trim();
+      _hoodIdx[o]=(g && !/^individual$/i.test(g)) ? g : city;
+    });
+  }
+  return _hoodIdx[oid]||'';
+}
+function allHoods(){
+  _hoodIdx=null; hoodFor('');
+  const counts={};
+  Object.values(_hoodIdx).forEach(h=>{ if(h) counts[h]=(counts[h]||0)+1; });
+  return Object.keys(counts).sort((a,b)=>counts[b]-counts[a]||a.localeCompare(b));
+}
+let hoodFilter=localStorage.getItem('glint_hood')||'all';
+function setHood(v){
+  hoodFilter=v; localStorage.setItem('glint_hood',v);
+  if(currentRoute()==='pipeline') renderPipeBody();
+  else if(currentRoute()==='orders') renderOrdersList();
+}
+function hoodSelectHtml(){
+  const hs=allHoods();
+  if(!hs.length) return '';
+  return `<select onchange="setHood(this.value)" title="Neighbourhood" style="padding:7px 10px;font-size:13px;max-width:170px">
+    <option value="all"${hoodFilter==='all'?' selected':''}>📍 All areas</option>
+    ${hs.map(h=>`<option value="${esc(h)}"${hoodFilter===h?' selected':''}>${esc(h)}</option>`).join('')}
+  </select>`;
+}
 function getCustomerCity(t){ const s=t.summary; if(s&&s.customer){ return s.customer.city||s.customer.town||''; } return ''; }
 function getCustomerGroup(t){ const s=t.summary; if(s&&s.customer){ return (s.customer.customer_group_name||'').trim(); } return ''; }
 function getCustomerPhone(t){ const s=t.summary; if(s&&s.customer){ return s.customer.mobile||s.customer.phone||''; } return ''; }
@@ -889,7 +924,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-f';
+const APP_VERSION='2026-08-14-g';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1955,7 +1990,7 @@ function renderPipelinePage(){
           <button class="${pipeView==='board'?'on':''}" onclick="pipeSetView('board')">Board</button>
           <button class="${pipeView==='order'?'on':''}" onclick="pipeSetView('order')">By Order</button>
         </div>
-        <input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button><button class="btn btn-ghost btn-sm" id="bulk-toggle" onclick="bulkToggle()" style="flex-shrink:0">☑️ Select many</button>
+        ${hoodSelectHtml()}<input class="search" id="pipe-search" placeholder="Search order, customer, item, worker..." oninput="renderPipeBody()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button><button class="btn btn-ghost btn-sm" id="bulk-toggle" onclick="bulkToggle()" style="flex-shrink:0">☑️ Select many</button>
         <select id="pipe-stage" onchange="pipeStage=this.value;renderPipeBody()" style="width:auto;padding:8px 10px;font-size:12.5px">
           <option value="all">All steps</option>
           ${PIPE_COLS.map(c=>`<option value="${c.k}">${c.l}</option>`).join('')}
@@ -1992,8 +2027,9 @@ function pipeFilteredItems(){
       else if(pipeStatus==='pieces'){ if(!it.waitingPieces) return false; }
       else if(it.status!==pipeStatus) return false;
     }
+    if(hoodFilter!=='all' && hoodFor(orderIdOf(it.id))!==hoodFilter) return false;
     if(q){
-      const hay=(it.id+' '+(it.desc||'')+' '+(it.customer||'')+' '+orderIdOf(it.id)+' '+[...it.workers].join(' ')).toLowerCase();
+      const hay=(it.id+' '+(it.desc||'')+' '+(it.customer||'')+' '+orderIdOf(it.id)+' '+[...it.workers].join(' ')+' '+hoodFor(orderIdOf(it.id))).toLowerCase();
       if(!hay.includes(q)) return false;
     }
     return true;
@@ -2727,7 +2763,7 @@ async function loadTickets(){
     // Warm the order_id -> internal ticket id map while we have the list
     fetched.forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
     // RepairDesk's own per-item status — used to auto-close delivered pieces
-    _svcIdx=null;
+    _svcIdx=null; _hoodIdx=null;
     rdStatus={};
     fetched.forEach(t=>{
       const o=t.summary&&t.summary.order_id; if(!o) return;
@@ -6690,7 +6726,7 @@ function renderOrdersListPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head">
       <div><div class="page-title">Orders</div><div class="page-sub">Every order, its items, progress, and time</div></div>
-      <input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
+      ${hoodSelectHtml()}<input class="search" id="orders-search" placeholder="Search order, customer, item, worker..." oninput="renderOrdersList()"><button class="btn btn-ghost btn-sm" title="Scan a label" onclick="openScanSearch()" style="flex-shrink:0">📷 Scan</button><button class="btn btn-ghost btn-sm" title="Photograph the piece to find its ticket" onclick="photoFindOpen()" style="flex-shrink:0">🔎 Photo</button>
     </div>
     <div class="card" style="padding:12px 16px">
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">
@@ -6765,6 +6801,7 @@ function renderOrdersList(){
     return Object.entries(o.items).some(([iid,it])=>iid.toLowerCase().includes(q)||(it.desc||'').toLowerCase().includes(q)||it.events.some(e=>(e.worker||'').toLowerCase().includes(q)));
   });
   list=list.filter(([oid])=>dueMatches(oid));
+  if(hoodFilter!=='all') list=list.filter(([oid])=>hoodFor(oid)===hoodFilter);
   if(dueSort) list.sort((a,b)=>{
     const da=dueDateFor(a[0]), db=dueDateFor(b[0]);
     if(!da&&!db) return 0;
