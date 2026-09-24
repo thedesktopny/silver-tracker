@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-i</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-j</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -951,7 +951,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-i';
+const APP_VERSION='2026-08-14-j';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -4813,9 +4813,7 @@ async function putOnHold(itemId, desc){
     fireNotification('hold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
       title:(desc||itemId)+' put on hold — '+HOLD_KINDS[kind].label, body:reason});
     // Put it on the RepairDesk ticket too, so it's visible to whoever looks there
-    pushNoteToRepairDesk(itemId, 'SENT OUT: '+(desc||itemId)+' → '+HOLD_KINDS[kind].label+
-      (reason?' — '+reason:''))
-      .then(r=>{ if(r&&r.ok) toast('↗ Noted on the RepairDesk ticket'); });
+    pushHoldToRepairDesk(itemId, desc, HOLD_KINDS[kind].label, reason, false);
     await loadStageEvents(); router();
   }
   else {
@@ -4870,8 +4868,7 @@ async function releaseHold(itemId, desc){
   toast(res.go==='shop'?'📦 Back to Waiting for Shop':'▶ Back in the pipeline');
   fireNotification('unhold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
     title:(desc||itemId)+' taken off hold', body:res.note});
-  pushNoteToRepairDesk(itemId, 'BACK IN: '+(desc||itemId)+' — '+res.note)
-    .then(r=>{ if(r&&r.ok) toast('↗ Noted on the RepairDesk ticket'); });
+  pushHoldToRepairDesk(itemId, desc, '', res.note, true);
   await loadStageEvents(); await loadAllScans(); router();
 }
 // Add an update to a hold without releasing it
@@ -6339,6 +6336,44 @@ async function probeRepairDeskWrite(){
           the documentation page for <code>POST /ticket/addnote</code> lists the parameters — that would settle it.</div>
         </div>`);
 }
+async function renderHoldStatusMap(){
+  const el=document.getElementById('hold-rd-map'); if(!el) return;
+  el.innerHTML='<div style="color:var(--ink3);font-size:13px">Reading your RepairDesk statuses…</div>';
+  const list=await loadRdStatuses();
+  const map=holdStatusMap();
+  if(!list.length){
+    el.innerHTML='<div style="color:var(--orange);font-size:13px">Could not read RepairDesk\'s status list. The notes still go across; only the status change needs this.</div>';
+    return;
+  }
+  const rows=['__back'].concat(HOLD_PLACES);
+  el.innerHTML=rows.map(function(place){
+    const label=(place==='__back')?'↩ When it comes back':place;
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">'+
+      '<span style="flex:1;min-width:150px;font-size:13.5px;font-weight:600">'+esc(label)+'</span>'+
+      '<select onchange="setHoldStatus(\''+jsstr(place)+'\',this.value)" style="min-width:190px;padding:6px 9px;font-size:12.5px">'+
+        '<option value="">— don\'t change the status —</option>'+
+        list.map(function(s){ return '<option value="'+esc(s)+'"'+((map[place]===s)?' selected':'')+'>'+esc(s)+'</option>'; }).join('')+
+      '</select></div>';
+  }).join('');
+}
+function setHoldStatus(place, status){
+  const map=holdStatusMap();
+  if(status) map[place]=status; else delete map[place];
+  localStorage.setItem('glint_hold_rdstatus', JSON.stringify(map));
+  toast(status?('Will set RepairDesk to "'+status+'"'):'Status left alone');
+}
+function holdStatusSettingsHtml(){
+  setTimeout(renderHoldStatusMap, 60);
+  return `<div class="card" style="max-width:640px">
+    <div class="card-label">Show holds in RepairDesk</div>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">
+      A note always goes onto the ticket saying where a piece went. If you also want the ticket's
+      status to change, match each place to one of RepairDesk's own statuses below — it only accepts
+      names that already exist there.
+    </div>
+    <div id="hold-rd-map"></div>
+  </div>`;
+}
 function rdProbeSettingsHtml(){
   return `<div class="card" style="max-width:640px">
     <div class="card-label">Can we write notes back to RepairDesk?</div>
@@ -7379,6 +7414,59 @@ async function sendItemMessage(itemId, desc){
 }
 // Push a note to RepairDesk using the documented endpoint. The exact field names are
 // confirmed by the tester in Settings and remembered, so this uses whatever worked.
+// Set the RepairDesk ticket status so the hold is visible there, not only in a note.
+// RepairDesk only accepts statuses that exist in its own list, so the place name has
+// to match one — the mapping is set in Settings and checked against their list.
+let rdStatusList=null;
+async function loadRdStatuses(){
+  if(rdStatusList) return rdStatusList;
+  try{
+    const d=await fetchRD('statuses');
+    const arr=(d&&d.data)||[];
+    rdStatusList=arr.map(s=>s.status||s.name||s.title||'').filter(Boolean);
+  }catch(e){ rdStatusList=[]; }
+  return rdStatusList;
+}
+function holdStatusMap(){
+  try{ return JSON.parse(localStorage.getItem('glint_hold_rdstatus')||'{}'); }catch(e){ return {}; }
+}
+async function setRepairDeskStatus(itemId, statusName){
+  if(!statusName) return {skipped:true};
+  try{
+    const oid=orderIdOf(itemId);
+    const tid=await resolveTicketId(oid);
+    if(!tid) return {ok:false, why:'ticket not found'};
+    // Which line item on the ticket this piece is
+    let invId=null;
+    try{
+      const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+      const num=parseInt(String(itemId).split('-')[2])||1;
+      const dev=t&&t.devices?t.devices[num-1]:null;
+      if(dev) invId=parseInt(dev.id,10)||null;
+    }catch(e){}
+    if(!invId) return {ok:false, why:'could not tell which line item'};
+
+    const r=await edgeCall({action:'repairdesk_write', path:'ticket/updateticketstatus', method:'POST',
+      payload:{id:parseInt(tid,10), ticketInvId:invId, status:statusName}});
+    const j=await r.json();
+    let body={}; try{ body=JSON.parse(j.body||'{}'); }catch(_){}
+    const ok=body.success===true;
+    return {ok, why:(body.data&&body.data.message)||body.message||''};
+  }catch(e){ return {ok:false, why:e.message||String(e)}; }
+}
+async function pushHoldToRepairDesk(itemId, desc, placeLabel, reason, isBack){
+  // The note always goes, so the detail is recorded whatever happens with the status
+  pushNoteToRepairDesk(itemId, (isBack?'BACK IN: ':'SENT OUT: ')+(desc||itemId)+
+    (isBack?'':' → '+placeLabel)+(reason?' — '+reason:''))
+    .then(r=>{ if(r&&r.ok) toast('↗ Noted on the RepairDesk ticket'); });
+
+  const map=holdStatusMap();
+  const want=isBack ? (map['__back']||'') : (map[placeLabel]||'');
+  if(!want) return;
+  const res=await setRepairDeskStatus(itemId, want);
+  if(res.ok) toast('↗ RepairDesk status set to '+want);
+  else if(!res.skipped) toast('RepairDesk status not changed'+(res.why?': '+res.why:''));
+}
 async function pushNoteToRepairDesk(itemId, text){
   if(localStorage.getItem('glint_rd_notes_off')==='1') return {skipped:true};
   try{
@@ -7929,6 +8017,8 @@ async function renderSettingsPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
     ${rulesSettingsHtml()}
+
+    ${holdStatusSettingsHtml()}
 
     ${rdProbeSettingsHtml()}
 
