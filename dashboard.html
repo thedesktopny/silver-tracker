@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-m</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-n</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -978,7 +978,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-m';
+const APP_VERSION='2026-08-14-n';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -4837,9 +4837,11 @@ async function uploadRepairPhoto(file, itemId, tag){
   catch(e){ body=file; ext=(file.name.match(/\.[a-z0-9]+$/i)||['.jpg'])[0]; ctype=file.type||'image/jpeg'; }
   const fname=tag+'_'+itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+ext;
   const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{method:'POST',
-    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':ctype,'x-upsert':'true'},body});
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':ctype},body});
   if(!up.ok){
     let why=''; try{ const j=await up.json(); why=j.message||j.error||''; }catch(_){}
+    if(/row-level security|row level security|policy/i.test(why))
+      throw new Error('the photo storage is refusing uploads — run fix-photo-uploads.sql in Supabase');
     throw new Error('photo upload failed'+(why?': '+why:''));
   }
   const url=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
@@ -7844,7 +7846,7 @@ async function uploadDashFiles(files, itemId, itemName){
       const fname=(isVideo?'vid_':'')+itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+'_'+(done+failed)+ext;
       const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{
         method:'POST',
-        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':ctype,'x-upsert':'true'},
+        headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':ctype},
         body});
       if(!up.ok){
         let why=''; try{ const j=await up.json(); why=j.message||j.error||''; }catch(_){}
