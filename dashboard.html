@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-n</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-p</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -978,7 +978,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-n';
+const APP_VERSION='2026-08-14-p';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -4817,7 +4817,7 @@ function computeHolds(){
     const evs=(history[id]||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
     let startIdx=0;
     for(let i=evs.length-1;i>=0;i--){ if(evs[i].action==='unhold'){ startIdx=i+1; break; } }
-    h.updates=evs.slice(startIdx).map(e=>({
+    h.updates=evs.slice(startIdx).filter(e=>!String(e.worker||'').includes('moved')).map(e=>({
       reason:(e.stage||'').split('::').slice(1).join('::'), at:e.created_at, worker:e.worker||''
     })).filter(u=>u.reason);
     h.since=h.updates.length?h.updates[0].at:h.at;
@@ -5038,6 +5038,45 @@ async function releaseHold(itemId, desc){
   await loadStageEvents(); await loadAllScans(); router();
 }
 // Add an update to a hold without releasing it
+// Put a piece at the right repair place when it was logged at the wrong one. Nothing
+// is re-entered: the photo, who pays and the reason all stay; only the place changes,
+// and it's recorded as a correction rather than a second trip.
+function askMovePlace(name, currentLabel){
+  return new Promise(resolve=>{
+    const bg=document.createElement('div');
+    bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px';
+    const opts=HOLD_PLACES.filter(p=>p!==currentLabel);
+    bg.innerHTML='<div style="background:var(--surface);border-radius:16px;padding:22px;max-width:400px;width:100%">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)">Move to another place</div>'+
+      '<div style="font-size:17px;font-weight:800;margin:4px 0 4px">'+esc(name)+'</div>'+
+      '<div style="font-size:12.5px;color:var(--ink3);margin-bottom:12px">Now: '+esc(currentLabel)+' — photo, who pays and reason are kept</div>'+
+      opts.map(p=>'<button data-p="'+esc(p)+'" style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:10px;background:var(--surface);text-align:left;cursor:pointer;margin-bottom:7px;font-size:14.5px;font-weight:700;color:var(--ink)">'+esc(p)+'</button>').join('')+
+      '<button data-p="" style="width:100%;padding:10px;border:none;background:none;color:var(--ink3);cursor:pointer;font-size:13px">Cancel</button></div>';
+    document.body.appendChild(bg);
+    bg.querySelectorAll('button').forEach(b=>b.onclick=()=>{ bg.remove(); resolve(b.getAttribute('data-p')||null); });
+  });
+}
+async function moveHoldPlace(itemId, desc){
+  const h=(computeHolds()||{})[itemId];
+  if(!h){ toast('This piece is not on hold'); return; }
+  const from=holdKindOf(h.kind).label;
+  const to=await askMovePlace(desc||itemId, from);
+  if(!to) return;
+  const original=(h.updates&&h.updates[0]&&h.updates[0].reason)||h.reason||'';
+  const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:to+'::'+original,
+                         action:'hold', worker:'Admin · moved'})});
+  if(!r.ok){ toast('Could not move it'); return; }
+  // Same repair record, new place
+  try{
+    await sb('repairs?item_id=eq.'+encodeURIComponent(itemId)+'&back_at=is.null',
+      {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({place:to})});
+  }catch(e){}
+  pushNoteToRepairDesk(itemId, 'CORRECTED: '+(desc||itemId)+' → '+to+' (was logged as '+from+')')
+    .then(x=>{ if(x&&x.ok) toast('↗ Correction noted on the RepairDesk ticket'); });
+  toast('↔ Moved to '+to);
+  await loadStageEvents(); router();
+}
 async function updateHold(itemId, desc){
   const note=prompt('Update on "'+(desc||itemId)+'"\n\nWhat has changed? It stays on hold.');
   if(note===null) return;
@@ -5098,7 +5137,10 @@ function repairHistoryFor(itemId){
       const reason=hasPlace?raw.split('::').slice(1).join('::'):raw;
       // An update carries no place, so it belongs to the trip already open rather than
       // starting a new one — otherwise chasing a supplier looked like a second trip.
-      if(open && (!hasPlace || open.place===place)){
+      if(open && String(e.worker||'').includes('moved') && hasPlace){
+        (open.moves=open.moves||[]).push({from:open.place, to:place, at:e.created_at});
+        open.place=place;
+      } else if(open && (!hasPlace || open.place===place)){
         open.updates.push({reason, at:e.created_at});
       } else {
         if(open) trips.push(open);
@@ -5131,6 +5173,7 @@ function repairHistoryHtml(itemId){
         </div>
         ${tr.reason?`<div style="font-size:12.5px;color:var(--ink2);margin-top:3px">${esc(tr.reason)}</div>`:''}
         ${tr.updates.map(u=>`<div style="font-size:12px;color:var(--ink3);margin-top:2px">↳ ${esc(u.reason)} <span style="opacity:.7">${fmtDate(u.at)}</span></div>`).join('')}
+        ${(tr.moves||[]).map(m=>`<div style="font-size:12px;color:var(--ink3);margin-top:2px">↔ corrected from ${esc(holdKindOf(m.from).label||m.from)} <span style="opacity:.7">${fmtDate(m.at)}</span></div>`).join('')}
         ${tr.backNote?`<div style="font-size:12px;color:var(--green);margin-top:3px">↩ ${esc(tr.backNote)}</div>`:''}
       </div>`;
     }).join('')}
@@ -5180,6 +5223,7 @@ function renderHoldPage(){
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
             <button class="btn btn-ghost btn-sm" onclick="updateHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">✏️ Update</button>
+            ${holdKindOf(h.kind).place?`<button class="btn btn-ghost btn-sm" onclick="moveHoldPlace('${jsstr(h.id)}','${jsstr(h.desc||'')}')">↔ Move</button>`:''}
             <button class="btn btn-sm" onclick="releaseHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">▶ Release</button>
           </div>
         </div>`;
@@ -5204,6 +5248,7 @@ function renderHoldPage(){
           </div>
           <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
             <button class="btn btn-ghost btn-sm" onclick="updateHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">✏️ Update</button>
+            ${holdKindOf(h.kind).place?`<button class="btn btn-ghost btn-sm" onclick="moveHoldPlace('${jsstr(h.id)}','${jsstr(h.desc||'')}')">↔ Move</button>`:''}
             <button class="btn btn-sm" onclick="releaseHold('${jsstr(h.id)}','${jsstr(h.desc||'')}')">▶ Release</button>
           </div>
         </div>`;
@@ -6600,7 +6645,9 @@ function drawRepairs(){
     return;
   }
   const rows=rpFiltered();
-  const places=[...new Set(repairRows.map(r=>r.place).filter(Boolean))].sort();
+  // Every repair place you use, not only ones that already have a trip recorded —
+  // otherwise a new table left this list with nothing but Anywhere.
+  const places=[...new Set([...(HOLD_PLACES||[]), ...repairRows.map(r=>r.place)].filter(Boolean))];
   const sum=(list)=>list.reduce((a,r)=>a+(+r.cost||0),0);
   const byPayer=k=>rows.filter(r=>(r.payer||'unsure')===k);
   const out=rows.filter(r=>!r.back_at).length;
@@ -7386,6 +7433,7 @@ async function renderItemDetailPage(itemId){
         </div>`).join('')}
       <div style="font-size:11.5px;color:var(--ink3);margin-top:6px">since ${fmtDate(holdInfo.since||holdInfo.at)} · ${hdays} day${hdays!==1?'s':''}</div>
       <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="updateHold('${jsstr(itemId)}','${jsstr(name||'')}')">✏️ Add an update</button>
+      ${hk.place?`<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="moveHoldPlace('${jsstr(itemId)}','${jsstr(name||'')}')">↔ Wrong place? Move it</button>`:''}
     </div>`;
   }
   html+=repairHistoryHtml(itemId);
