@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-j</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-m</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -398,6 +398,7 @@ const NAV_ITEMS = [
   {route:'boxes', label:'Boxes', icon:'📦'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
   {route:'hold', label:'On Hold', icon:'⏸️'},
+  {route:'repairs', label:'Repairs', icon:'🔧'},
   {route:'timeline', label:'Day Timeline', icon:'🕘'},
   {route:'production', label:'Production', icon:'📈'},
   {route:'kpi', label:'Weekly KPIs', icon:'📊'},
@@ -713,21 +714,47 @@ async function loadDueOverrides(){
     localStorage.setItem('glint_due_over', JSON.stringify(map));
   }catch(e){}
 }
-async function setDueDate(oid){
+// A calendar to pick from, rather than typing YYYY-MM-DD into a box
+function setDueDate(oid){
   const cur=dueOverrides[oid]||'';
   const info=dueInfoFor(oid);
-  const suggested=cur?cur.slice(0,10):(info?info.date.toISOString().slice(0,10):'');
-  const v=prompt('Due date for '+oid+'\n\nFormat: YYYY-MM-DD'+(info&&info.pickup?'\nPicked up '+fmtDue(info.pickup)+' — '+DUE_WEEKS+' weeks lands on '+fmtDue(info.date):'')+'\n\nLeave empty to go back to the automatic date.', suggested);
-  if(v===null) return;
-  const clean=String(v).trim();
-  if(clean && !/^\d{4}-\d{2}-\d{2}$/.test(clean)){ toast('Use the format YYYY-MM-DD'); return; }
+  const start=cur?cur.slice(0,10):(info?info.date.toISOString().slice(0,10):'');
+  const bg=document.createElement('div');
+  bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px';
+  bg.innerHTML=
+    '<div style="background:var(--surface);border-radius:16px;padding:22px;max-width:360px;width:100%">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)">Due date</div>'+
+      '<div style="font-size:18px;font-weight:800;margin:4px 0 12px">'+esc(oid)+'</div>'+
+      (info&&info.pickup?'<div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">Picked up '+fmtDue(info.pickup)+' — '+DUE_WEEKS+' weeks lands on '+fmtDue(info.date)+'</div>':'')+
+      '<input type="date" id="due-pick" value="'+start+'" style="width:100%;padding:11px;font-size:16px;border-radius:9px">'+
+      '<div style="display:flex;gap:8px;margin-top:14px">'+
+        '<button id="due-save" class="btn btn-gold" style="flex:1">Save</button>'+
+        '<button id="due-clear" class="btn btn-ghost" title="Go back to the automatic date">Automatic</button>'+
+        '<button id="due-cancel" class="btn btn-ghost">Cancel</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(bg);
+  const pick=bg.querySelector('#due-pick');
+  // Open the calendar straight away where the browser allows it
+  setTimeout(()=>{ try{ pick.focus(); if(pick.showPicker) pick.showPicker(); }catch(e){} }, 80);
+  const close=()=>bg.remove();
+  bg.querySelector('#due-cancel').onclick=close;
+  bg.onclick=e=>{ if(e.target===bg) close(); };
+  bg.querySelector('#due-clear').onclick=()=>{ close(); saveDueDate(oid,''); };
+  bg.querySelector('#due-save').onclick=()=>{
+    const v=pick.value;
+    if(!v){ toast('Pick a date, or press Automatic'); return; }
+    close(); saveDueDate(oid,v);
+  };
+}
+async function saveDueDate(oid, clean){
   const r=await sb('external_status?on_conflict=key,source',{method:'POST',
     headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
     body:JSON.stringify({key:oid, source:'due', status:clean||null, meta:{}, updated_at:new Date().toISOString()})});
   if(r.ok){
     if(clean) dueOverrides[oid]=clean; else delete dueOverrides[oid];
     localStorage.setItem('glint_due_over', JSON.stringify(dueOverrides));
-    toast(clean?('✅ Due '+fmtDue(new Date(clean))):'Back to the automatic date');
+    toast(clean?('✅ Due '+fmtDue(new Date(clean+'T12:00:00'))):'Back to the automatic date');
     router();
   } else toast('Could not save');
 }
@@ -932,7 +959,7 @@ function navigate(hash){
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',repairs:'Repairs',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -951,7 +978,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-j';
+const APP_VERSION='2026-08-14-m';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1006,6 +1033,7 @@ const ROUTE_RENDERERS={
   inbox: renderInboxPage,
   boxes: renderBoxesPage,
   hold: renderHoldPage,
+  repairs: renderRepairsPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
   costs: renderCostsPage,
@@ -4799,12 +4827,137 @@ function computeHolds(){
 }
 function isOnHold(itemId){ return !!computeHolds()[itemId]; }
 
+// ========================================================================
+// REPAIR TRIPS — what goes out, who pays, what it cost, photos both ways
+// ========================================================================
+// Upload one photo and hand back its address
+async function uploadRepairPhoto(file, itemId, tag){
+  let body=file, ext='.jpg', ctype='image/jpeg';
+  try{ body=await shrinkImage(file, 1200); }
+  catch(e){ body=file; ext=(file.name.match(/\.[a-z0-9]+$/i)||['.jpg'])[0]; ctype=file.type||'image/jpeg'; }
+  const fname=tag+'_'+itemId.replace(/[^a-zA-Z0-9]/g,'_')+'_'+Date.now()+ext;
+  const up=await fetch(SUPABASE_URL+'/storage/v1/object/item-photos/'+fname,{method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':ctype,'x-upsert':'true'},body});
+  if(!up.ok){
+    let why=''; try{ const j=await up.json(); why=j.message||j.error||''; }catch(_){}
+    throw new Error('photo upload failed'+(why?': '+why:''));
+  }
+  const url=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
+  // Keep it with the item's other photos too
+  try{ await sb('item_images',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, image_url:url, worker:'Office', role:tag==='repair_out'?'Sent to repair':'Back from repair'})}); }catch(_){}
+  return url;
+}
+
+// A shared form box. Photo is always required; the other fields are passed in.
+function repairForm(title, sub, fieldsHtml, onSubmit){
+  return new Promise(resolve=>{
+    const bg=document.createElement('div');
+    bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
+    bg.innerHTML='<div style="background:var(--surface);border-radius:16px;padding:22px;max-width:440px;width:100%;margin:auto">'+
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)">'+title+'</div>'+
+      '<div style="font-size:18px;font-weight:800;margin:4px 0 14px">'+sub+'</div>'+
+      fieldsHtml+
+      '<div style="font-size:12px;color:var(--ink3);margin:12px 0 5px">Photo <span style="color:var(--red)">required</span></div>'+
+      '<input type="file" id="rf-photo" accept="image/*" capture="environment" style="width:100%">'+
+      '<img id="rf-prev" style="display:none;width:100%;max-height:180px;object-fit:cover;border-radius:9px;margin-top:8px">'+
+      '<div id="rf-err" style="color:var(--red);font-size:12.5px;min-height:18px;margin-top:8px"></div>'+
+      '<div style="display:flex;gap:8px;margin-top:6px">'+
+        '<button id="rf-ok" class="btn btn-gold" style="flex:1">Save</button>'+
+        '<button id="rf-no" class="btn btn-ghost">Cancel</button>'+
+      '</div></div>';
+    document.body.appendChild(bg);
+    const ph=bg.querySelector('#rf-photo'), prev=bg.querySelector('#rf-prev');
+    ph.onchange=()=>{ const f=ph.files&&ph.files[0]; if(f){ prev.src=URL.createObjectURL(f); prev.style.display='block'; } };
+    bg.querySelector('#rf-no').onclick=()=>{ bg.remove(); resolve(null); };
+    bg.querySelector('#rf-ok').onclick=async()=>{
+      const err=bg.querySelector('#rf-err');
+      const file=ph.files&&ph.files[0];
+      const vals=onSubmit(bg);
+      if(typeof vals==='string'){ err.textContent=vals; return; }   // validation message
+      if(!file){ err.textContent='Please add a photo.'; return; }
+      const btn=bg.querySelector('#rf-ok'); btn.disabled=true; btn.textContent='Uploading…';
+      resolve({...vals, file, close:()=>bg.remove(), fail:m=>{ err.textContent=m; btn.disabled=false; btn.textContent='Save'; }});
+    };
+  });
+}
+
+// Going out
+async function repairSend(itemId, desc, placeLabel){
+  const res=await repairForm('Sending to repair', esc(desc||itemId)+' → '+esc(placeLabel),
+    '<div style="font-size:12px;color:var(--ink3);margin-bottom:5px">What needs doing? <span style="color:var(--red)">required</span></div>'+
+    '<textarea id="rf-reason" rows="2" style="width:100%" placeholder="e.g. leg needs re-soldering"></textarea>'+
+    '<div style="font-size:12px;color:var(--ink3);margin:12px 0 6px">Who pays? <span style="color:var(--red)">required</span></div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      ['customer','glint','unsure'].map(v=>'<label style="flex:1;min-width:100px;border:2px solid var(--border);border-radius:9px;padding:10px;cursor:pointer;text-align:center;font-weight:600;font-size:13.5px">'+
+        '<input type="radio" name="rf-payer" value="'+v+'" style="margin-right:5px">'+({customer:'Customer pays',glint:'Glint pays',unsure:'Not sure'})[v]+'</label>').join('')+
+    '</div>',
+    bg=>{
+      const reason=bg.querySelector('#rf-reason').value.trim();
+      const p=bg.querySelector('input[name=rf-payer]:checked');
+      if(!reason) return 'Say what needs doing.';
+      if(!p) return 'Choose who pays.';
+      return {reason, payer:p.value};
+    });
+  if(!res) return null;
+  try{
+    const url=await uploadRepairPhoto(res.file, itemId, 'repair_out');
+    const r=await sb('repairs',{method:'POST',headers:{'Prefer':'return=minimal'},
+      body:JSON.stringify({item_id:itemId, order_id:orderIdOf(itemId), item_desc:desc||'', place:placeLabel,
+        reason:res.reason, payer:res.payer, sent_photo:url, created_by:'Office'})});
+    if(!r.ok){ res.fail('Could not save the repair — is add-repairs.sql run?'); return null; }
+    res.close();
+    return {reason:res.reason, payer:res.payer};
+  }catch(e){ res.fail(e.message||String(e)); return null; }
+}
+
+// Coming back
+async function repairBack(itemId, desc, placeLabel){
+  const res=await repairForm('Back from repair', esc(desc||itemId)+(placeLabel?' ← '+esc(placeLabel):''),
+    '<div style="font-size:12px;color:var(--ink3);margin-bottom:5px">What did it cost? <span style="color:var(--red)">required</span></div>'+
+    '<input id="rf-cost" inputmode="decimal" placeholder="e.g. 45.00" style="width:100%;padding:10px;font-size:15px">'+
+    '<div style="font-size:12px;color:var(--ink3);margin:12px 0 5px">Note <span style="opacity:.7">(optional)</span></div>'+
+    '<textarea id="rf-note" rows="2" style="width:100%"></textarea>'+
+    '<div style="font-size:12px;color:var(--ink3);margin:12px 0 6px">Where does it go now?</div>'+
+    '<label style="display:block;margin-bottom:5px;font-size:13.5px"><input type="radio" name="rf-go" value="shop" checked> Back to Waiting for Shop</label>'+
+    '<label style="display:block;font-size:13.5px"><input type="radio" name="rf-go" value="keep"> Carry on where it left off</label>',
+    bg=>{
+      const raw=bg.querySelector('#rf-cost').value;
+      const cost=parseFloat(String(raw).replace(/[^0-9.]/g,''));
+      if(raw.trim()==='' || isNaN(cost)) return 'Enter what it cost (0 if nothing).';
+      return {cost, note:bg.querySelector('#rf-note').value.trim(), go:bg.querySelector('input[name=rf-go]:checked').value};
+    });
+  if(!res) return null;
+  try{
+    const url=await uploadRepairPhoto(res.file, itemId, 'repair_back');
+    // Close off the most recent open trip for this piece
+    const open=await sb('repairs?item_id=eq.'+encodeURIComponent(itemId)+'&back_at=is.null&select=id&order=sent_at.desc&limit=1');
+    const rid=Array.isArray(open)&&open[0]?open[0].id:null;
+    const payload={back_at:new Date().toISOString(), back_photo:url, back_note:res.note||null, cost:res.cost};
+    const r = rid
+      ? await sb('repairs?id=eq.'+rid,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(payload)})
+      : await sb('repairs',{method:'POST',headers:{'Prefer':'return=minimal'},
+          body:JSON.stringify({...payload, item_id:itemId, order_id:orderIdOf(itemId), item_desc:desc||'', place:placeLabel||''})});
+    if(!r.ok){ res.fail('Could not save — is add-repairs.sql run?'); return null; }
+    res.close();
+    return {note:res.note, cost:res.cost, go:res.go};
+  }catch(e){ res.fail(e.message||String(e)); return null; }
+}
+
 async function putOnHold(itemId, desc){
   const kind=await askHoldKind(desc||itemId);
   if(!kind) return;
-  const reason=prompt('Why is "'+(desc||itemId)+'" on hold?\n\n'+HOLD_KINDS[kind].hint);
-  if(reason===null) return;
-  if(!String(reason).trim()){ toast('A reason is required'); return; }
+  let reason;
+  if(HOLD_KINDS[kind].place){
+    // Out to a repair place: photo, who pays and what's needed are all required
+    const sent=await repairSend(itemId, desc, HOLD_KINDS[kind].label);
+    if(!sent) return;
+    reason=sent.reason+' ('+({customer:'customer pays',glint:'Glint pays',unsure:'payer not sure'})[sent.payer]+')';
+  } else {
+    reason=prompt('Why is "'+(desc||itemId)+'" on hold?\n\n'+HOLD_KINDS[kind].hint);
+    if(reason===null) return;
+    if(!String(reason).trim()){ toast('A reason is required'); return; }
+  }
   const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
     body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:HOLD_KINDS[kind].label+'::'+reason,
                          action:'hold', worker:'Admin'})});
@@ -4852,8 +5005,19 @@ function askRelease(name){
   });
 }
 async function releaseHold(itemId, desc){
-  const res=await askRelease(desc||itemId);
-  if(!res) return;
+  // Coming back from a repair place needs the cost and a photo; the note is optional.
+  // A customer hold keeps the simpler release.
+  const cur=(computeHolds()||{})[itemId];
+  const k=cur?holdKindOf(cur.kind):null;
+  let res;
+  if(k && k.place){
+    const back=await repairBack(itemId, desc, k.label);
+    if(!back) return;
+    res={go:back.go, note:'Back from '+k.label+' — cost $'+back.cost.toFixed(2)+(back.note?' — '+back.note:'')};
+  } else {
+    res=await askRelease(desc||itemId);
+    if(!res) return;
+  }
   const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
     body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:res.note, action:'unhold', worker:'Admin'})});
   if(!r.ok){ toast('Could not save'); return; }
@@ -6389,6 +6553,113 @@ function rdProbeSettingsHtml(){
   </div>`;
 }
 
+// ========================================================================
+// REPAIRS PAGE — every trip out, with who paid and what it cost
+// ========================================================================
+let repairRows=null;
+let rpF={outFrom:'',outTo:'',backFrom:'',backTo:'',payer:'all',state:'all',place:'all'};
+async function loadRepairs(){
+  try{ const r=await sbList('repairs?select=*&order=sent_at.desc&limit=5000',2); repairRows=Array.isArray(r)?r:[]; }
+  catch(e){ repairRows=null; }
+}
+const PAYER_LABEL={customer:'Customer pays', glint:'Glint pays', unsure:'Not sure'};
+function rpInRange(v, from, to){
+  if(!from && !to) return true;
+  if(!v) return false;
+  const d=new Date(v);
+  if(from && d<new Date(from+'T00:00:00')) return false;
+  if(to && d>new Date(to+'T23:59:59')) return false;
+  return true;
+}
+function rpFiltered(){
+  return (repairRows||[]).filter(r=>{
+    if(rpF.payer!=='all' && (r.payer||'unsure')!==rpF.payer) return false;
+    if(rpF.state==='out' && r.back_at) return false;
+    if(rpF.state==='back' && !r.back_at) return false;
+    if(rpF.place!=='all' && r.place!==rpF.place) return false;
+    if(!rpInRange(r.sent_at, rpF.outFrom, rpF.outTo)) return false;
+    if(!rpInRange(r.back_at, rpF.backFrom, rpF.backTo)) return false;
+    return true;
+  });
+}
+function rpSet(k,v){ rpF[k]=v; drawRepairs(); }
+async function renderRepairsPage(){
+  document.getElementById('content').innerHTML=
+    '<div class="page-head"><div><div class="page-title">Repairs</div>'+
+    '<div class="page-sub">Every piece sent out, who pays, and what it cost</div></div></div>'+
+    '<div id="rp-body"><div class="card"><div class="empty">Loading…</div></div></div>';
+  await loadRepairs();
+  drawRepairs();
+}
+function drawRepairs(){
+  const el=document.getElementById('rp-body'); if(!el) return;
+  if(repairRows===null){
+    el.innerHTML='<div class="card"><div class="empty">The repairs table is not set up yet — run <strong>add-repairs.sql</strong> in Supabase.</div></div>';
+    return;
+  }
+  const rows=rpFiltered();
+  const places=[...new Set(repairRows.map(r=>r.place).filter(Boolean))].sort();
+  const sum=(list)=>list.reduce((a,r)=>a+(+r.cost||0),0);
+  const byPayer=k=>rows.filter(r=>(r.payer||'unsure')===k);
+  const out=rows.filter(r=>!r.back_at).length;
+  const day=86400000;
+  const inp='padding:6px 8px;font-size:12.5px';
+
+  el.innerHTML=
+    '<div class="card" style="padding:12px 16px">'+
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">SENT OUT between</div>'+
+          '<input type="date" value="'+rpF.outFrom+'" onchange="rpSet(\'outFrom\',this.value)" style="'+inp+'"> – '+
+          '<input type="date" value="'+rpF.outTo+'" onchange="rpSet(\'outTo\',this.value)" style="'+inp+'"></div>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">CAME BACK between</div>'+
+          '<input type="date" value="'+rpF.backFrom+'" onchange="rpSet(\'backFrom\',this.value)" style="'+inp+'"> – '+
+          '<input type="date" value="'+rpF.backTo+'" onchange="rpSet(\'backTo\',this.value)" style="'+inp+'"></div>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">WHO PAYS</div>'+
+          '<select onchange="rpSet(\'payer\',this.value)" style="'+inp+'">'+
+            ['all','customer','glint','unsure'].map(v=>'<option value="'+v+'"'+(rpF.payer===v?' selected':'')+'>'+(v==='all'?'Everyone':PAYER_LABEL[v])+'</option>').join('')+
+          '</select></div>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">WHERE</div>'+
+          '<select onchange="rpSet(\'place\',this.value)" style="'+inp+'"><option value="all">Anywhere</option>'+
+            places.map(p=>'<option value="'+esc(p)+'"'+(rpF.place===p?' selected':'')+'>'+esc(p)+'</option>').join('')+
+          '</select></div>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">STATUS</div>'+
+          '<select onchange="rpSet(\'state\',this.value)" style="'+inp+'">'+
+            [['all','All'],['out','Still out'],['back','Came back']].map(([v,l])=>'<option value="'+v+'"'+(rpF.state===v?' selected':'')+'>'+l+'</option>').join('')+
+          '</select></div>'+
+        '<button class="btn btn-ghost btn-sm" onclick="rpF={outFrom:\'\',outTo:\'\',backFrom:\'\',backTo:\'\',payer:\'all\',state:\'all\',place:\'all\'};drawRepairs()">Clear</button>'+
+      '</div></div>'+
+
+    '<div class="stat-grid">'+
+      '<div class="stat-tile" style="border-left:4px solid var(--gold)"><div class="stat-num" style="font-size:24px">'+rows.length+'</div><div class="stat-label">Repairs shown</div></div>'+
+      '<div class="stat-tile"><div class="stat-num" style="font-size:24px">'+money(sum(rows))+'</div><div class="stat-label">Total cost</div></div>'+
+      '<div class="stat-tile" style="border-left:4px solid var(--orange)"><div class="stat-num" style="font-size:24px;color:var(--orange)">'+money(sum(byPayer('glint')))+'</div><div class="stat-label">Glint paid</div></div>'+
+      '<div class="stat-tile" style="border-left:4px solid var(--green)"><div class="stat-num" style="font-size:24px;color:var(--green)">'+money(sum(byPayer('customer')))+'</div><div class="stat-label">Customer pays</div></div>'+
+      '<div class="stat-tile"><div class="stat-num" style="font-size:24px">'+out+'</div><div class="stat-label">Still out</div></div>'+
+    '</div>'+
+
+    '<div class="card">'+(rows.length?
+      '<table><thead><tr><th>Piece</th><th>Where</th><th>Sent</th><th>Back</th><th>Days</th><th>Who pays</th><th>Cost</th><th>Photos</th></tr></thead><tbody>'+
+      rows.map(r=>{
+        const days=Math.floor(((r.back_at?new Date(r.back_at):new Date())-new Date(r.sent_at))/day);
+        const pc=r.payer==='glint'?'var(--orange)':(r.payer==='customer'?'var(--green)':'var(--ink3)');
+        return '<tr>'+
+          '<td><span class="clickable" style="font-weight:600" onclick="navigate(\''+h('item',r.item_id).replace(/'/g,"\\'")+'\')">'+esc(r.item_desc||r.item_id)+'</span>'+
+            '<br><span style="font-size:11px;color:var(--ink3)">'+esc(r.item_id)+'</span>'+
+            (r.reason?'<br><span style="font-size:11.5px;color:var(--ink2)">'+esc(r.reason)+'</span>':'')+'</td>'+
+          '<td>'+esc(r.place||'')+'</td>'+
+          '<td style="white-space:nowrap">'+fmtDate(r.sent_at)+'</td>'+
+          '<td style="white-space:nowrap">'+(r.back_at?fmtDate(r.back_at):'<span style="color:var(--orange);font-weight:700">still out</span>')+'</td>'+
+          '<td>'+days+'d</td>'+
+          '<td style="color:'+pc+';font-weight:600">'+(PAYER_LABEL[r.payer]||'Not sure')+'</td>'+
+          '<td style="font-weight:700">'+(r.cost!=null?money(+r.cost):'—')+'</td>'+
+          '<td style="white-space:nowrap">'+
+            (r.sent_photo?'<a href="'+esc(r.sent_photo)+'" target="_blank" title="When it went out">📤</a> ':'')+
+            (r.back_photo?'<a href="'+esc(r.back_photo)+'" target="_blank" title="When it came back">📥</a>':'')+'</td>'+
+        '</tr>';
+      }).join('')+'</tbody></table>'
+      : '<div class="empty">No repairs match these filters</div>')+'</div>';
+}
+
 async function renderProductionPage(){
   if(typeof invRows==='undefined'||invRows===null||!invRows.length){ try{ await loadInventory(); }catch(e){} }
 
@@ -7454,18 +7725,15 @@ async function setRepairDeskStatus(itemId, statusName){
     return {ok, why:(body.data&&body.data.message)||body.message||''};
   }catch(e){ return {ok:false, why:e.message||String(e)}; }
 }
+// A note on the RepairDesk ticket saying where the piece went and why. The ticket's
+// own status is deliberately left alone — that belongs to RepairDesk's workflow.
 async function pushHoldToRepairDesk(itemId, desc, placeLabel, reason, isBack){
-  // The note always goes, so the detail is recorded whatever happens with the status
-  pushNoteToRepairDesk(itemId, (isBack?'BACK IN: ':'SENT OUT: ')+(desc||itemId)+
-    (isBack?'':' → '+placeLabel)+(reason?' — '+reason:''))
-    .then(r=>{ if(r&&r.ok) toast('↗ Noted on the RepairDesk ticket'); });
-
-  const map=holdStatusMap();
-  const want=isBack ? (map['__back']||'') : (map[placeLabel]||'');
-  if(!want) return;
-  const res=await setRepairDeskStatus(itemId, want);
-  if(res.ok) toast('↗ RepairDesk status set to '+want);
-  else if(!res.skipped) toast('RepairDesk status not changed'+(res.why?': '+res.why:''));
+  const text = isBack
+    ? 'BACK FROM HOLD: '+(desc||itemId)+(reason?' — '+reason:'')
+    : 'ON HOLD: '+(desc||itemId)+' → '+placeLabel+(reason?' — '+reason:'');
+  const r=await pushNoteToRepairDesk(itemId, text);
+  if(r && r.ok) toast('↗ Noted on the RepairDesk ticket');
+  else if(r && !r.skipped) toast('RepairDesk did not take the note'+(r.why?': '+r.why:''));
 }
 async function pushNoteToRepairDesk(itemId, text){
   if(localStorage.getItem('glint_rd_notes_off')==='1') return {skipped:true};
@@ -8017,8 +8285,6 @@ async function renderSettingsPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head"><div><div class="page-title">Settings</div><div class="page-sub">Manage your Control Room access</div></div></div>
     ${rulesSettingsHtml()}
-
-    ${holdStatusSettingsHtml()}
 
     ${rdProbeSettingsHtml()}
 
