@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-08-14-b</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-10-12-a</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -430,6 +430,118 @@ let sheetUrl = localStorage.getItem('st_url') || '';
 let rdApiKey = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
+// ========================================================================
+// PERMANENT PIECE NUMBERS — one answer to "which RepairDesk line is T-1429-7?"
+// ========================================================================
+// Every printed label records the RepairDesk line it was made for (rd_device_id).
+// Both apps used to ignore that and count positions instead: devices[7-1]. So the
+// moment a line was removed or added in RepairDesk, the label still said -7 but
+// names, services, notes, photos and statuses were read from whatever now sat in
+// position 7 — and the wine bottle at position 6 was shown as -6.
+// Everything now goes through pieceNumbers()/deviceForItem(), which match on the
+// recorded line first, then the printed name, and only fall back to position for
+// orders that have never had a label printed.
+const _lblByOrder = {};          // order id -> [{n, dev, name, at}]
+const _lblLoaded  = {};          // order id -> true once its labels were fetched
+
+function _splitItemId(id){
+  const m = /^(.*)-(\d+)(?:-[A-Za-z].*)?$/.exec(String(id || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[2], 10);
+  return n ? { oid: m[1], n } : null;
+}
+function rememberLabelRows(rows){
+  (Array.isArray(rows) ? rows : []).forEach(function(r){
+    const p = _splitItemId(r.item_id); if (!p) return;
+    const list = _lblByOrder[p.oid] || (_lblByOrder[p.oid] = []);
+    const dev  = r.rd_device_id ? String(r.rd_device_id) : '';
+    const name = String(r.item_name || '').split(' — ')[0].trim();
+    if (!list.some(function(x){ return x.n === p.n && x.dev === dev && x.name === name; }))
+      list.push({ n: p.n, dev: dev, name: name, at: r.printed_at || '' });
+  });
+}
+function _lblHeaders(){ return { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }; }
+
+// One order's labels, fetched once. Never waits more than a few seconds — a slow
+// connection falls back to the old behaviour rather than holding anything up.
+async function loadLabelsForOrder(oid){
+  if (!oid || _lblLoaded[oid]) return;
+  try{
+    const q = SUPABASE_URL + '/rest/v1/labels?item_id=like.' + encodeURIComponent(oid + '-%') +
+              '&select=item_id,item_name,rd_device_id,printed_at&order=printed_at.asc&limit=1000';
+    const r = await Promise.race([
+      fetch(q, { headers: _lblHeaders() }),
+      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, 4000); })
+    ]);
+    if (r && r.ok){ rememberLabelRows(await r.json()); _lblLoaded[oid] = true; }
+  }catch(e){}
+}
+// Every label, a page at a time (the database hands back at most 1000 per request)
+async function loadAllLabelIndex(){
+  for (let page = 0; page < 40; page++){
+    try{
+      const q = SUPABASE_URL + '/rest/v1/labels?select=item_id,item_name,rd_device_id,printed_at' +
+                '&order=printed_at.asc&limit=1000&offset=' + (page * 1000);
+      const r = await fetch(q, { headers: _lblHeaders() });
+      if (!r.ok) return;
+      const rows = await r.json();
+      rememberLabelRows(rows);
+      rows.forEach(function(x){ const p = _splitItemId(x.item_id); if (p) _lblLoaded[p.oid] = true; });
+      if (!Array.isArray(rows) || rows.length < 1000) return;
+    }catch(e){ return; }
+  }
+}
+
+// The permanent number for each RepairDesk line on a ticket, in the ticket's order.
+// Three passes, in this order, so one piece can never take another's number:
+//   1. the line recorded on its printed label
+//   2. the printed name — only from labels whose line is no longer on the ticket
+//      (a line deleted and re-added in RepairDesk) or that never recorded one
+//   3. the next number nobody has used
+function pieceNumbers(oid, devices){
+  const devs = Array.isArray(devices) ? devices : [];
+  const rows = (_lblByOrder[oid] || []).slice().sort(function(a, b){ return String(a.at).localeCompare(String(b.at)); });
+  const devKey = function(d){ return String((d && d.id) || (d && d.device && d.device.id) || ''); };
+  const nameOf = function(d){ return String((d && d.device && d.device.name) || '').trim(); };
+  const onTicket = new Set(devs.map(devKey).filter(Boolean));
+  const out = new Array(devs.length), taken = new Set(), used = new Set();
+  rows.forEach(function(r){ used.add(r.n); });
+
+  devs.forEach(function(d, i){                                   // pass 1
+    const k = devKey(d); if (!k) return;
+    const r = rows.find(function(x){ return x.dev === k && !taken.has(x.n); });
+    if (r){ out[i] = r.n; taken.add(r.n); }
+  });
+  devs.forEach(function(d, i){                                   // pass 2
+    if (out[i] !== undefined) return;
+    const nm = nameOf(d); if (!nm) return;
+    const r = rows.find(function(x){
+      return x.name === nm && !taken.has(x.n) && (!x.dev || !onTicket.has(x.dev));
+    });
+    if (r){ out[i] = r.n; taken.add(r.n); }
+  });
+  let next = 1;                                                  // pass 3
+  devs.forEach(function(d, i){
+    if (out[i] !== undefined) return;
+    while (used.has(next) || taken.has(next)) next++;
+    out[i] = next; taken.add(next);
+  });
+  return out;
+}
+// The RepairDesk line a scanned label belongs to (null if it's no longer on the ticket)
+function deviceForItem(t, itemId){
+  const p = _splitItemId(itemId); if (!p || !t) return null;
+  const devs = t.devices || [];
+  const nums = pieceNumbers(p.oid, devs);
+  const i = nums.indexOf(p.n);
+  return i >= 0 ? devs[i] : null;
+}
+// Each line paired with its permanent item id — for anything that lists a ticket's pieces
+function piecesOf(oid, devices){
+  const nums = pieceNumbers(oid, devices);
+  return (devices || []).map(function(d, i){ return { dev: d, n: nums[i], itemId: oid + '-' + nums[i] }; });
+}
+
 
 // ===== PIPELINE STAGES =====
 // Each item moves through these steps in order. Scanning a step automatically
@@ -599,7 +711,8 @@ async function resolveItemInfo(itemId){
     const d=await prFetch(`${PR_BASE}/tickets/${tid}?api_key=${PR_KEY}`);
     if(d&&d.data){
       const t=d.data;
-      const dev=t.devices&&t.devices[num-1];
+      await loadLabelsForOrder(oid);
+      const dev=deviceForItem(t, itemId);
       const baseName=dev&&dev.device?dev.device.name:'';
       const partMatch=itemId.match(/^T-\d+-\d+-(.+)$/i);
       const name=partMatch?(baseName+' — '+partMatch[1]):baseName;
@@ -731,7 +844,7 @@ async function runScanSuggest(q){
     return `<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
       <div style="font-size:11px;color:var(--gold2);font-weight:700">${oid} · ${cust}</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
-        ${devs.map((d,i)=>{ const nm=d.device?d.device.name:'Item '+(i+1); const iid=oid+'-'+(i+1);
+        ${piecesOf(oid, devs).map((p,i)=>{ const d=p.dev; const nm=d.device?d.device.name:'Item '+p.n; const iid=p.itemId;
           return `<button onclick="pickSuggest('${iid}')" style="background:var(--surface2);border:2px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;cursor:pointer">${nm} <span style="color:var(--ink3)">${iid}</span></button>`;
         }).join('')}
       </div>
@@ -778,15 +891,17 @@ async function ptsBuildPrices(){
   if(ptsPriceMap) return ptsPriceMap;
   ptsPriceMap={};
   try{
+    if(!window._allLabelsLoaded){ await loadAllLabelIndex(); window._allLabelsLoaded=true; }
     let page=1, pages=1;
     do{
       const d=await prFetch(`${PR_BASE}/tickets?api_key=${PR_KEY}&per_page=250&page=${page}&default_order=1`);
       ((d.data&&d.data.ticketData)||[]).forEach(t=>{
         const oid=t.summary&&t.summary.order_id; if(!oid) return;
-        (t.devices||[]).forEach((dev,i)=>{
+        piecesOf(oid, t.devices||[]).forEach(p=>{
+          const dev=p.dev;
           const net=ptsMoney(dev.price)-ptsMoney(dev.line_discount);
           const names=(dev.repairProdItems||[]).map(s=>String(s.name||'').trim().toUpperCase()).filter(Boolean);
-          ptsPriceMap[oid+'-'+(i+1)]={price:Math.max(net,0), svc:new Set(names)};
+          ptsPriceMap[p.itemId]={price:Math.max(net,0), svc:new Set(names)};
         });
       });
       const pg=d.data&&d.data.pagination; pages=pg?parseInt(pg.total_pages):1; page++;
@@ -1076,8 +1191,12 @@ async function prToggle(oid){
     <strong>${cust}</strong>${phone?' · '+phone:''}<br>
     ${group?'<span style="color:var(--gold2);font-weight:700">Group: '+group+'</span>':''}${city?(group?' · ':'')+city:''}
   </div>`;
+  // Same numbering rules as the dashboard, so a tag reprinted here keeps its number
+  delete _lblLoaded[oid];
+  await loadLabelsForOrder(oid);
+  const _nums=pieceNumbers(oid, devs);
   box.innerHTML=infoBanner+devs.map((device,idx)=>{
-    const num=idx+1,itemId=oid+'-'+num;
+    const num=_nums[idx],itemId=oid+'-'+num;
     const name=device.device?device.device.name:'Item '+num;
     const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
     const note=prNote(device,t);
@@ -1093,7 +1212,7 @@ async function prToggle(oid){
     const cbId='prcb-'+itemId.replace(/[^a-zA-Z0-9]/g,'_');
     let h=`<div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
       <input type="checkbox" class="pr-cb" id="${cbId}" onchange="prCount()" style="width:20px;height:20px;accent-color:var(--ink);margin-top:2px"
-        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}">
+        data-item-id="${itemId}" data-item-name="${esc(name)}" data-services="${esc(services)}" data-customer="${esc(cust)}" data-city="${esc(city)}" data-group="${esc(group)}" data-note="${esc(note)}" data-due="${esc(due)}" data-rd-device="${esc(String(device.id||''))}">
       <div style="flex:1">
         <div style="font-weight:700;font-size:14px">${name}</div>
         ${services?`<div style="font-size:11px;color:var(--gold2)">${services}</div>`:''}
@@ -1201,8 +1320,9 @@ async function translateCached(text){
 async function prPrint(){
   const checked=document.querySelectorAll('.pr-cb:checked');
   if(!checked.length){ showToast('Select items first'); return; }
-  const items=[...checked].map(cb=>({itemId:cb.dataset.itemId,itemName:cb.dataset.itemName||'',services:cb.dataset.services||'',customer:cb.dataset.customer||'',city:cb.dataset.city||'',group:cb.dataset.group||'',note:cb.dataset.note||'',due:cb.dataset.due||'',part:cb.dataset.part||''}));
-  items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part})}).catch(()=>{}); });
+  const items=[...checked].map(cb=>({itemId:cb.dataset.itemId,rdDevice:cb.dataset.rdDevice||'',itemName:cb.dataset.itemName||'',services:cb.dataset.services||'',customer:cb.dataset.customer||'',city:cb.dataset.city||'',group:cb.dataset.group||'',note:cb.dataset.note||'',due:cb.dataset.due||'',part:cb.dataset.part||''}));
+  rememberLabelRows(items.map(it=>({item_id:it.itemId,item_name:it.itemName,rd_device_id:it.rdDevice||null,printed_at:new Date().toISOString()})));
+  items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part,rd_device_id:it.rdDevice||null})}).catch(()=>{}); });
   showToast('Preparing labels…');
   for(const it of items){ it.noteEs = it.note ? await prTranslateEs(it.note) : ''; }
   const withBc=items.map(it=>({...it,bc:prMakeBarcode(it.itemId)}));
@@ -2603,7 +2723,8 @@ async function openPreImg(itemId, name){
   }
   // Repair note (diagnostic notes only, bilingual)
   if(t&&t.devices){
-    const dev=t.devices[num-1];
+    await loadLabelsForOrder(oid);
+    const dev=deviceForItem(t, itemId);
     const note=dev?prNote(dev,t):'';
     const services=dev&&dev.repairProdItems?dev.repairProdItems.map(s=>s.name.trim()).join(', '):'';
     if(services) html+='<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--gold2);text-transform:uppercase">Service needed</div><div style="font-size:14px">'+services+'</div></div>';
@@ -2640,7 +2761,7 @@ async function openPreImg(itemId, name){
   // Intake photos from RepairDesk
   try{
     if(t&&t.devices){
-      const dev=t.devices[num-1];
+      const dev=deviceForItem(t, itemId);
       const pre=(dev&&dev.PreConditions_images)||[];
       if(pre.length){
         html+='<div style="font-size:11px;font-weight:700;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Photos (RepairDesk)</div>';
@@ -2964,7 +3085,7 @@ async function loadActiveWorkInfo(itemId){
   // Only show if this is still the active item (worker may have moved on)
   if(!activeWork||activeWork.itemId!==itemId) return;
   let dev=null;
-  if(t&&t.devices) dev=t.devices[num-1];
+  if(t&&t.devices){ await loadLabelsForOrder(oid); dev=deviceForItem(t, itemId); }
   // Repair note (bilingual)
   const note=dev?prNote(dev,t):'';
   if(note){
@@ -3150,7 +3271,7 @@ function renderTickets(tickets) {
   }).join('');
 }
 
-function toggleTicket(orderId) {
+async function toggleTicket(orderId) {
   const itemsEl = document.getElementById('ti-'+orderId);
   if (itemsEl.classList.contains('open')) { itemsEl.classList.remove('open'); return; }
   itemsEl.classList.add('open');
@@ -3161,6 +3282,8 @@ function toggleTicket(orderId) {
 
   const customer = getCustomerName(t);
   const devices = getDevices(t);
+  delete _lblLoaded[orderId];
+  await loadLabelsForOrder(orderId);
   renderTicketItems(orderId, customer, devices, itemsEl, t);
 }
 
@@ -3177,8 +3300,9 @@ function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
   const phone = ticket ? getCustomerPhone(ticket) : '';
   const dates = ticket ? getTicketDates(ticket) : { created:'', due:'' };
 
+  const _nums = pieceNumbers(orderId, devices);
   itemsEl.innerHTML = devices.map((device, idx) => {
-    const itemNum = idx + 1;
+    const itemNum = _nums[idx];
     const itemId = orderId + '-' + itemNum;
     const deviceName = device.device ? device.device.name : 'Item '+itemNum;
     const serial = device.serial ? ' #'+device.serial : '';
@@ -3203,6 +3327,7 @@ function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
       <input type="checkbox" class="item-cb" id="${cbId}"
         onchange="updateSelectedCount()"
         data-item-id="${itemId}"
+        data-rd-device="${esc(String(device.id||''))}"
         data-item-name="${safeDeviceName}${serial}"
         data-services="${safeServices}"
         data-customer="${safeCustomer}"
@@ -3427,6 +3552,7 @@ function printSelected() {
   checked.forEach(cb => {
     items.push({
       itemId: cb.dataset.itemId,
+      rdDevice: cb.dataset.rdDevice || '',
       itemName: cb.dataset.itemName || '',
       services: cb.dataset.services || '',
       customer: cb.dataset.customer || '',
@@ -3447,6 +3573,7 @@ function printSelected() {
   localStorage.setItem('st_label_history', JSON.stringify(labelHistory));
   renderLabelHistory();
 
+  rememberLabelRows(items.map(it=>({item_id:it.itemId,item_name:it.itemName,rd_device_id:it.rdDevice||null,printed_at:new Date().toISOString()})));
   // Send labels to Supabase
   items.forEach(item => {
     fetch(SUPABASE_URL + '/rest/v1/labels', {
@@ -3459,6 +3586,7 @@ function printSelected() {
       },
       body: JSON.stringify({
         item_id: item.itemId,
+        rd_device_id: item.rdDevice || null,
         item_name: item.itemName || '',
         customer: item.customer || '',
         city: item.city || '',
