@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-08-14-p</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-12-a</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -344,6 +344,118 @@ tr.clickable:hover td{background:var(--surface2)}
 // ========================================================================
 const SUPABASE_URL = 'https://pohjqjihxnikzpbqeevn.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qwe9QzcFlwuNIPAqbhPjKg_LazIReyE';
+// ========================================================================
+// PERMANENT PIECE NUMBERS — one answer to "which RepairDesk line is T-1429-7?"
+// ========================================================================
+// Every printed label records the RepairDesk line it was made for (rd_device_id).
+// Both apps used to ignore that and count positions instead: devices[7-1]. So the
+// moment a line was removed or added in RepairDesk, the label still said -7 but
+// names, services, notes, photos and statuses were read from whatever now sat in
+// position 7 — and the wine bottle at position 6 was shown as -6.
+// Everything now goes through pieceNumbers()/deviceForItem(), which match on the
+// recorded line first, then the printed name, and only fall back to position for
+// orders that have never had a label printed.
+const _lblByOrder = {};          // order id -> [{n, dev, name, at}]
+const _lblLoaded  = {};          // order id -> true once its labels were fetched
+
+function _splitItemId(id){
+  const m = /^(.*)-(\d+)(?:-[A-Za-z].*)?$/.exec(String(id || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[2], 10);
+  return n ? { oid: m[1], n } : null;
+}
+function rememberLabelRows(rows){
+  (Array.isArray(rows) ? rows : []).forEach(function(r){
+    const p = _splitItemId(r.item_id); if (!p) return;
+    const list = _lblByOrder[p.oid] || (_lblByOrder[p.oid] = []);
+    const dev  = r.rd_device_id ? String(r.rd_device_id) : '';
+    const name = String(r.item_name || '').split(' — ')[0].trim();
+    if (!list.some(function(x){ return x.n === p.n && x.dev === dev && x.name === name; }))
+      list.push({ n: p.n, dev: dev, name: name, at: r.printed_at || '' });
+  });
+}
+function _lblHeaders(){ return { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }; }
+
+// One order's labels, fetched once. Never waits more than a few seconds — a slow
+// connection falls back to the old behaviour rather than holding anything up.
+async function loadLabelsForOrder(oid){
+  if (!oid || _lblLoaded[oid]) return;
+  try{
+    const q = SUPABASE_URL + '/rest/v1/labels?item_id=like.' + encodeURIComponent(oid + '-%') +
+              '&select=item_id,item_name,rd_device_id,printed_at&order=printed_at.asc&limit=1000';
+    const r = await Promise.race([
+      fetch(q, { headers: _lblHeaders() }),
+      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, 4000); })
+    ]);
+    if (r && r.ok){ rememberLabelRows(await r.json()); _lblLoaded[oid] = true; }
+  }catch(e){}
+}
+// Every label, a page at a time (the database hands back at most 1000 per request)
+async function loadAllLabelIndex(){
+  for (let page = 0; page < 40; page++){
+    try{
+      const q = SUPABASE_URL + '/rest/v1/labels?select=item_id,item_name,rd_device_id,printed_at' +
+                '&order=printed_at.asc&limit=1000&offset=' + (page * 1000);
+      const r = await fetch(q, { headers: _lblHeaders() });
+      if (!r.ok) return;
+      const rows = await r.json();
+      rememberLabelRows(rows);
+      rows.forEach(function(x){ const p = _splitItemId(x.item_id); if (p) _lblLoaded[p.oid] = true; });
+      if (!Array.isArray(rows) || rows.length < 1000) return;
+    }catch(e){ return; }
+  }
+}
+
+// The permanent number for each RepairDesk line on a ticket, in the ticket's order.
+// Three passes, in this order, so one piece can never take another's number:
+//   1. the line recorded on its printed label
+//   2. the printed name — only from labels whose line is no longer on the ticket
+//      (a line deleted and re-added in RepairDesk) or that never recorded one
+//   3. the next number nobody has used
+function pieceNumbers(oid, devices){
+  const devs = Array.isArray(devices) ? devices : [];
+  const rows = (_lblByOrder[oid] || []).slice().sort(function(a, b){ return String(a.at).localeCompare(String(b.at)); });
+  const devKey = function(d){ return String((d && d.id) || (d && d.device && d.device.id) || ''); };
+  const nameOf = function(d){ return String((d && d.device && d.device.name) || '').trim(); };
+  const onTicket = new Set(devs.map(devKey).filter(Boolean));
+  const out = new Array(devs.length), taken = new Set(), used = new Set();
+  rows.forEach(function(r){ used.add(r.n); });
+
+  devs.forEach(function(d, i){                                   // pass 1
+    const k = devKey(d); if (!k) return;
+    const r = rows.find(function(x){ return x.dev === k && !taken.has(x.n); });
+    if (r){ out[i] = r.n; taken.add(r.n); }
+  });
+  devs.forEach(function(d, i){                                   // pass 2
+    if (out[i] !== undefined) return;
+    const nm = nameOf(d); if (!nm) return;
+    const r = rows.find(function(x){
+      return x.name === nm && !taken.has(x.n) && (!x.dev || !onTicket.has(x.dev));
+    });
+    if (r){ out[i] = r.n; taken.add(r.n); }
+  });
+  let next = 1;                                                  // pass 3
+  devs.forEach(function(d, i){
+    if (out[i] !== undefined) return;
+    while (used.has(next) || taken.has(next)) next++;
+    out[i] = next; taken.add(next);
+  });
+  return out;
+}
+// The RepairDesk line a scanned label belongs to (null if it's no longer on the ticket)
+function deviceForItem(t, itemId){
+  const p = _splitItemId(itemId); if (!p || !t) return null;
+  const devs = t.devices || [];
+  const nums = pieceNumbers(p.oid, devs);
+  const i = nums.indexOf(p.n);
+  return i >= 0 ? devs[i] : null;
+}
+// Each line paired with its permanent item id — for anything that lists a ticket's pieces
+function piecesOf(oid, devices){
+  const nums = pieceNumbers(oid, devices);
+  return (devices || []).map(function(d, i){ return { dev: d, n: nums[i], itemId: oid + '-' + nums[i] }; });
+}
+
 const RD_BASE = 'https://api.repairdesk.co/api/web/v1';
 const RD_KEY = 'smPSStC-zBCN-bVIU-d4Yv-zPlLiMrJf';
 const CANDELABRA_PARTS = ['Base','Arms','Cups and Plates','Non Silver Pieces'];
@@ -978,7 +1090,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-08-14-p';
+const APP_VERSION='2026-10-12-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1148,7 +1260,7 @@ async function bootstrap(){
   // dashboard still draws with whatever arrived.
   const loaders=[
     ['scans', loadAllScans], ['workers', loadWorkers], ['roles', loadRoles],
-    ['stage events', loadStageEvents], ['labels', loadPipeLabels], ['stages', loadPipeStages],
+    ['stage events', loadStageEvents], ['labels', loadPipeLabels], ['piece numbers', loadAllLabelIndex], ['stages', loadPipeStages],
     ['notification rules', loadNotifyRules], ['inbox', loadMyNotifs], ['delivery status', loadExternalStatus], ['due dates', loadDueOverrides], ['hold places', loadHoldPlaces],
     ['live sessions', loadLiveSessions]
   ];
@@ -1809,9 +1921,9 @@ function buildServiceIndex(){
   _svcIdx={};
   (allTickets||[]).forEach(t=>{
     const oid=getOrderId(t); if(!oid) return;
-    (t.devices||[]).forEach((dev,i)=>{
-      const names=(dev.repairProdItems||[]).map(s=>String(s.name||'').trim().toLowerCase()).filter(Boolean);
-      if(names.length) _svcIdx[oid+'-'+(i+1)]=names;
+    piecesOf(oid, t.devices||[]).forEach(p=>{
+      const names=(p.dev.repairProdItems||[]).map(s=>String(s.name||'').trim().toLowerCase()).filter(Boolean);
+      if(names.length) _svcIdx[p.itemId]=names;
     });
   });
 }
@@ -2636,8 +2748,7 @@ async function quickAddToPipeline(itemId){
   let desc='';
   try{
     const t=(allTickets||[]).find(x=>getOrderId(x)===orderIdOf(itemId));
-    const num=parseInt(itemId.split('-')[2])||1;
-    const dev=t&&t.devices?t.devices[num-1]:null;
+    const dev=deviceForItem(t, itemId);
     desc=(dev&&dev.device&&dev.device.name)||'';
   }catch(e){}
 
@@ -2666,8 +2777,7 @@ async function pipeAddItem(itemId){
   try{
     const oid=orderIdOf(itemId);
     const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
-    const num=parseInt(itemId.split('-')[2])||1;
-    const dev=t&&t.devices?t.devices[num-1]:null;
+    const dev=deviceForItem(t, itemId);
     desc=(dev&&dev.device&&dev.device.name)||'';
   }catch(e){}
   const r=await postStageEventAdmin(itemId, stage, 'override', desc);
@@ -2824,8 +2934,8 @@ async function loadTickets(){
     rdStatus={};
     fetched.forEach(t=>{
       const o=t.summary&&t.summary.order_id; if(!o) return;
-      (t.devices||[]).forEach((d,i)=>{
-        const nm=d.status&&d.status.name; if(nm) rdStatus[o+'-'+(i+1)]=nm;
+      piecesOf(o, t.devices||[]).forEach(p=>{
+        const nm=p.dev.status&&p.dev.status.name; if(nm) rdStatus[p.itemId]=nm;
       });
     });
     try{ localStorage.setItem('glint_rd_status', JSON.stringify(rdStatus)); }catch(e){}
@@ -2866,41 +2976,9 @@ function renderTickets(list){
 // Reuses the number from any label already printed for that piece; anything new
 // gets the next free number so existing tags are never disturbed.
 async function assignItemNumbers(oid, devices){
-  const devKey=d=>String((d&&d.id)||(d&&d.device&&d.device.id)||'');
-  const nameOf=d=>String((d&&d.device&&d.device.name)||'').trim();
-  let rows=[];
-  try{
-    rows=await sb('labels?item_id=like.'+encodeURIComponent(oid+'-%')+'&select=item_id,item_name,rd_device_id&order=printed_at.asc') || [];
-  }catch(e){ rows=[]; }
-
-  const byDevice={}, byName={}, used=new Set();
-  (Array.isArray(rows)?rows:[]).forEach(r=>{
-    const m=/^.*-(\d+)(?:-.*)?$/.exec(r.item_id||'');
-    if(!m) return;
-    const n=parseInt(m[1],10); if(!n) return;
-    used.add(n);
-    if(r.rd_device_id) byDevice[String(r.rd_device_id)]=byDevice[String(r.rd_device_id)]||n;
-    const nm=String(r.item_name||'').split(' — ')[0].trim();
-    if(nm && byName[nm]===undefined) byName[nm]=n;
-  });
-
-  const out=[]; const taken=new Set();
-  devices.forEach((d,i)=>{
-    const k=devKey(d);
-    let n=(k && byDevice[k]!==undefined) ? byDevice[k] : undefined;
-    // Labels printed before device ids were recorded — fall back to matching the name
-    if(n===undefined){ const nm=nameOf(d); if(nm && byName[nm]!==undefined && !taken.has(byName[nm])) n=byName[nm]; }
-    out[i]=n; if(n!==undefined) taken.add(n);
-  });
-  // Anything still unnumbered gets the next free number
-  let next=1;
-  const allUsed=new Set([...used, ...taken]);
-  devices.forEach((d,i)=>{
-    if(out[i]!==undefined) return;
-    while(allUsed.has(next)) next++;
-    out[i]=next; allUsed.add(next);
-  });
-  return out;
+  delete _lblLoaded[oid];            // labels may have been printed on another device since
+  await loadLabelsForOrder(oid);
+  return pieceNumbers(oid, devices);
 }
 
 async function toggleTicket(oid){
@@ -3099,6 +3177,7 @@ async function printSelected(){
     rdDevice:cb.dataset.rdDevice||'',
     city:cb.dataset.city||'', group:cb.dataset.group||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
   }));
+  rememberLabelRows(items.map(it=>({item_id:it.itemId,item_name:it.itemName,rd_device_id:it.rdDevice||null,printed_at:new Date().toISOString()})));
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part,rd_device_id:it.rdDevice||null})}).catch(()=>{}); });
 
   toast('Preparing labels…');
@@ -3398,7 +3477,10 @@ function parentItemId(itemId){ const m=String(itemId||'').match(/^(T-\d+-\d+)/i)
 //   devices[i].price-> "50.00"   (per-item charge, pre-tax — this is what we want)
 //   devices[i].line_discount, .gst
 //   repairProdItems -> {name, id} only, NO price field
-function money(v){
+// Reads a RepairDesk amount ("$140.00") as a number. This was called money(), and the
+// Inventory page later added a different money() that FORMATS amounts — the second one
+// silently replaced this, so every piece's own price came out as NaN on Production.
+function rdMoney(v){
   const n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''));
   return isNaN(n)?0:n;
 }
@@ -3437,12 +3519,12 @@ function itemPriceInfo(itemId){
   const idx=parseInt((base.split('-')[2]||'1'),10)||1;
   let info={price:0, nSvc:1, src:'none'};
   const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
-  const dev=t&&t.devices&&t.devices[idx-1];
+  const dev=deviceForItem(t, base);
   if(dev){
-    const net=money(dev.price)-money(dev.line_discount);
+    const net=rdMoney(dev.price)-rdMoney(dev.line_discount);
     const names=Array.isArray(dev.repairProdItems)?dev.repairProdItems.map(s=>s.name):[];
     info={price:Math.max(net,0), nSvc:paidUnits(base,names), src:'item'};
-    if(info.price===0 && money(dev.total)>0){ info.price=money(dev.total); }
+    if(info.price===0 && rdMoney(dev.total)>0){ info.price=rdMoney(dev.total); }
   }
   prodValueSrc[base]=info.src;
   prodValueCache[base]=info; return info;
@@ -3472,29 +3554,6 @@ async function prodProbePrices(){
 }
 // What THIS piece is charged: its own service lines. Falls back to an even split of the
 // ticket total, then to the default you set in Settings.
-function itemValue(itemId){
-  const base=parentItemId(itemId);
-  if(prodValueCache[base]!==undefined) return prodValueCache[base];
-  const oid=orderIdOf(base);
-  const idx=parseInt((base.split('-')[2]||'1'),10)||1;
-  const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
-  if(t){
-    const dev=t.devices&&t.devices[idx-1];
-    // 1. True per-piece: sum this item's own service prices
-    if(dev&&Array.isArray(dev.repairProdItems)&&dev.repairProdItems.length){
-      const sum=dev.repairProdItems.reduce((a,s)=>a+priceOf(s),0);
-      if(sum>0){ v=sum; src='item'; }
-    }
-    // 2. Fallback: ticket total shared across items
-    if(src!=='item'&&t.summary){
-      const raw=priceOf(t.summary);
-      const n=(t.devices&&t.devices.length)||1;
-      if(raw>0){ v=raw/n; src='split'; }
-    }
-  }
-  prodValueSrc[base]=src;
-  prodValueCache[base]=v; return v;
-}
 // Core metric: pieces = distinct item×stage with a finished session in range
 function prodMetrics(start,end){
   const {sessions:sess}=pairSessions(t=>{ const e=new Date(t); return e>=start && e<end; });
@@ -7519,21 +7578,17 @@ async function renderItemDetailPage(itemId){
     // RepairDesk shifts everything after it, so an already-printed label would point
     // at the wrong object. Anchor to the device id recorded when the label was printed.
     let dev=null, drifted=false, printedName='';
+    delete _lblLoaded[oid];
+    await loadLabelsForOrder(oid);
+    dev=deviceForItem({devices:devs}, itemId);
+    // Moving position in RepairDesk no longer matters — the lookup follows the label.
     try{
-      const lab=await sb('labels?item_id=eq.'+encodeURIComponent(itemId)+'&select=rd_device_id,item_name&order=printed_at.desc&limit=1');
+      const lab=await sb('labels?item_id=eq.'+encodeURIComponent(itemId)+'&select=item_name&order=printed_at.desc&limit=1');
       const rec=Array.isArray(lab)?lab[0]:null;
-      if(rec){
-        printedName=rec.item_name||'';
-        if(rec.rd_device_id){
-          dev=devs.find(x=>String(x.id)===String(rec.rd_device_id)
-                        || String(x.device&&x.device.id)===String(rec.rd_device_id)) || null;
-          if(dev && devs.indexOf(dev)!==num-1) drifted=true;   // it moved position
-        }
-      }
+      if(rec) printedName=rec.item_name||'';
     }catch(e){}
 
-    if(!dev) dev=devs[num-1]||null;                 // no recorded id — fall back to position
-    if(!dev) throw new Error('item '+num+' not found on ticket '+tid);
+    if(!dev) throw new Error(itemId+' is no longer on ticket '+oid+' in RepairDesk — the line may have been removed');
 
     // If the label was printed for a different piece than sits here now, say so loudly
     const currentName=dev.device?dev.device.name:'';
@@ -7542,9 +7597,9 @@ async function renderItemDetailPage(itemId){
     }
     if(drifted){
       ticketBlock+=`<div class="card" style="border-color:var(--orange);background:var(--orange-soft)">
-        <div class="card-label" style="color:var(--orange)">⚠️ This label may have shifted</div>
-        <div style="font-size:13px">The label was printed for <strong>${esc(printedName||'—')}</strong>, but position ${num} on the ticket now holds <strong>${esc(currentName||'—')}</strong>.</div>
-        <div style="font-size:12.5px;color:var(--ink2);margin-top:6px">An item was probably added or removed in RepairDesk after this label was printed. The details below follow the piece the label was actually made for.</div>
+        <div class="card-label" style="color:var(--orange)">⚠️ Check this tag</div>
+        <div style="font-size:13px">This tag was printed as <strong>${esc(printedName||'—')}</strong>, but the RepairDesk line it points to is now <strong>${esc(currentName||'—')}</strong>.
+        <div style="font-size:12.5px;color:var(--ink2);margin-top:6px">Either the item was renamed in RepairDesk, or the tag on the piece is wrong. Look at the piece itself — if it doesn't match, reprint its label from Print Labels.</div></div>
       </div>`;
     }
 
@@ -7761,8 +7816,7 @@ async function setRepairDeskStatus(itemId, statusName){
     let invId=null;
     try{
       const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
-      const num=parseInt(String(itemId).split('-')[2])||1;
-      const dev=t&&t.devices?t.devices[num-1]:null;
+      const dev=deviceForItem(t, itemId);
       if(dev) invId=parseInt(dev.id,10)||null;
     }catch(e){}
     if(!invId) return {ok:false, why:'could not tell which line item'};
@@ -7796,8 +7850,7 @@ async function pushNoteToRepairDesk(itemId, text){
     let deviceId=null;
     try{
       const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
-      const num=parseInt(String(itemId).split('-')[2])||1;
-      const dev=t&&t.devices?t.devices[num-1]:null;
+      const dev=deviceForItem(t, itemId);
       if(dev) deviceId=parseInt(dev.id||(dev.device&&dev.device.id),10)||null;
     }catch(e){}
 
