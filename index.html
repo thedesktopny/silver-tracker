@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-10-12-a</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-10-12-b</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -681,6 +681,15 @@ async function resolveTicketId(oid){
     if(typeof prTickets!=='undefined' && prTickets.length){
       const hit=prTickets.find(x=>prOid(x)===oid);
       if(hit&&hit.summary&&hit.summary.id){ oidMap[oid]=hit.summary.id; localStorage.setItem('st_oid_map',JSON.stringify(oidMap)); return oidMap[oid]; }
+    }
+  }catch(e){}
+  // Ask RepairDesk for this one order — paging only reaches the newest tickets
+  try{
+    const num=String(oid).replace(/^T-/i,'');
+    for(const term of [oid, num]){
+      const d=await prFetch(`${PR_BASE}/tickets?api_key=${PR_KEY}&keyword=${encodeURIComponent(term)}&per_page=50&page=1`);
+      ((d&&d.data&&d.data.ticketData)||[]).forEach(t=>{ const o=t.summary&&t.summary.order_id; const id=t.summary&&t.summary.id; if(o&&id) oidMap[o]=id; });
+      if(oidMap[oid]){ try{ localStorage.setItem('st_oid_map',JSON.stringify(oidMap)); }catch(e){} return oidMap[oid]; }
     }
   }catch(e){}
   // Otherwise page the ticket list and build the map
@@ -1165,10 +1174,55 @@ function prRender(list){
     </div>`;
   }).join('');
 }
+// Only the newest tickets are loaded up front, so an older order like T-921 was never
+// in the list to filter. When nothing loaded matches, ask RepairDesk for it directly.
+let _prSearchTimer=null, _prSearchSeq=0;
 function prFilter(){
   const q=(document.getElementById('pr-search').value||'').toLowerCase().trim();
   if(!q){ prRender(prTickets); return; }
-  prRender(prTickets.filter(t=>prOid(t).toLowerCase().includes(q)||prCust(t).toLowerCase().includes(q)));
+  const local=prTickets.filter(t=>prOid(t).toLowerCase().includes(q)||prCust(t).toLowerCase().includes(q));
+  prRender(local);
+  clearTimeout(_prSearchTimer);
+  if(q.length<2) return;
+  // Exact order numbers are always checked with RepairDesk too, in case a newer ticket
+  // with a similar number is what matched locally
+  const looksLikeOrder=/^(t-?)?\d{2,}$/i.test(q);
+  if(local.length && !looksLikeOrder) return;
+  _prSearchTimer=setTimeout(()=>prSearchRD(q), 450);
+}
+async function prSearchRD(q){
+  const seq=++_prSearchSeq;
+  const el=document.getElementById('pr-list');
+  const note=document.createElement('div');
+  note.style.cssText='color:var(--text-dim);font-size:12px;padding:10px;text-align:center';
+  note.textContent='Searching RepairDesk…';
+  if(el && !el.querySelector('.card')) el.innerHTML='';
+  if(el) el.appendChild(note);
+  const terms=[q];
+  const m=/^(?:t-?)?(\d+)$/i.exec(q);
+  if(m){ terms.unshift('T-'+m[1]); terms.push(m[1]); }
+  const found=[];
+  for(const term of terms){
+    try{
+      const d=await prFetch(`${PR_BASE}/tickets?api_key=${PR_KEY}&keyword=${encodeURIComponent(term)}&per_page=50&page=1`);
+      ((d&&d.data&&d.data.ticketData)||[]).forEach(t=>{
+        const o=prOid(t); if(!o) return;
+        if(!found.some(x=>prOid(x)===o)) found.push(t);
+        const id=t.summary&&t.summary.id; if(id) oidMap[o]=id;
+      });
+      if(found.length) break;
+    }catch(e){}
+  }
+  if(seq!==_prSearchSeq) return;                 // a newer search has started
+  try{ localStorage.setItem('st_oid_map',JSON.stringify(oidMap)); }catch(e){}
+  // Keep them, so opening one and printing works like any loaded ticket
+  found.forEach(t=>{ if(!prTickets.some(x=>prOid(x)===prOid(t))) prTickets.push(t); });
+  const cur=(document.getElementById('pr-search').value||'').toLowerCase().trim();
+  if(cur!==q) return;
+  const show=prTickets.filter(t=>prOid(t).toLowerCase().includes(q)||prCust(t).toLowerCase().includes(q)
+                                   || found.some(f=>prOid(f)===prOid(t)));
+  if(show.length) prRender(show);
+  else if(el) el.innerHTML='<div style="color:var(--text-dim);font-size:12px;padding:16px;text-align:center">Nothing found for “'+q.replace(/</g,'&lt;')+'” — here or in RepairDesk</div>';
 }
 async function prToggle(oid){
   const idx0=prTickets.findIndex(x=>prOid(x)===oid); if(idx0<0) return;

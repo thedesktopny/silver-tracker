@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-12-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-15-a</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -1090,7 +1090,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-10-12-a';
+const APP_VERSION='2026-10-15-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -2881,8 +2881,8 @@ function itemPipeCardHtml(itemId){
       ${it.scanovStatus?(()=>{
         const m=scanovMeta[orderIdOf(it.id)]||{};
         return `<span style="background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">🚚 ${it.scanovInbound?'Collected from customer':'Scanovator: '+esc(it.scanovStatus)}${m.driver?' · '+esc(m.driver):''}${m.when?' · '+fmtDate(m.when):''}</span>`
-          + (m.receipt?` <a href="${esc(m.receipt)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:5px;background:var(--surface2);color:var(--ink);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px;text-decoration:none;margin-left:6px">📷 ${it.scanovInbound?'Pickup photo':'Delivery photo'}</a>`:'')
-          + (m.receipt?` <a href="${esc(m.receipt)}" target="_blank" style="font-size:11.5px;font-weight:700;color:var(--gold);padding:5px 0">Delivery receipt ↗</a>`:'');
+          + (()=>{ const n=scanovMediaFor(orderIdOf(it.id)).filter(x=>x.kind!=='link').length;
+              return n?` <button onclick="event.stopPropagation();scanovView('${jsstr(orderIdOf(it.id))}')" style="display:inline-flex;align-items:center;gap:5px;background:var(--surface2);color:var(--ink);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px;border:none;cursor:pointer;margin-left:6px">📷 Courier photos (${n})</button>`:''; })();
       })():''}
       ${it.rdStatus?`<span style="background:var(--surface2);color:var(--ink2);font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:20px">RepairDesk: ${esc(it.rdStatus)}</span>`:''}
     </div>`:''}
@@ -4536,6 +4536,79 @@ function scanovFindWhen(obj){
 }
 function scanovFindDriver(obj){ return (obj&&obj.driver_name)||''; }
 function scanovFindReceipt(obj){ return (obj&&obj.receipt_url)||''; }
+// Every link Scanovator sends with an order — photos, videos, the receipt. Their
+// field names aren't documented, so this looks through the whole record.
+function scanovFindMedia(obj, meta){
+  const out=[], seen=new Set();
+  (function walk(v,k,depth){
+    if(v==null||depth>6) return;
+    if(typeof v==='string'){
+      const s=v.trim();
+      if(!/^https?:\/\//i.test(s)||seen.has(s)) return;
+      seen.add(s);
+      const kind=(/\.(mp4|mov|webm|m4v|3gp)(\?|#|$)/i.test(s)||/video/i.test(k))?'video'
+               :(/\.(jpe?g|png|gif|webp|heic|bmp)(\?|#|$)/i.test(s)||/photo|image|picture|pic|img|pod|proof|signature|receipt/i.test(k))?'image'
+               :'link';
+      out.push(Object.assign({url:s, kind, field:k}, meta||{}));
+      return;
+    }
+    if(Array.isArray(v)){ v.forEach(x=>walk(x,k,depth+1)); return; }
+    if(typeof v==='object') Object.keys(v).forEach(kk=>walk(v[kk],kk,depth+1));
+  })(obj,'',0);
+  return out;
+}
+// What we hold for an order, oldest first. Older records only kept the receipt link.
+function scanovMediaFor(oid){
+  const m=scanovMeta[oid]||{};
+  const list=Array.isArray(m.media)?m.media.slice():[];
+  if(m.receipt && !list.some(x=>x.url===m.receipt))
+    list.push({url:m.receipt, kind:'image', field:'receipt_url', ref:m.ref, when:m.when, driver:m.driver});
+  return list.sort((a,b)=>String(a.when||'').localeCompare(String(b.when||'')));
+}
+// Pickup or delivery: anything before the first scan in the shop came in with the piece
+function scanovLegOf(oid, when){
+  if(!when) return '';
+  let first=null;
+  (scans||[]).forEach(s=>{ if(orderIdOf(s.item_id)===oid){ const t=new Date(s.created_at); if(!first||t<first) first=t; } });
+  const w=new Date(String(when).replace(' ','T'));
+  if(!first||isNaN(w)) return '';
+  return w<first?'Pickup':'Delivery';
+}
+function scanovMediaHtml(oid){
+  const media=scanovMediaFor(oid);
+  if(!media.length) return '';
+  const label=x=>{ const leg=scanovLegOf(oid,x.when);
+    return [leg, x.when?fmtDate(String(x.when).replace(' ','T')):'', x.driver].filter(Boolean).join(' · '); };
+  const pics=media.filter(x=>x.kind==='image'), vids=media.filter(x=>x.kind==='video'), links=media.filter(x=>x.kind==='link');
+  let h=`<div class="card-label" style="margin-top:14px">🚚 Courier Photos &amp; Videos — Scanovator (${pics.length+vids.length})</div>`;
+  if(pics.length){
+    // If a link turns out not to be a picture, it becomes a button instead of a broken image
+    h+='<div class="photo-grid">'+pics.map(x=>`<div>
+        <img loading="lazy" decoding="async" src="${esc(x.url)}" data-full="${esc(x.url)}"
+          onclick="lightbox('${jsstr(x.url)}')"
+          onerror="this.outerHTML='<a href=&quot;${esc(x.url)}&quot; target=&quot;_blank&quot; rel=&quot;noopener&quot; class=&quot;btn btn-ghost btn-sm&quot; style=&quot;width:100%;height:96px;display:flex;align-items:center;justify-content:center;text-align:center&quot;>Open ${esc(x.field==='receipt_url'?'receipt':'photo')} ↗</a>'">
+        <div style="font-size:10px;color:var(--ink3);margin-top:3px;text-align:center">${esc(label(x))}</div></div>`).join('')+'</div>';
+  }
+  if(vids.length){
+    h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:${pics.length?'10px':'0'}">`+
+      vids.map(x=>`<div>
+        <video src="${esc(x.url)}" controls preload="metadata" playsinline style="width:100%;border-radius:8px;background:#000;aspect-ratio:4/3;object-fit:cover"></video>
+        <div style="font-size:10.5px;color:var(--ink3);margin-top:3px;text-align:center">${esc(label(x))} · <a href="${esc(x.url)}" target="_blank" rel="noopener">open ↗</a></div>
+      </div>`).join('')+'</div>';
+  }
+  if(links.length){
+    h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">'+links.map(x=>
+      `<a href="${esc(x.url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">${esc(String(x.field||'link').replace(/_url$/,'').replace(/_/g,' '))} ↗</a>`).join('')+'</div>';
+  }
+  return h;
+}
+// Open just this order's courier pictures in the viewer
+function scanovView(oid){
+  const pics=scanovMediaFor(oid).filter(x=>x.kind==='image').map(x=>x.url);
+  const vid=scanovMediaFor(oid).find(x=>x.kind==='video');
+  if(!pics.length){ if(vid) window.open(vid.url,'_blank'); else toast('No courier photos for '+oid); return; }
+  _lbUrls=pics; _lbAt=0; lbOpen();
+}
 function scanovFindOrderId(obj){
   for(const k of ['order_id','orderId','external_id','reference','order_number','id']){
     if(obj&&obj[k]!=null) return String(obj[k]);
@@ -4673,7 +4746,12 @@ async function scanovSync(silent){
       const ours=scanovMatchOurOrder(raw, ourSet);
       if(ours){
         scanovStatus[ours]=st; found++;
-        scanovMeta[ours]={ref:raw, driver:scanovFindDriver(o), receipt:scanovFindReceipt(o), when:scanovFindWhen(o)};
+        const prev=scanovMeta[ours]||{};
+        const when=scanovFindWhen(o);
+        const merged=(Array.isArray(prev.media)?prev.media:[]).slice();
+        scanovFindMedia(o,{ref:raw, when, driver:scanovFindDriver(o)}).forEach(x=>{ if(!merged.some(y=>y.url===x.url)) merged.push(x); });
+        const newer=!prev.when||String(when||'')>=String(prev.when);
+        scanovMeta[ours]=Object.assign({}, prev, newer?{ref:raw, driver:scanovFindDriver(o), receipt:scanovFindReceipt(o), when}:{}, {media:merged.slice(-40)});
       }
     });
     localStorage.setItem('glint_scanov',JSON.stringify(scanovStatus));
@@ -4802,7 +4880,10 @@ let HOLD_KINDS={};
 function applyHoldKinds(){
   HOLD_KINDS={
     customer:{label:'Waiting on customer', icon:'👤', hue:'var(--gold)',
-              hint:'approval, a decision, something they need to supply'}
+              hint:'approval, a decision, something they need to supply'},
+    // Held in the shop while something gets worked out — no repair-place paperwork
+    shop:{label:'Figuring out in shop', icon:'🤔', hue:'var(--blue)',
+          hint:'what needs deciding or checking here before it can carry on'}
   };
   HOLD_PLACES.forEach((name,i)=>{
     HOLD_KINDS['place'+i]={label:name, icon:'🔧', hue:HOLD_HUES[i%HOLD_HUES.length],
@@ -5165,6 +5246,12 @@ function askHoldKind(name){
           <span style="font-size:20px">👤</span>
           <span>Waiting on customer<br><span style="font-size:11.5px;font-weight:400;color:var(--ink3)">approval, a decision, something they need to supply</span></span>
         </button>
+        ${Object.entries(HOLD_KINDS).filter(([k,v])=>!v.place && k!=='customer').map(([k,v])=>`
+          <button data-k="${k}" style="width:100%;padding:14px;border:2px solid var(--border);border-radius:11px;background:var(--surface);
+            text-align:left;cursor:pointer;margin-bottom:12px;font-size:15px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:10px">
+            <span style="font-size:20px">${v.icon}</span>
+            <span>${esc(v.label)}<br><span style="font-size:11.5px;font-weight:400;color:var(--ink3)">${esc(v.hint||'')}</span></span>
+          </button>`).join('')}
         <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin:4px 0 8px">Out of the shop — where is it?</div>
         ${Object.entries(HOLD_KINDS).filter(([,v])=>v.place).map(([k,v])=>`
           <button data-k="${k}" style="width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:11px;background:var(--surface);
@@ -7355,16 +7442,10 @@ async function renderOrderDetailPage(oid){
         return '<br>Due: <strong>'+(shown?esc(shown):'not set')+'</strong>'
           + (info?' <span style="color:var(--ink3);font-size:11.5px">('+esc(info.src)+')</span>':'')
           + ' <button class="btn btn-ghost btn-sm" style="padding:3px 9px;font-size:11px;margin-left:6px" onclick="setDueDate(\''+jsstr(oid)+'\')">✏️ Edit</button>'
-          + (function(){
-              // Scanovator sends back a photo from the pickup or the drop-off — proof of
-              // what went out and what came back. We already store it; now it's visible.
-              const m=scanovMeta[oid];
-              if(!m||!m.receipt) return '';
-              return '<br><a href="'+esc(m.receipt)+'" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;background:var(--blue-soft,#eff6ff);color:var(--blue);font-size:12.5px;font-weight:700;padding:6px 12px;border-radius:20px;text-decoration:none;margin-top:6px">📷 Courier photo'
-                + (m.driver?' — '+esc(m.driver):'') + (m.when?' · '+fmtDate(m.when):'') + '</a>';
-            })();
+          ;
       })()}</div></div>`;
   }
+  { const sm=scanovMediaHtml(oid); if(sm) html+='<div class="card">'+sm.replace('margin-top:14px','margin-top:0')+'</div>'; }
 
   html+=`<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -7721,7 +7802,9 @@ async function renderItemDetailPage(itemId){
         photosHtml+=`<div class="card-label" style="margin-top:14px">Intake Photos — RepairDesk (${pre.length})</div><div class="photo-grid">`+
           pre.map(u=>`<img src="${u}" onclick="lightbox('${jsstr(u)}')">`).join('')+'</div>';
       }
-      if(!pics.length && !vids.length && !pre.length){
+      const courier=scanovMediaHtml(orderIdOf(itemId));
+      if(courier) photosHtml+=courier;
+      if(!pics.length && !vids.length && !pre.length && !courier){
         photosHtml+='<div style="color:var(--ink3);font-style:italic;font-size:13px;padding:4px 0">No photos yet — use “Add photos” to upload some.</div>';
       }
       photosHtml+='</div>';
