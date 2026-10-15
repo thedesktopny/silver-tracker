@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-15-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-15-d</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -909,17 +909,91 @@ function isRepairNote(n){
   // EXCEPT the automatic delivery/driver chatter nobody needs on the shop floor.
   const title=((n.tittle||n.title||'')+'').toLowerCase();
   if(/driver|delivery|sms|email|payment|invoice|receipt/.test(title)) return false;
+  // Private Comments are office chatter — including everything Control Room sends —
+  // not repair instructions, so they never print on a label. They still show under
+  // "All notes on this ticket" on the item page.
+  if(String(n.type)==='0' || /private|comment/.test(title)) return false;
   return true;
 }
 // A note is only meaningful if it contains at least one letter or number
 function hasMeaning(txt){ return /[a-z0-9]/i.test(txt||''); }
-function getDeviceNote(device, ticket){
-  const notesArr=(ticket&&ticket.notes)||[];
-  const devId=String(device.device?device.device.id:(device.id||''));
-  const devName=device.device_name||(device.device?device.device.name:'');
-  const matching=notesArr.filter(n=>(String(n.deviceId)===devId||(n.devicename&&devName&&n.devicename.toLowerCase().includes(devName.toLowerCase())))&&isRepairNote(n));
-  return matching.map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(hasMeaning).join(' · ');
+// ========================================================================
+// WHICH PIECE A REPAIRDESK NOTE BELONGS TO
+// ========================================================================
+// RepairDesk records a note against the KIND of item ("Large Tray", model id 47) and
+// its services — not the line on the ticket. With three Large Trays on one ticket,
+// matching on that put one tray's note on all three labels. Now:
+//   - a note that fits exactly one line goes on that piece only
+//   - a note that fits several identical pieces is "unsure": it's shown on each as a
+//     warning, but only printed on the label you tick (and that choice is remembered)
+let _notePicks={};
+try{ _notePicks=JSON.parse(localStorage.getItem('glint_note_picks')||'{}')||{}; }catch(e){ _notePicks={}; }
+function _noteText(n){ return String(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim(); }
+function _lineKey(d){ return String((d&&d.id)||''); }
+function lineNotes(device, ticket){
+  const devs=(ticket&&ticket.devices)||[];
+  const notes=((ticket&&ticket.notes)||[]).filter(n=>isRepairNote(n)&&hasMeaning(n.msg_text||''));
+  const norm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+  const nameOf=d=>norm(d.device_name||(d.device&&d.device.name)||'');
+  const fullOf=d=>norm(nameOf(d)+' '+(d.name||''));
+  const modelOf=d=>String((d.device&&d.device.id)||'');
+  const me=_lineKey(device);
+  const same=d=>d===device||(me&&_lineKey(d)===me);
+  const sure=[], unsure=[];
+  notes.forEach(n=>{
+    const nid=String(n.deviceId||''), dn=norm(n.devicename);
+    let c=[];
+    // 1. tied to one exact line (notes we send from here carry the line's own id)
+    if(nid && !devs.some(d=>modelOf(d)===nid)) c=devs.filter(d=>_lineKey(d)===nid);
+    // 2. same item AND same services
+    if(!c.length && dn) c=devs.filter(d=>fullOf(d)===dn);
+    // 3. same kind of item
+    if(!c.length && nid) c=devs.filter(d=>modelOf(d)===nid);
+    if(!c.length && dn) c=devs.filter(d=>nameOf(d) && dn.indexOf(nameOf(d)+' ')===0);
+    if(!c.some(same)) return;
+    const text=_noteText(n);
+    if(c.length===1){ sure.push(text); return; }
+    // Several identical pieces — honour a choice made earlier on this computer
+    const pick=n.id!=null?_notePicks[String(n.id)]:null;
+    if(pick){ if(pick===me) sure.push(text); return; }
+    unsure.push({id:String(n.id||''), text, of:c.length, name:nameOf(device)});
+  });
+  return {sure, unsure};
 }
+// Only the notes we're certain about — this is what goes on a label by default
+function getDeviceNote(device, ticket){ return lineNotes(device, ticket).sure.join(' · '); }
+// Remember which of several identical pieces a note is really for
+function pickNoteFor(noteId, lineId, on){
+  if(!noteId) return;
+  if(on) _notePicks[noteId]=lineId; else if(_notePicks[noteId]===lineId) delete _notePicks[noteId];
+  try{ localStorage.setItem('glint_note_picks', JSON.stringify(_notePicks)); }catch(e){}
+  // Untick the same note on the other identical pieces
+  document.querySelectorAll('input.unsure-note[data-note-id="'+noteId+'"]').forEach(cb=>{
+    if(cb.dataset.line!==lineId) cb.checked=false;
+  });
+}
+// The tick boxes shown under a piece on the print screens
+function unsureNotesHtml(unsure, lineId, forItem){
+  if(!unsure.length) return '';
+  const e=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return unsure.map(u=>`<label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:5px 7px;margin-top:4px;cursor:pointer">
+      <input type="checkbox" class="unsure-note" data-note-id="${e(u.id)}" data-line="${e(lineId)}" data-for="${e(forItem)}" data-text="${e(u.text)}"
+        onclick="event.stopPropagation()" onchange="pickNoteFor(this.dataset.noteId,this.dataset.line,this.checked)" style="margin-top:1px">
+      <span>⚠️ ${e(u.text)}<br><span style="color:#92400e">RepairDesk doesn't say which of the ${u.of} identical ${e(u.name)}s this is for — tick to print it on this label.</span></span>
+    </label>`).join('');
+}
+// At print time: add any ticked notes for this piece
+function tickedNotesFor(itemId){
+  const m=/^(.*-\d+)(?:-[A-Za-z].*)?$/.exec(String(itemId||''));
+  const base=m?m[1]:itemId;
+  return [...document.querySelectorAll('input.unsure-note:checked')]
+    .filter(cb=>cb.dataset.for===base).map(cb=>cb.dataset.text);
+}
+function withTickedNotes(note, itemId){
+  const extra=tickedNotesFor(itemId).filter(t=>!(note||'').includes(t));
+  return [note].concat(extra).filter(Boolean).join(' · ');
+}
+
 function makeBarcode(text){
   if(typeof JsBarcode==='undefined'){
     toast('⚠️ The barcode library did not load — labels would print without a barcode. Reload the page.');
@@ -1090,7 +1164,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-10-15-a';
+const APP_VERSION='2026-10-15-d';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -3022,6 +3096,7 @@ async function toggleTicket(oid){
         <div style="font-weight:700;font-size:14.5px">${esc(name)}</div>
         ${services?`<div style="font-size:11.5px;color:var(--gold2)">${esc(services)}</div>`:''}
         ${note?`<div style="font-size:11.5px;color:var(--red)">⚠️ ${esc(note)}</div>`:''}
+        ${unsureNotesHtml(lineNotes(device,t).unsure, String(device.id||''), itemId)}
         <div style="font-size:10.5px;color:var(--ink3)">${itemId}</div>
         <div id="svcchips-${cbId}" style="font-size:11px;color:var(--gold2);margin-top:2px"></div>
         <div id="svced-${cbId}" style="display:none;margin-top:8px"></div>
@@ -3175,7 +3250,7 @@ async function printSelected(){
   const items=[...checked].map(cb=>({
     itemId:cb.dataset.itemId, itemName:cb.dataset.itemName||'', services:cb.dataset.services||'', customer:cb.dataset.customer||'',
     rdDevice:cb.dataset.rdDevice||'',
-    city:cb.dataset.city||'', group:cb.dataset.group||'', note:cb.dataset.note||'', due:cb.dataset.due||'', part:cb.dataset.part||''
+    city:cb.dataset.city||'', group:cb.dataset.group||'', note:withTickedNotes(cb.dataset.note||'', cb.dataset.itemId), due:cb.dataset.due||'', part:cb.dataset.part||''
   }));
   rememberLabelRows(items.map(it=>({item_id:it.itemId,item_name:it.itemName,rd_device_id:it.rdDevice||null,printed_at:new Date().toISOString()})));
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part,rd_device_id:it.rdDevice||null})}).catch(()=>{}); });
@@ -5202,11 +5277,18 @@ async function moveHoldPlace(itemId, desc){
   const from=holdKindOf(h.kind).label;
   const to=await askMovePlace(desc||itemId, from);
   if(!to) return;
+  await moveHoldTo(itemId, desc, to);
+}
+async function moveHoldTo(itemId, desc, to){
+  const h=(computeHolds()||{})[itemId];
+  if(!h) return false;
+  const from=holdKindOf(h.kind).label;
+  if(from===to) return true;
   const original=(h.updates&&h.updates[0]&&h.updates[0].reason)||h.reason||'';
   const r=await sb('stage_events',{method:'POST',headers:{'Prefer':'return=minimal'},
     body:JSON.stringify({item_id:itemId, item_desc:desc||'', stage:to+'::'+original,
                          action:'hold', worker:'Admin · moved'})});
-  if(!r.ok){ toast('Could not move it'); return; }
+  if(!r.ok){ toast('Could not move it'); return false; }
   // Same repair record, new place
   try{
     await sb('repairs?item_id=eq.'+encodeURIComponent(itemId)+'&back_at=is.null',
@@ -5216,6 +5298,7 @@ async function moveHoldPlace(itemId, desc){
     .then(x=>{ if(x&&x.ok) toast('↗ Correction noted on the RepairDesk ticket'); });
   toast('↔ Moved to '+to);
   await loadStageEvents(); router();
+  return true;
 }
 async function updateHold(itemId, desc){
   const note=prompt('Update on "'+(desc||itemId)+'"\n\nWhat has changed? It stays on hold.');
@@ -6623,7 +6706,7 @@ async function kpiEnter(which){
 // Earlier attempts failed because we sent ticket_id instead of id, and a word for the
 // type instead of 0 or 1. RepairDesk answers 200 either way, which hid the mistake.
 const RD_NOTE_ATTEMPTS=[
-  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({id:parseInt(id,10), type:1, note:t, is_flag:0})}
+  {path:'ticket/addnote', method:'POST', payload:(t,id)=>({id:parseInt(id,10), type:0, note:t, is_flag:0})}
 ];
 async function probeRepairDeskWrite(){
   const el=document.getElementById('rd-probe-result');
@@ -6750,7 +6833,7 @@ function rdProbeSettingsHtml(){
 // REPAIRS PAGE — every trip out, with who paid and what it cost
 // ========================================================================
 let repairRows=null;
-let rpF={outFrom:'',outTo:'',backFrom:'',backTo:'',payer:'all',state:'all',place:'all'};
+let rpF={outFrom:'',outTo:'',backFrom:'',backTo:'',payer:'all',state:'all',place:'all',inv:'all',q:''};
 async function loadRepairs(){
   try{ const r=await sbList('repairs?select=*&order=sent_at.desc&limit=5000',2); repairRows=Array.isArray(r)?r:[]; }
   catch(e){ repairRows=null; }
@@ -6772,10 +6855,138 @@ function rpFiltered(){
     if(rpF.place!=='all' && r.place!==rpF.place) return false;
     if(!rpInRange(r.sent_at, rpF.outFrom, rpF.outTo)) return false;
     if(!rpInRange(r.back_at, rpF.backFrom, rpF.backTo)) return false;
+    if(rpF.inv==='todo' && !rpNeedsInvoice(r)) return false;
+    if(rpF.inv==='done' && !r.invoice_updated) return false;
+    if(rpF.q){ const hay=(rpCustomer(r)+' '+r.item_id+' '+rpPieceName(r)+' '+(r.reason||'')).toLowerCase();
+      if(!hay.includes(rpF.q.toLowerCase())) return false; }
     return true;
   });
 }
 function rpSet(k,v){ rpF[k]=v; drawRepairs(); }
+let _rpQT=null;
+function rpSearch(v){
+  rpF.q=v; clearTimeout(_rpQT);
+  _rpQT=setTimeout(()=>{ const pos=(document.getElementById('rp-q')||{}).selectionStart; drawRepairs();
+    const el=document.getElementById('rp-q'); if(el){ el.focus(); try{ el.setSelectionRange(pos,pos); }catch(e){} } }, 250);
+}
+// Customer is paying, it's back, and the charge isn't on their invoice yet
+function rpNeedsInvoice(r){ return r.payer==='customer' && !!r.back_at && !r.invoice_updated; }
+// Customer from the ticket; failing that, from a printed label or a scan of the piece
+function rpCustomer(r){
+  const oid=orderIdOf(r.item_id);
+  try{ const t=(allTickets||[]).find(x=>getOrderId(x)===oid); const n=t?String(getCustomerName(t)||'').trim():''; if(n&&n!=='Unknown') return n; }catch(e){}
+  const lab=(pipeLabels||[]).find(l=>orderIdOf(l.item_id)===oid && l.customer && l.customer!=='undefined');
+  if(lab) return String(lab.customer).trim();
+  const sc=(scans||[]).find(s=>orderIdOf(s.item_id)===oid && s.customer && s.customer!=='undefined');
+  return sc?String(sc.customer).trim():'';
+}
+function rpPieceName(r){
+  if(r.item_desc) return r.item_desc;
+  try{ const t=(allTickets||[]).find(x=>getOrderId(x)===orderIdOf(r.item_id));
+       const d=t?deviceForItem(t,r.item_id):null; if(d&&d.device&&d.device.name) return d.device.name; }catch(e){}
+  return r.item_id;
+}
+function rpPhotoList(r){
+  const extra=Array.isArray(r.extra_photos)?r.extra_photos:[];
+  return [r.sent_photo, r.back_photo].concat(extra.map(x=>x&&x.url)).filter(Boolean);
+}
+// All of a repair's photos in the viewer, instead of each in its own tab
+function rpPhotos(id){
+  const r=(repairRows||[]).find(x=>x.id===id); if(!r) return;
+  const list=rpPhotoList(r);
+  if(!list.length){ toast('No photos on this repair'); return; }
+  _lbUrls=list; _lbAt=0; lbOpen();
+}
+async function rpSave(id, patch){
+  patch.updated_at=new Date().toISOString();
+  const r=await sb('repairs?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(patch)});
+  if(!r.ok){
+    let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
+    toast(/column/i.test(why)?'Run add-repairs-invoice.sql in Supabase first':('Could not save'+(why?': '+why:'')));
+    return false;
+  }
+  const row=(repairRows||[]).find(x=>x.id===id); if(row) Object.assign(row, patch);
+  return true;
+}
+async function rpToggleInvoice(id){
+  const r=(repairRows||[]).find(x=>x.id===id); if(!r) return;
+  const on=!r.invoice_updated;
+  if(!confirm(on?('Mark '+rpPieceName(r)+' ('+r.item_id+') as added to the customer\'s invoice?'+(r.cost!=null?'\n\nRepair cost: '+money(+r.cost):''))
+                :('Undo — this repair is NOT on the invoice yet?'))) return;
+  if(await rpSave(id,{invoice_updated:on, invoice_updated_at:on?new Date().toISOString():null})){
+    toast(on?'✓ Marked as on the invoice':'Marked as not on the invoice'); drawRepairs();
+  }
+}
+// "2026-10-14T14:12" for a date-time box, in local time
+function rpLocalInput(iso){
+  if(!iso) return '';
+  const d=new Date(iso); if(isNaN(d)) return '';
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+function rpEdit(id){
+  const r=(repairRows||[]).find(x=>x.id===id); if(!r) return;
+  const places=[...new Set([...(HOLD_PLACES||[]), r.place].filter(Boolean))];
+  const lab='font-size:12px;color:var(--ink3);margin:12px 0 5px';
+  const bg=document.createElement('div');
+  bg.style.cssText='position:fixed;inset:0;background:rgba(18,20,28,.7);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
+  bg.innerHTML='<div style="background:var(--surface);border-radius:16px;padding:22px;max-width:460px;width:100%;margin:auto">'+
+    '<div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3)">Edit repair</div>'+
+    '<div style="font-size:18px;font-weight:800;margin:4px 0 2px">'+esc(rpPieceName(r))+'</div>'+
+    '<div style="font-size:12px;color:var(--ink3)">'+esc(r.item_id)+(rpCustomer(r)?' · '+esc(rpCustomer(r)):'')+'</div>'+
+    '<div style="'+lab+'">What needs doing</div><textarea id="re-reason" rows="2" style="width:100%">'+esc(r.reason||'')+'</textarea>'+
+    '<div style="'+lab+'">Who pays</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+
+      ['customer','glint','unsure'].map(v=>'<label style="flex:1;min-width:100px;border:2px solid var(--border);border-radius:9px;padding:9px;cursor:pointer;text-align:center;font-weight:600;font-size:13px">'+
+        '<input type="radio" name="re-payer" value="'+v+'"'+((r.payer||'unsure')===v?' checked':'')+' style="margin-right:5px">'+PAYER_LABEL[v]+'</label>').join('')+'</div>'+
+    '<div style="'+lab+'">Where'+(r.back_at?'':' <span style="opacity:.7">(changing this moves the piece too)</span>')+'</div>'+
+    '<select id="re-place" style="width:100%;padding:8px">'+places.map(p=>'<option'+(p===r.place?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>'+
+    '<div style="display:flex;gap:10px"><div style="flex:1"><div style="'+lab+'">Sent out</div><input type="datetime-local" id="re-sent" value="'+rpLocalInput(r.sent_at)+'" style="width:100%;padding:7px"></div>'+
+      (r.back_at?'<div style="flex:1"><div style="'+lab+'">Came back</div><input type="datetime-local" id="re-back" value="'+rpLocalInput(r.back_at)+'" style="width:100%;padding:7px"></div>':'')+'</div>'+
+    '<div style="'+lab+'">Cost</div><input id="re-cost" inputmode="decimal" value="'+(r.cost!=null?esc(String(r.cost)):'')+'" placeholder="'+(r.back_at?'e.g. 45.00':'leave empty until it comes back')+'" style="width:100%;padding:9px">'+
+    (r.back_at?'<div style="'+lab+'">Note from when it came back</div><textarea id="re-note" rows="2" style="width:100%">'+esc(r.back_note||'')+'</textarea>':'')+
+    '<label style="display:flex;gap:8px;align-items:center;margin-top:14px;font-size:13.5px;font-weight:600;cursor:pointer"><input type="checkbox" id="re-inv"'+(r.invoice_updated?' checked':'')+'> Updated invoice — the repair charge is on the customer\'s invoice</label>'+
+    '<div style="'+lab+'">Add more photos <span style="opacity:.7">(optional)</span></div><input type="file" id="re-photos" accept="image/*" multiple style="width:100%">'+
+    '<div id="re-err" style="color:var(--red);font-size:12.5px;min-height:18px;margin-top:8px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:6px"><button id="re-ok" class="btn btn-gold" style="flex:1">Save changes</button><button id="re-no" class="btn btn-ghost">Cancel</button></div>'+
+  '</div>';
+  document.body.appendChild(bg);
+  bg.querySelector('#re-no').onclick=()=>bg.remove();
+  bg.querySelector('#re-ok').onclick=async()=>{
+    const err=bg.querySelector('#re-err'), btn=bg.querySelector('#re-ok');
+    const reason=bg.querySelector('#re-reason').value.trim();
+    if(!reason){ err.textContent='Say what needs doing.'; return; }
+    const rawCost=bg.querySelector('#re-cost').value.trim();
+    const cost=rawCost===''?null:parseFloat(rawCost.replace(/[^0-9.]/g,''));
+    if(rawCost!=='' && isNaN(cost)){ err.textContent='Cost must be a number.'; return; }
+    if(r.back_at && cost===null){ err.textContent='It has come back, so it needs a cost (0 if nothing).'; return; }
+    const sentV=bg.querySelector('#re-sent').value, backEl=bg.querySelector('#re-back');
+    const patch={reason, payer:bg.querySelector('input[name=re-payer]:checked').value, cost,
+                 invoice_updated:bg.querySelector('#re-inv').checked};
+    if(patch.invoice_updated!==!!r.invoice_updated) patch.invoice_updated_at=patch.invoice_updated?new Date().toISOString():null;
+    if(sentV) patch.sent_at=new Date(sentV).toISOString();
+    if(backEl && backEl.value) patch.back_at=new Date(backEl.value).toISOString();
+    if(patch.back_at && patch.sent_at && new Date(patch.back_at)<new Date(patch.sent_at)){ err.textContent='It can\'t come back before it went out.'; return; }
+    const noteEl=bg.querySelector('#re-note'); if(noteEl) patch.back_note=noteEl.value.trim()||null;
+    const place=bg.querySelector('#re-place').value;
+    btn.disabled=true; btn.textContent='Saving…';
+    try{
+      const files=[...(bg.querySelector('#re-photos').files||[])];
+      if(files.length){
+        const extra=(Array.isArray(r.extra_photos)?r.extra_photos:[]).slice();
+        for(const f of files){ btn.textContent='Uploading photo '+(extra.length+1)+'…';
+          extra.push({url:await uploadRepairPhoto(f, r.item_id, 'repair_extra'), at:new Date().toISOString()}); }
+        patch.extra_photos=extra;
+      }
+    }catch(e){ err.textContent=e.message||String(e); btn.disabled=false; btn.textContent='Save changes'; return; }
+    // A piece still out: moving it here moves the hold as well, so both stay in step
+    if(place!==r.place){
+      if(!r.back_at){ await moveHoldTo(r.item_id, rpPieceName(r), place); }
+      patch.place=place;
+    }
+    if(await rpSave(id, patch)){ bg.remove(); toast('✓ Repair updated'); await loadRepairs(); drawRepairs(); }
+    else { btn.disabled=false; btn.textContent='Save changes'; }
+  };
+}
 async function renderRepairsPage(){
   document.getElementById('content').innerHTML=
     '<div class="page-head"><div><div class="page-title">Repairs</div>'+
@@ -6821,7 +7032,13 @@ function drawRepairs(){
           '<select onchange="rpSet(\'state\',this.value)" style="'+inp+'">'+
             [['all','All'],['out','Still out'],['back','Came back']].map(([v,l])=>'<option value="'+v+'"'+(rpF.state===v?' selected':'')+'>'+l+'</option>').join('')+
           '</select></div>'+
-        '<button class="btn btn-ghost btn-sm" onclick="rpF={outFrom:\'\',outTo:\'\',backFrom:\'\',backTo:\'\',payer:\'all\',state:\'all\',place:\'all\'};drawRepairs()">Clear</button>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">CUSTOMER / ORDER</div>'+
+          '<input id="rp-q" value="'+esc(rpF.q)+'" placeholder="e.g. Katz or T-1415" oninput="rpSearch(this.value)" style="'+inp+';width:170px"></div>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">INVOICE</div>'+
+          '<select onchange="rpSet(\'inv\',this.value)" style="'+inp+'">'+
+            [['all','All'],['todo','Not on invoice yet'],['done','Updated invoice ✓']].map(([v,l])=>'<option value="'+v+'"'+(rpF.inv===v?' selected':'')+'>'+l+'</option>').join('')+
+          '</select></div>'+
+        '<button class="btn btn-ghost btn-sm" onclick="rpF={outFrom:\'\',outTo:\'\',backFrom:\'\',backTo:\'\',payer:\'all\',state:\'all\',place:\'all\',inv:\'all\'};drawRepairs()">Clear</button>'+
       '</div></div>'+
 
     '<div class="stat-grid">'+
@@ -6830,26 +7047,36 @@ function drawRepairs(){
       '<div class="stat-tile" style="border-left:4px solid var(--orange)"><div class="stat-num" style="font-size:24px;color:var(--orange)">'+money(sum(byPayer('glint')))+'</div><div class="stat-label">Glint paid</div></div>'+
       '<div class="stat-tile" style="border-left:4px solid var(--green)"><div class="stat-num" style="font-size:24px;color:var(--green)">'+money(sum(byPayer('customer')))+'</div><div class="stat-label">Customer pays</div></div>'+
       '<div class="stat-tile"><div class="stat-num" style="font-size:24px">'+out+'</div><div class="stat-label">Still out</div></div>'+
+      (()=>{ const todo=(repairRows||[]).filter(rpNeedsInvoice);
+        return '<div class="stat-tile clickable" onclick="rpSet(\'inv\',\'todo\')" title="Show them" style="border-left:4px solid '+(todo.length?'var(--red)':'var(--green)')+'">'+
+          '<div class="stat-num" style="font-size:24px;color:'+(todo.length?'var(--red)':'var(--green)')+'">'+todo.length+'</div>'+
+          '<div class="stat-label">Not on invoice yet'+(todo.length?' · '+money(todo.reduce((a,r)=>a+(+r.cost||0),0)):'')+'</div></div>'; })()+
     '</div>'+
 
     '<div class="card">'+(rows.length?
-      '<table><thead><tr><th>Piece</th><th>Where</th><th>Sent</th><th>Back</th><th>Days</th><th>Who pays</th><th>Cost</th><th>Photos</th></tr></thead><tbody>'+
+      '<table><thead><tr><th>Piece</th><th>Customer</th><th>Where</th><th>Sent</th><th>Back</th><th>Days</th><th>Who pays</th><th>Cost</th><th>Invoice</th><th>Photos</th><th></th></tr></thead><tbody>'+
       rows.map(r=>{
         const days=Math.floor(((r.back_at?new Date(r.back_at):new Date())-new Date(r.sent_at))/day);
         const pc=r.payer==='glint'?'var(--orange)':(r.payer==='customer'?'var(--green)':'var(--ink3)');
         return '<tr>'+
-          '<td><span class="clickable" style="font-weight:600" onclick="navigate(\''+h('item',r.item_id).replace(/'/g,"\\'")+'\')">'+esc(r.item_desc||r.item_id)+'</span>'+
+          '<td><span class="clickable" style="font-weight:600" onclick="navigate(\''+h('item',r.item_id).replace(/'/g,"\\'")+'\')">'+esc(rpPieceName(r))+'</span>'+
             '<br><span style="font-size:11px;color:var(--ink3)">'+esc(r.item_id)+'</span>'+
             (r.reason?'<br><span style="font-size:11.5px;color:var(--ink2)">'+esc(r.reason)+'</span>':'')+'</td>'+
+          '<td>'+(rpCustomer(r)?'<span class="clickable" onclick="navigate(\''+h('order',orderIdOf(r.item_id)).replace(/'/g,"\\'")+'\')">'+esc(rpCustomer(r))+'</span>':'<span style="color:var(--ink3)">—</span>')+'</td>'+
           '<td>'+esc(r.place||'')+'</td>'+
           '<td style="white-space:nowrap">'+fmtDate(r.sent_at)+'</td>'+
           '<td style="white-space:nowrap">'+(r.back_at?fmtDate(r.back_at):'<span style="color:var(--orange);font-weight:700">still out</span>')+'</td>'+
           '<td>'+days+'d</td>'+
           '<td style="color:'+pc+';font-weight:600">'+(PAYER_LABEL[r.payer]||'Not sure')+'</td>'+
           '<td style="font-weight:700">'+(r.cost!=null?money(+r.cost):'—')+'</td>'+
-          '<td style="white-space:nowrap">'+
-            (r.sent_photo?'<a href="'+esc(r.sent_photo)+'" target="_blank" title="When it went out">📤</a> ':'')+
-            (r.back_photo?'<a href="'+esc(r.back_photo)+'" target="_blank" title="When it came back">📥</a>':'')+'</td>'+
+          '<td style="white-space:nowrap">'+(
+            r.payer!=='customer' ? '<span style="color:var(--ink3)">'+(r.payer==='glint'?'—':'decide who pays')+'</span>'
+            : r.invoice_updated ? '<button class="btn btn-ghost btn-sm" style="color:var(--green);font-weight:700" title="'+(r.invoice_updated_at?'Marked '+fmtDate(r.invoice_updated_at):'')+'" onclick="rpToggleInvoice('+r.id+')">✓ Updated</button>'
+            : r.back_at ? '<button class="btn btn-sm" style="background:var(--red);color:#fff" onclick="rpToggleInvoice('+r.id+')">Add to invoice</button>'
+            : '<span style="color:var(--ink3)" title="Once it comes back with a cost">not back yet</span>'
+          )+'</td>'+
+          '<td style="white-space:nowrap">'+(rpPhotoList(r).length?'<button class="btn btn-ghost btn-sm" onclick="rpPhotos('+r.id+')">📷 '+rpPhotoList(r).length+'</button>':'—')+'</td>'+
+          '<td><button class="btn btn-ghost btn-sm" onclick="rpEdit('+r.id+')">✏️ Edit</button></td>'+
         '</tr>';
       }).join('')+'</tbody></table>'
       : '<div class="empty">No repairs match these filters</div>')+'</div>';
@@ -7498,8 +7725,10 @@ async function renderOrderDetailPage(oid){
 
   html+='<div class="card"><div class="card-label">Items</div>';
   if(t&&t.devices&&t.devices.length){
+    await loadLabelsForOrder(oid);
+    const _orderNums=pieceNumbers(oid, t.devices);
     for(let i=0;i<t.devices.length;i++){
-      const device=t.devices[i], num=i+1, itemId=oid+'-'+num;
+      const device=t.devices[i], num=_orderNums[i], itemId=oid+'-'+num;
       const name=device.device?device.device.name:'Item '+num;
       const services=device.repairProdItems?device.repairProdItems.map(s=>s.name.trim()).join(', '):'';
       const note=getDeviceNote(device,t);
@@ -7686,6 +7915,7 @@ async function renderItemDetailPage(itemId){
 
     const services=dev.repairProdItems?dev.repairProdItems.map(s=>String(s.name||'').trim()).filter(Boolean):[];
     const note=getDeviceNote(dev,d.data);
+    const unsureNotes=lineNotes(dev,d.data).unsure;
     const pre=collectRdImages(dev, d.data);
     const due=dev.due_on?new Date(dev.due_on*1000):null;
     const cust=d.data.summary&&d.data.summary.customer?d.data.summary.customer:{};
@@ -7703,6 +7933,13 @@ async function renderItemDetailPage(itemId){
     if(note){
       let noteEs=''; try{ noteEs=await translateCached(note); }catch(_){}
       ticketBlock+=`<div class="note-box" style="margin-top:14px"><div class="nb-label">⚠️ Repair Note</div><div class="nb-en">${esc(note)}</div>${noteEs?`<div class="nb-es">🇪🇸 ${esc(noteEs)}</div>`:''}</div>`;
+    }
+    if(unsureNotes.length){
+      ticketBlock+=`<div style="margin-top:10px;background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.05em">⚠️ Might be for this piece</div>
+        ${unsureNotes.map(u=>`<div style="font-size:13px;margin-top:5px">${esc(u.text)}</div>
+          <div style="font-size:11px;color:#92400e">RepairDesk doesn't say which of the ${u.of} identical ${esc(u.name)}s this note is for.</div>`).join('')}
+      </div>`;
     }
     // Every other note on the ticket, so nothing added in RepairDesk goes unseen
     const allNotes=((d.data&&d.data.notes)||[]).filter(n=>hasMeaning(n.msg_text||''));
@@ -7937,7 +8174,9 @@ async function pushNoteToRepairDesk(itemId, text){
       if(dev) deviceId=parseInt(dev.id||(dev.device&&dev.device.id),10)||null;
     }catch(e){}
 
-    const payload={id:parseInt(tid,10), type:1, note:text, is_flag:0};
+    // type 0 = Private Comments in RepairDesk. Diagnostic Notes (type 1) are kept for the
+    // repair instructions the office writes, which print on the labels.
+    const payload={id:parseInt(tid,10), type:0, note:text, is_flag:0};
     if(deviceId) payload.deviceId=deviceId;
 
     const r=await edgeCall({action:'repairdesk_write', path:'ticket/addnote', method:'POST', payload});

@@ -200,7 +200,7 @@ body{background:var(--bg);color:var(--ink);font-family:'Inter',sans-serif;min-he
 <div class="glint-header no-print">
   <img src="https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d0c3e98b1478cc0c410_logo.svg" alt="Glint Lacquer" onerror="this.src='https://cdn.prod.website-files.com/68483c15ac0fa89bf9f4e499/68503d5a96b630c2c4676399_logo-01.png'">
   <div class="subtitle">Item Tracking System</div>
-  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-10-12-b</div>
+  <div id="app-build" onclick="toggleScanDebug()" style="font-size:9px;color:var(--ink3);opacity:.6;margin-top:3px;cursor:pointer">build 2026-10-15-a</div>
 </div>
 
 <!-- ===== SCAN PAGE ===== -->
@@ -1140,7 +1140,90 @@ function isRepairNote(n){
   return title.includes('diagnostic');
 }
 function hasMeaning(txt){ return /[a-z0-9]/i.test(txt||''); }
-function prNote(device,t){ const arr=(t&&t.notes)||[]; const id=String(device.device?device.device.id:(device.id||'')); const nm=device.device_name||(device.device?device.device.name:''); return arr.filter(n=>(String(n.deviceId)===id||(n.devicename&&nm&&n.devicename.toLowerCase().includes(nm.toLowerCase())))&&isRepairNote(n)).map(n=>(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim()).filter(hasMeaning).join(' · '); }
+// ========================================================================
+// WHICH PIECE A REPAIRDESK NOTE BELONGS TO
+// ========================================================================
+// RepairDesk records a note against the KIND of item ("Large Tray", model id 47) and
+// its services — not the line on the ticket. With three Large Trays on one ticket,
+// matching on that put one tray's note on all three labels. Now:
+//   - a note that fits exactly one line goes on that piece only
+//   - a note that fits several identical pieces is "unsure": it's shown on each as a
+//     warning, but only printed on the label you tick (and that choice is remembered)
+let _notePicks={};
+try{ _notePicks=JSON.parse(localStorage.getItem('st_note_picks')||'{}')||{}; }catch(e){ _notePicks={}; }
+function _noteText(n){ return String(n.msg_text||'').replace(/\s*\n\s*/g,' ').trim(); }
+function _lineKey(d){ return String((d&&d.id)||''); }
+function lineNotes(device, ticket){
+  const devs=(ticket&&ticket.devices)||[];
+  const notes=((ticket&&ticket.notes)||[]).filter(n=>isRepairNote(n)&&hasMeaning(n.msg_text||''));
+  const norm=s=>String(s||'').replace(/\s+/g,' ').trim().toLowerCase();
+  const nameOf=d=>norm(d.device_name||(d.device&&d.device.name)||'');
+  const fullOf=d=>norm(nameOf(d)+' '+(d.name||''));
+  const modelOf=d=>String((d.device&&d.device.id)||'');
+  const me=_lineKey(device);
+  const same=d=>d===device||(me&&_lineKey(d)===me);
+  const sure=[], unsure=[];
+  notes.forEach(n=>{
+    const nid=String(n.deviceId||''), dn=norm(n.devicename);
+    let c=[];
+    // 1. tied to one exact line (notes we send from here carry the line's own id)
+    if(nid && !devs.some(d=>modelOf(d)===nid)) c=devs.filter(d=>_lineKey(d)===nid);
+    // 2. same item AND same services
+    if(!c.length && dn) c=devs.filter(d=>fullOf(d)===dn);
+    // 3. same kind of item
+    if(!c.length && nid) c=devs.filter(d=>modelOf(d)===nid);
+    if(!c.length && dn) c=devs.filter(d=>nameOf(d) && dn.indexOf(nameOf(d)+' ')===0);
+    if(!c.some(same)) return;
+    const text=_noteText(n);
+    if(c.length===1){ sure.push(text); return; }
+    // Several identical pieces — honour a choice made earlier on this computer
+    const pick=n.id!=null?_notePicks[String(n.id)]:null;
+    if(pick){ if(pick===me) sure.push(text); return; }
+    unsure.push({id:String(n.id||''), text, of:c.length, name:nameOf(device)});
+  });
+  return {sure, unsure};
+}
+// Only the notes we're certain about — this is what goes on a label by default
+function getDeviceNote(device, ticket){ return lineNotes(device, ticket).sure.join(' · '); }
+// Remember which of several identical pieces a note is really for
+function pickNoteFor(noteId, lineId, on){
+  if(!noteId) return;
+  if(on) _notePicks[noteId]=lineId; else if(_notePicks[noteId]===lineId) delete _notePicks[noteId];
+  try{ localStorage.setItem('st_note_picks', JSON.stringify(_notePicks)); }catch(e){}
+  // Untick the same note on the other identical pieces
+  document.querySelectorAll('input.unsure-note[data-note-id="'+noteId+'"]').forEach(cb=>{
+    if(cb.dataset.line!==lineId) cb.checked=false;
+  });
+}
+// The tick boxes shown under a piece on the print screens
+function unsureNotesHtml(unsure, lineId, forItem){
+  if(!unsure.length) return '';
+  const e=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return unsure.map(u=>`<label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:5px 7px;margin-top:4px;cursor:pointer">
+      <input type="checkbox" class="unsure-note" data-note-id="${e(u.id)}" data-line="${e(lineId)}" data-for="${e(forItem)}" data-text="${e(u.text)}"
+        onclick="event.stopPropagation()" onchange="pickNoteFor(this.dataset.noteId,this.dataset.line,this.checked)" style="margin-top:1px">
+      <span>⚠️ ${e(u.text)}<br><span style="color:#92400e">RepairDesk doesn't say which of the ${u.of} identical ${e(u.name)}s this is for — tick to print it on this label.</span></span>
+    </label>`).join('');
+}
+// At print time: add any ticked notes for this piece
+function tickedNotesFor(itemId){
+  const m=/^(.*-\d+)(?:-[A-Za-z].*)?$/.exec(String(itemId||''));
+  const base=m?m[1]:itemId;
+  return [...document.querySelectorAll('input.unsure-note:checked')]
+    .filter(cb=>cb.dataset.for===base).map(cb=>cb.dataset.text);
+}
+function withTickedNotes(note, itemId){
+  const extra=tickedNotesFor(itemId).filter(t=>!(note||'').includes(t));
+  return [note].concat(extra).filter(Boolean).join(' · ');
+}
+
+// On the workers' screens the unsure ones are shown too, marked, so nothing is hidden
+function noteForScreen(device, ticket){
+  const r=lineNotes(device, ticket);
+  return r.sure.concat(r.unsure.map(u=>'(may be for another of the '+u.of+' '+u.name+'s) '+u.text)).join(' · ');
+}
+
+function prNote(device,t){ return getDeviceNote(device,t); }
 function prIsCand(n){ return /candelabra/i.test(n||''); }
 
 async function prLoad(){
@@ -1271,6 +1354,7 @@ async function prToggle(oid){
         <div style="font-weight:700;font-size:14px">${name}</div>
         ${services?`<div style="font-size:11px;color:var(--gold2)">${services}</div>`:''}
         ${note?`<div style="font-size:11px;color:var(--red)">⚠️ ${note}</div>`:''}
+        ${unsureNotesHtml(lineNotes(device,t).unsure, String(device.id||''), itemId)}
         <div style="font-size:10px;color:var(--ink3)">${itemId}</div>
         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
         <button class="gen-btn" style="font-size:10px;padding:5px 9px;background:var(--surface2);color:var(--ink2)" onclick="openPreImg('${itemId}','${esc(name)}')">🖼️ Photos</button>`;
@@ -1374,7 +1458,7 @@ async function translateCached(text){
 async function prPrint(){
   const checked=document.querySelectorAll('.pr-cb:checked');
   if(!checked.length){ showToast('Select items first'); return; }
-  const items=[...checked].map(cb=>({itemId:cb.dataset.itemId,rdDevice:cb.dataset.rdDevice||'',itemName:cb.dataset.itemName||'',services:cb.dataset.services||'',customer:cb.dataset.customer||'',city:cb.dataset.city||'',group:cb.dataset.group||'',note:cb.dataset.note||'',due:cb.dataset.due||'',part:cb.dataset.part||''}));
+  const items=[...checked].map(cb=>({itemId:cb.dataset.itemId,rdDevice:cb.dataset.rdDevice||'',itemName:cb.dataset.itemName||'',services:cb.dataset.services||'',customer:cb.dataset.customer||'',city:cb.dataset.city||'',group:cb.dataset.group||'',note:withTickedNotes(cb.dataset.note||'', cb.dataset.itemId),due:cb.dataset.due||'',part:cb.dataset.part||''}));
   rememberLabelRows(items.map(it=>({item_id:it.itemId,item_name:it.itemName,rd_device_id:it.rdDevice||null,printed_at:new Date().toISOString()})));
   items.forEach(it=>{ fetch(SUPABASE_URL+'/rest/v1/labels',{method:'POST',headers:{'apikey':SUPABASE_KEY,'Authorization':'Bearer '+SUPABASE_KEY,'Content-Type':'application/json','Prefer':'return=minimal'},body:JSON.stringify({item_id:it.itemId,item_name:it.itemName,customer:it.customer,city:it.city,note:it.note,part:it.part,rd_device_id:it.rdDevice||null})}).catch(()=>{}); });
   showToast('Preparing labels…');
@@ -2779,7 +2863,7 @@ async function openPreImg(itemId, name){
   if(t&&t.devices){
     await loadLabelsForOrder(oid);
     const dev=deviceForItem(t, itemId);
-    const note=dev?prNote(dev,t):'';
+    const note=dev?noteForScreen(dev,t):'';
     const services=dev&&dev.repairProdItems?dev.repairProdItems.map(s=>s.name.trim()).join(', '):'';
     if(services) html+='<div style="background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:var(--gold2);text-transform:uppercase">Service needed</div><div style="font-size:14px">'+services+'</div></div>';
     if(note){
@@ -3141,7 +3225,7 @@ async function loadActiveWorkInfo(itemId){
   let dev=null;
   if(t&&t.devices){ await loadLabelsForOrder(oid); dev=deviceForItem(t, itemId); }
   // Repair note (bilingual)
-  const note=dev?prNote(dev,t):'';
+  const note=dev?noteForScreen(dev,t):'';
   if(note){
     const noteEs=await translateCached(note);
     html+='<div style="background:var(--red-soft);border:1px solid var(--red);border-radius:8px;padding:8px 10px;margin-bottom:8px;text-align:left"><span style="font-size:10px;font-weight:700;color:var(--red);text-transform:uppercase">⚠️ Note</span><div style="font-size:13px;margin-top:2px">EN: '+note+'</div>'+(noteEs?'<div style="font-size:12px;font-style:italic;color:var(--ink2);margin-top:2px">🇪🇸 ES: '+noteEs+'</div>':'')+'</div>';
@@ -3263,19 +3347,6 @@ function getTicketDates(t) {
   return { created, due };
 }
 
-function getDeviceNote(device, ticket) {
-  // Notes are in a separate ticket-level array, linked by deviceId
-  const notesArr = (ticket && ticket.notes) || [];
-  const devId = String(device.device ? device.device.id : (device.id || ''));
-  const devName = device.device_name || (device.device ? device.device.name : '');
-  // Collect all notes matching this device
-  const matching = notesArr.filter(n =>
-    String(n.deviceId) === devId ||
-    (n.devicename && devName && n.devicename.toLowerCase().includes(devName.toLowerCase()))
-  );
-  return matching.map(n => (n.msg_text || '').trim()).filter(Boolean).join(' · ');
-}
-
 function getOrderId(t) {
   return (t.summary && t.summary.order_id) || t.id || '';
 }
@@ -3395,6 +3466,7 @@ function renderTicketItems(orderId, customer, devices, itemsEl, ticket) {
         <div class="item-name">${deviceName}${serial}</div>
         ${services?`<div class="item-meta" style="color:var(--gold-dim)">${services}</div>`:''}
         ${note?`<div class="item-meta" style="color:var(--red)">📝 ${note}</div>`:''}
+        ${unsureNotesHtml(lineNotes(device,ticket).unsure, String(device.id||''), itemId)}
         <div class="item-meta">${itemId}${city?' · '+city:''}</div>`;
 
     // Candelabra split option
@@ -3612,7 +3684,7 @@ function printSelected() {
       customer: cb.dataset.customer || '',
       city: cb.dataset.city || '',
       phone: cb.dataset.phone || '',
-      note: cb.dataset.note || '',
+      note: withTickedNotes(cb.dataset.note || '', cb.dataset.itemId),
       created: cb.dataset.created || '',
       due: cb.dataset.due || '',
       part: cb.dataset.part || ''
