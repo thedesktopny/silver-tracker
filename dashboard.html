@@ -303,7 +303,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-15-d</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-26-a</div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -1164,7 +1164,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-10-15-d';
+const APP_VERSION='2026-10-26-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -5013,6 +5013,20 @@ async function holdPlaceMove(i,dir){
   await saveHoldPlaces(); renderSettingsPage();
 }
 // Latest hold/unhold per item decides the current state
+// A piece's name from wherever we know it: the RepairDesk ticket, a printed label,
+// or a scan. Held pieces used to show only the number when the name wasn't loaded at
+// the moment they went on hold.
+function itemNameFor(itemId, known){
+  if(known) return known;
+  const oid=orderIdOf(itemId);
+  try{ const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+       const d=t?deviceForItem(t,itemId):null; if(d&&d.device&&d.device.name) return d.device.name; }catch(e){}
+  const lab=(pipeLabels||[]).find(l=>l.item_id===itemId && l.item_name);
+  if(lab) return String(lab.item_name).trim();
+  const sc=(scans||[]).find(s=>s.item_id===itemId && s.item_desc && s.item_desc!=='undefined');
+  if(sc) return String(sc.item_desc).trim();
+  return '';
+}
 function computeHolds(){
   const byItem={}, history={};
   (stageEvents||[]).forEach(e=>{
@@ -5028,6 +5042,9 @@ function computeHolds(){
   const out={};
   Object.entries(byItem).forEach(([id,h])=>{
     if(h.action!=='hold') return;
+    // Name from any event for this piece (an update may not carry one), then a lookup
+    if(!h.desc){ const any=(history[id]||[]).find(e=>e.item_desc&&e.item_desc!=='undefined'); if(any) h.desc=any.item_desc; }
+    if(!h.desc) h.desc=itemNameFor(id);
     // Every note since this hold began, oldest first
     const evs=(history[id]||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
     let startIdx=0;
@@ -5107,24 +5124,28 @@ async function repairSend(itemId, desc, placeLabel){
     '<div style="font-size:12px;color:var(--ink3);margin:12px 0 6px">Who pays? <span style="color:var(--red)">required</span></div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
       ['customer','glint','unsure'].map(v=>'<label style="flex:1;min-width:100px;border:2px solid var(--border);border-radius:9px;padding:10px;cursor:pointer;text-align:center;font-weight:600;font-size:13.5px">'+
-        '<input type="radio" name="rf-payer" value="'+v+'" style="margin-right:5px">'+({customer:'Customer pays',glint:'Glint pays',unsure:'Not sure'})[v]+'</label>').join('')+
-    '</div>',
+        '<input type="radio" name="rf-payer" value="'+v+'" style="margin-right:5px" onchange="document.getElementById(\'rf-cause-wrap\').style.display=this.value===\'glint\'?\'block\':\'none\'">'+({customer:'Customer pays',glint:'Glint pays',unsure:'Not sure'})[v]+'</label>').join('')+
+    '</div>'+
+    '<div id="rf-cause-wrap" style="display:none"><div style="font-size:12px;color:var(--ink3);margin:12px 0 5px">Whose damage? <span style="color:var(--red)">required</span></div>'+
+    '<select id="rf-cause" style="width:100%;padding:9px">'+causeOptionsHtml('')+'</select></div>',
     bg=>{
       const reason=bg.querySelector('#rf-reason').value.trim();
       const p=bg.querySelector('input[name=rf-payer]:checked');
       if(!reason) return 'Say what needs doing.';
       if(!p) return 'Choose who pays.';
-      return {reason, payer:p.value};
+      const cause=p.value==='glint'?bg.querySelector('#rf-cause').value:'';
+      if(p.value==='glint' && !cause) return 'Choose whose damage it was (or Not sure).';
+      return {reason, payer:p.value, cause};
     });
   if(!res) return null;
   try{
     const url=await uploadRepairPhoto(res.file, itemId, 'repair_out');
     const r=await sb('repairs',{method:'POST',headers:{'Prefer':'return=minimal'},
       body:JSON.stringify({item_id:itemId, order_id:orderIdOf(itemId), item_desc:desc||'', place:placeLabel,
-        reason:res.reason, payer:res.payer, sent_photo:url, created_by:'Office'})});
+        reason:res.reason, payer:res.payer, caused_by:res.cause||null, sent_photo:url, created_by:'Office'})});
     if(!r.ok){ res.fail('Could not save the repair — is add-repairs.sql run?'); return null; }
     res.close();
-    return {reason:res.reason, payer:res.payer};
+    return {reason:res.reason, payer:res.payer, cause:res.cause};
   }catch(e){ res.fail(e.message||String(e)); return null; }
 }
 
@@ -5162,6 +5183,7 @@ async function repairBack(itemId, desc, placeLabel){
 }
 
 async function putOnHold(itemId, desc){
+  desc=itemNameFor(itemId, desc);
   const kind=await askHoldKind(desc||itemId);
   if(!kind) return;
   let reason;
@@ -5169,7 +5191,7 @@ async function putOnHold(itemId, desc){
     // Out to a repair place: photo, who pays and what's needed are all required
     const sent=await repairSend(itemId, desc, HOLD_KINDS[kind].label);
     if(!sent) return;
-    reason=sent.reason+' ('+({customer:'customer pays',glint:'Glint pays',unsure:'payer not sure'})[sent.payer]+')';
+    reason=sent.reason+' ('+({customer:'customer pays',glint:'Glint pays',unsure:'payer not sure'})[sent.payer]+(sent.payer==='glint'&&sent.cause?' — '+sent.cause:'')+')';
   } else {
     reason=prompt('Why is "'+(desc||itemId)+'" on hold?\n\n'+HOLD_KINDS[kind].hint);
     if(reason===null) return;
@@ -6833,12 +6855,25 @@ function rdProbeSettingsHtml(){
 // REPAIRS PAGE — every trip out, with who paid and what it cost
 // ========================================================================
 let repairRows=null;
-let rpF={outFrom:'',outTo:'',backFrom:'',backTo:'',payer:'all',state:'all',place:'all',inv:'all',q:''};
+let rpF={outFrom:'',outTo:'',backFrom:'',backTo:'',payer:'all',state:'all',place:'all',inv:'all',q:'',cause:'all'};
 async function loadRepairs(){
   try{ const r=await sbList('repairs?select=*&order=sent_at.desc&limit=5000',2); repairRows=Array.isArray(r)?r:[]; }
   catch(e){ repairRows=null; }
 }
 const PAYER_LABEL={customer:'Customer pays', glint:'Glint pays', unsure:'Not sure'};
+// When Glint pays, it's usually because someone here damaged the piece
+const CAUSE_OTHER=['Not sure','Not a worker (transit, old damage…)'];
+function causeOptionsHtml(sel){
+  const names=[...new Set((workers||[]).map(w=>w&&w.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  if(sel && !names.includes(sel) && !CAUSE_OTHER.includes(sel)) names.push(sel);
+  return '<option value="">— choose who —</option>'+
+    names.map(n=>'<option'+(n===sel?' selected':'')+'>'+esc(n)+'</option>').join('')+
+    '<option disabled>──────────</option>'+
+    CAUSE_OTHER.map(n=>'<option'+(n===sel?' selected':'')+'>'+esc(n)+'</option>').join('');
+}
+function payerText(r){
+  return (PAYER_LABEL[r.payer]||'Not sure')+(r.payer==='glint'&&r.caused_by?' · '+r.caused_by:'');
+}
 function rpInRange(v, from, to){
   if(!from && !to) return true;
   if(!v) return false;
@@ -6857,6 +6892,7 @@ function rpFiltered(){
     if(!rpInRange(r.back_at, rpF.backFrom, rpF.backTo)) return false;
     if(rpF.inv==='todo' && !rpNeedsInvoice(r)) return false;
     if(rpF.inv==='done' && !r.invoice_updated) return false;
+    if(rpF.cause!=='all' && (r.payer!=='glint' || (r.caused_by||'')!==rpF.cause)) return false;
     if(rpF.q){ const hay=(rpCustomer(r)+' '+r.item_id+' '+rpPieceName(r)+' '+(r.reason||'')).toLowerCase();
       if(!hay.includes(rpF.q.toLowerCase())) return false; }
     return true;
@@ -6882,6 +6918,7 @@ function rpCustomer(r){
 }
 function rpPieceName(r){
   if(r.item_desc) return r.item_desc;
+  { const n=itemNameFor(r.item_id); if(n) return n; }
   try{ const t=(allTickets||[]).find(x=>getOrderId(x)===orderIdOf(r.item_id));
        const d=t?deviceForItem(t,r.item_id):null; if(d&&d.device&&d.device.name) return d.device.name; }catch(e){}
   return r.item_id;
@@ -6937,7 +6974,9 @@ function rpEdit(id){
     '<div style="'+lab+'">What needs doing</div><textarea id="re-reason" rows="2" style="width:100%">'+esc(r.reason||'')+'</textarea>'+
     '<div style="'+lab+'">Who pays</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+
       ['customer','glint','unsure'].map(v=>'<label style="flex:1;min-width:100px;border:2px solid var(--border);border-radius:9px;padding:9px;cursor:pointer;text-align:center;font-weight:600;font-size:13px">'+
-        '<input type="radio" name="re-payer" value="'+v+'"'+((r.payer||'unsure')===v?' checked':'')+' style="margin-right:5px">'+PAYER_LABEL[v]+'</label>').join('')+'</div>'+
+        '<input type="radio" name="re-payer" value="'+v+'"'+((r.payer||'unsure')===v?' checked':'')+' style="margin-right:5px" onchange="document.getElementById(\'re-cause-wrap\').style.display=this.value===\'glint\'?\'block\':\'none\'">'+PAYER_LABEL[v]+'</label>').join('')+'</div>'+
+    '<div id="re-cause-wrap" style="display:'+(r.payer==='glint'?'block':'none')+'"><div style="'+lab+'">Whose damage?</div>'+
+    '<select id="re-cause" style="width:100%;padding:8px">'+causeOptionsHtml(r.caused_by||'')+'</select></div>'+
     '<div style="'+lab+'">Where'+(r.back_at?'':' <span style="opacity:.7">(changing this moves the piece too)</span>')+'</div>'+
     '<select id="re-place" style="width:100%;padding:8px">'+places.map(p=>'<option'+(p===r.place?' selected':'')+'>'+esc(p)+'</option>').join('')+'</select>'+
     '<div style="display:flex;gap:10px"><div style="flex:1"><div style="'+lab+'">Sent out</div><input type="datetime-local" id="re-sent" value="'+rpLocalInput(r.sent_at)+'" style="width:100%;padding:7px"></div>'+
@@ -6960,7 +6999,10 @@ function rpEdit(id){
     if(rawCost!=='' && isNaN(cost)){ err.textContent='Cost must be a number.'; return; }
     if(r.back_at && cost===null){ err.textContent='It has come back, so it needs a cost (0 if nothing).'; return; }
     const sentV=bg.querySelector('#re-sent').value, backEl=bg.querySelector('#re-back');
-    const patch={reason, payer:bg.querySelector('input[name=re-payer]:checked').value, cost,
+    const payerV=bg.querySelector('input[name=re-payer]:checked').value;
+    const causeV=payerV==='glint'?bg.querySelector('#re-cause').value:'';
+    if(payerV==='glint' && !causeV){ err.textContent='Choose whose damage it was (or Not sure).'; return; }
+    const patch={reason, payer:payerV, caused_by:causeV||null, cost,
                  invoice_updated:bg.querySelector('#re-inv').checked};
     if(patch.invoice_updated!==!!r.invoice_updated) patch.invoice_updated_at=patch.invoice_updated?new Date().toISOString():null;
     if(sentV) patch.sent_at=new Date(sentV).toISOString();
@@ -7024,6 +7066,10 @@ function drawRepairs(){
           '<select onchange="rpSet(\'payer\',this.value)" style="'+inp+'">'+
             ['all','customer','glint','unsure'].map(v=>'<option value="'+v+'"'+(rpF.payer===v?' selected':'')+'>'+(v==='all'?'Everyone':PAYER_LABEL[v])+'</option>').join('')+
           '</select></div>'+
+        '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">DAMAGED BY</div>'+
+          '<select onchange="rpSet(\'cause\',this.value)" style="'+inp+'"><option value="all">Anyone</option>'+
+            [...new Set((repairRows||[]).filter(r=>r.payer==='glint'&&r.caused_by).map(r=>r.caused_by))].sort().map(n=>'<option'+(rpF.cause===n?' selected':'')+'>'+esc(n)+'</option>').join('')+
+          '</select></div>'+
         '<div><div style="font-size:11px;color:var(--ink3);margin-bottom:3px">WHERE</div>'+
           '<select onchange="rpSet(\'place\',this.value)" style="'+inp+'"><option value="all">Anywhere</option>'+
             places.map(p=>'<option value="'+esc(p)+'"'+(rpF.place===p?' selected':'')+'>'+esc(p)+'</option>').join('')+
@@ -7038,7 +7084,7 @@ function drawRepairs(){
           '<select onchange="rpSet(\'inv\',this.value)" style="'+inp+'">'+
             [['all','All'],['todo','Not on invoice yet'],['done','Updated invoice ✓']].map(([v,l])=>'<option value="'+v+'"'+(rpF.inv===v?' selected':'')+'>'+l+'</option>').join('')+
           '</select></div>'+
-        '<button class="btn btn-ghost btn-sm" onclick="rpF={outFrom:\'\',outTo:\'\',backFrom:\'\',backTo:\'\',payer:\'all\',state:\'all\',place:\'all\',inv:\'all\'};drawRepairs()">Clear</button>'+
+        '<button class="btn btn-ghost btn-sm" onclick="rpF={outFrom:\'\',outTo:\'\',backFrom:\'\',backTo:\'\',payer:\'all\',state:\'all\',place:\'all\',inv:\'all\',q:\'\',cause:\'all\'};drawRepairs()">Clear</button>'+
       '</div></div>'+
 
     '<div class="stat-grid">'+
@@ -7053,6 +7099,15 @@ function drawRepairs(){
           '<div class="stat-label">Not on invoice yet'+(todo.length?' · '+money(todo.reduce((a,r)=>a+(+r.cost||0),0)):'')+'</div></div>'; })()+
     '</div>'+
 
+    (()=>{ const g=rows.filter(r=>r.payer==='glint'); if(!g.length) return '';
+      const by={}; g.forEach(r=>{ const k=r.caused_by||'Not recorded'; (by[k]=by[k]||{n:0,cost:0,open:0}); by[k].n++; by[k].cost+=(+r.cost||0); if(r.cost==null) by[k].open++; });
+      return '<div class="card"><div class="card-label">Glint-paid damage by worker</div>'+
+        '<table><thead><tr><th>Worker</th><th>Repairs</th><th>Cost so far</th><th></th></tr></thead><tbody>'+
+        Object.entries(by).sort((a,b)=>b[1].cost-a[1].cost||b[1].n-a[1].n).map(([k,v])=>
+          '<tr><td style="font-weight:600">'+(rpF.cause===k?'':'<span class="clickable" onclick="rpSet(\'cause\',\''+jsstr(k)+'\')">')+esc(k)+(rpF.cause===k?'':'</span>')+'</td>'+
+          '<td>'+v.n+'</td><td style="font-weight:700;color:var(--orange)">'+money(v.cost)+'</td>'+
+          '<td style="color:var(--ink3);font-size:12px">'+(v.open?v.open+' still to be priced':'')+'</td></tr>').join('')+
+        '</tbody></table></div>'; })()+
     '<div class="card">'+(rows.length?
       '<table><thead><tr><th>Piece</th><th>Customer</th><th>Where</th><th>Sent</th><th>Back</th><th>Days</th><th>Who pays</th><th>Cost</th><th>Invoice</th><th>Photos</th><th></th></tr></thead><tbody>'+
       rows.map(r=>{
@@ -7067,7 +7122,7 @@ function drawRepairs(){
           '<td style="white-space:nowrap">'+fmtDate(r.sent_at)+'</td>'+
           '<td style="white-space:nowrap">'+(r.back_at?fmtDate(r.back_at):'<span style="color:var(--orange);font-weight:700">still out</span>')+'</td>'+
           '<td>'+days+'d</td>'+
-          '<td style="color:'+pc+';font-weight:600">'+(PAYER_LABEL[r.payer]||'Not sure')+'</td>'+
+          '<td style="color:'+pc+';font-weight:600">'+esc(payerText(r))+'</td>'+
           '<td style="font-weight:700">'+(r.cost!=null?money(+r.cost):'—')+'</td>'+
           '<td style="white-space:nowrap">'+(
             r.payer!=='customer' ? '<span style="color:var(--ink3)">'+(r.payer==='glint'?'—':'decide who pays')+'</span>'
