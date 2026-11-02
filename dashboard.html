@@ -287,7 +287,8 @@ tr.clickable:hover td{background:var(--surface2)}
   <div class="login-box">
     <div class="wordmark"><span class="mark"></span>Glint</div>
     <div class="subtitle">Control Room</div>
-    <input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')adminLogin()">
+    <select id="login-name" onchange="loginNameChanged()" style="width:100%;margin-bottom:12px;padding:11px;text-align:center;font-size:14px"><option value="">Loading names…</option></select>
+    <input type="password" id="login-pass" placeholder="PIN" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter')adminLogin()">
     <button onclick="adminLogin()">Enter</button>
     <div class="login-err" id="login-err"></div>
   </div>
@@ -303,7 +304,8 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-10-26-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-02-a</div>
+      <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
   </div>
@@ -1007,26 +1009,106 @@ function makeBarcode(text){
 // ========================================================================
 // AUTH
 // ========================================================================
+// Everyone signs in as themselves — the same name and PIN as the scanner. Who you are
+// decides what you see, who your messages come from, and whose Inbox opens.
+//   Owner    everything
+//   Manager  everything except money: KPIs, Inventory, Costs, Ask Glint, Workers (PINs),
+//            Settings — and every $ amount elsewhere shows as •••
+//   Staff    orders, items, tagging and chats: Orders, Pipeline, Inbox, What to Work On,
+//            On Hold, Boxes (and Print Labels if they're allowed to print)
+//   No access  scanner only
+// The owner password from Settings still opens everything, so nobody gets locked out.
+const ACCESS_LABEL={owner:'Owner', manager:'Manager', staff:'Staff', none:'No access (scanner only)'};
+let me=null;
+try{ me=JSON.parse(sessionStorage.getItem('glint_user')||'null'); }catch(e){ me=null; }
+if(!me && sessionStorage.getItem('glint_admin')==='1') me={name:'Owner', level:'owner', viaPassword:true};
+function meName(){ return (me && !me.viaPassword && me.name) || 'Office'; }
+function myLevel(){ return (me && me.level) || 'staff'; }
+function isOwner(){ return myLevel()==='owner'; }
+function canSeeMoney(){ return isOwner(); }
+const MANAGER_HIDDEN=['kpi','inventory','costs','ask','workers','settings'];
+const STAFF_PAGES=['orders','order','item','pipeline','inbox','priority','hold','boxes','photofind'];
+function canOpen(route){
+  const lv=myLevel();
+  if(lv==='owner') return true;
+  if(lv==='manager') return !MANAGER_HIDDEN.includes(route);
+  if(route==='print') return !!(me && me.can_print);
+  return STAFF_PAGES.includes(route);
+}
+function homeRoute(){ return canOpen('live')?'live':'orders'; }
+function workerAccess(w){ return (w && w.access) || 'staff'; }
+
 async function fetchAdminPass(){
   try{ const r=await sb('settings?key=eq.admin_password&select=value'); return (r&&r[0]&&r[0].value)||'glint2026'; }catch(e){ return 'glint2026'; }
 }
+let _loginWorkers=[];
+async function loadLoginNames(){
+  const sel=document.getElementById('login-name'); if(!sel) return;
+  try{ const r=await sbList('workers?select=*',2); _loginWorkers=Array.isArray(r)?r:[]; }catch(e){ _loginWorkers=[]; }
+  const names=_loginWorkers.filter(w=>w.name && workerAccess(w)!=='none' && w.active!==false)
+    .map(w=>w.name).sort((a,b)=>a.localeCompare(b));
+  let last=''; try{ last=localStorage.getItem('glint_last_login')||''; }catch(e){}
+  sel.innerHTML='<option value="">— Who are you? —</option>'+
+    names.map(n=>`<option${n===last?' selected':''}>${esc(n)}</option>`).join('')+
+    '<option value="__owner__"'+(last==='__owner__'?' selected':'')+'>Owner password</option>';
+  loginNameChanged();
+}
+function loginNameChanged(){
+  const v=(document.getElementById('login-name')||{}).value, p=document.getElementById('login-pass');
+  if(p){ p.placeholder=v==='__owner__'?'Owner password':'PIN'; p.inputMode=v==='__owner__'?'text':'numeric'; }
+}
+function startSession(user){
+  me=user;
+  sessionStorage.setItem('glint_user', JSON.stringify(user));
+  sessionStorage.setItem('glint_admin','1');
+  try{ localStorage.setItem('glint_last_login', user.viaPassword?'__owner__':user.name); }catch(e){}
+  if(!user.viaPassword){ inboxWho=user.name; }
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  if(!canOpen(currentRoute())) location.hash='#/'+homeRoute();
+  bootstrap();
+}
 async function adminLogin(){
-  const pass=document.getElementById('login-pass').value;
-  const real=await fetchAdminPass();
-  if(pass===real){
-    sessionStorage.setItem('glint_admin','1');
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('app').style.display='block';
-    bootstrap();
-  } else {
-    document.getElementById('login-err').textContent='Incorrect password';
+  const who=(document.getElementById('login-name')||{}).value||'';
+  const pass=document.getElementById('login-pass').value.trim();
+  const err=document.getElementById('login-err');
+  if(!who){ err.textContent='Choose your name'; return; }
+  if(!pass){ err.textContent=who==='__owner__'?'Enter the owner password':'Enter your PIN'; return; }
+  if(who==='__owner__'){
+    const real=await fetchAdminPass();
+    if(pass===real) startSession({name:'Owner', level:'owner', viaPassword:true});
+    else err.textContent='Incorrect password';
+    return;
+  }
+  const w=_loginWorkers.find(x=>x.name===who);
+  if(!w || String(w.pin||'')!==pass){ err.textContent='Wrong PIN'; return; }
+  const level=workerAccess(w);
+  if(level==='none'){ err.textContent='You don\'t have Control Room access — ask the owner'; return; }
+  startSession({name:w.name, level, can_print:!!w.can_print});
+}
+function doLogout(){ sessionStorage.removeItem('glint_admin'); sessionStorage.removeItem('glint_user'); location.reload(); }
+// Access changed in Workers takes effect the next time the page loads
+function refreshMe(){
+  if(!me || me.viaPassword) return;
+  const w=(workers||[]).find(x=>x.name===me.name && x.pin!==undefined);
+  if(!w) return;
+  const level=workerAccess(w);
+  if(level==='none'){ doLogout(); return; }
+  if(level!==me.level || !!w.can_print!==!!me.can_print){
+    me.level=level; me.can_print=!!w.can_print;
+    sessionStorage.setItem('glint_user', JSON.stringify(me));
   }
 }
-function doLogout(){ sessionStorage.removeItem('glint_admin'); location.reload(); }
+function renderMeLabel(){
+  const el=document.getElementById('me-label'); if(!el) return;
+  el.innerHTML=me?('Signed in as <strong>'+esc(me.viaPassword?'Owner':me.name)+'</strong><br>'+esc(ACCESS_LABEL[myLevel()]||'')):'';
+}
 if(sessionStorage.getItem('glint_admin')==='1'){
   document.getElementById('login-screen').style.display='none';
   document.getElementById('app').style.display='block';
   window.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  window.addEventListener('DOMContentLoaded', loadLoginNames);
 }
 
 // ========================================================================
@@ -1035,7 +1117,7 @@ if(sessionStorage.getItem('glint_admin')==='1'){
 function renderSidebar(){
   const route=currentRoute();
   try{ _attnCount = (typeof attentionCount==='function' && scans.length) ? attentionCount() : 0; }catch(e){ _attnCount=0; }
-  document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.map(n=>
+  document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.filter(n=>canOpen(n.route)).map(n=>
     `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}${n.route==='attention'&&_attnCount?`<span style="margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">${_attnCount}</span>`:''}${n.route==='inbox'?`<span id="inbox-badge" style="margin-left:auto;background:var(--gold);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:${notifUnread?'inline-flex':'none'};align-items:center;justify-content:center;padding:0 6px">${notifUnread||''}</span>`:''}</a>`
   ).join('');
 }
@@ -1164,7 +1246,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-10-26-a';
+const APP_VERSION='2026-11-02-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1238,6 +1320,7 @@ const ROUTE_RENDERERS={
 
 function router(){
   const route=currentRoute(), param=currentParam();
+  if(!canOpen(route)){ location.replace('#/'+homeRoute()); return; }
   renderSidebar();
   renderBreadcrumb();
   const fn=ROUTE_RENDERERS[route]||renderLivePage;
@@ -1326,7 +1409,7 @@ async function loadPipeLabels(){ try{ const r=await sbList('labels?select=item_i
 
 async function bootstrap(){
   startClock();
-  if(!location.hash) location.hash='#/live';
+  if(!location.hash) location.hash='#/'+homeRoute();
 
   // THE WHITE-PAGE BUG: this used to be Promise.all, so ONE failed request (a flaky
   // moment on mobile data, Supabase blinking) rejected the whole thing, router() never
@@ -1355,6 +1438,7 @@ async function bootstrap(){
     } else { workers=[]; }
   }
 
+  try{ refreshMe(); renderMeLabel(); }catch(e){}
   try{ checkForNewScans(); }catch(e){}
   router();                                  // ALWAYS render, even on partial data
 
@@ -3681,7 +3765,7 @@ function prodDelta(cur,prev){
   const col=pct>=0?'var(--green)':'var(--red)';
   return `<span style="color:${col};font-size:11px;font-weight:700">${pct>=0?'▲':'▼'} ${Math.abs(pct)}%</span>`;
 }
-function fmtMoney(v){ return '$'+Math.round(v).toLocaleString(); }
+function fmtMoney(v){ if(!canSeeMoney()) return '$•••'; return '$'+Math.round(v).toLocaleString(); }
 // Workers are measured in points: $100 of finished work = 1 point
 function toPoints(v){ return v/100; }
 function fmtPts(v){ return (v>=100?Math.round(v):(Math.round(v*10)/10)).toLocaleString()+' pts'; }
@@ -5142,7 +5226,7 @@ async function repairSend(itemId, desc, placeLabel){
     const url=await uploadRepairPhoto(res.file, itemId, 'repair_out');
     const r=await sb('repairs',{method:'POST',headers:{'Prefer':'return=minimal'},
       body:JSON.stringify({item_id:itemId, order_id:orderIdOf(itemId), item_desc:desc||'', place:placeLabel,
-        reason:res.reason, payer:res.payer, caused_by:res.cause||null, sent_photo:url, created_by:'Office'})});
+        reason:res.reason, payer:res.payer, caused_by:res.cause||null, sent_photo:url, created_by:meName()})});
     if(!r.ok){ res.fail('Could not save the repair — is add-repairs.sql run?'); return null; }
     res.close();
     return {reason:res.reason, payer:res.payer, cause:res.cause};
@@ -5202,7 +5286,7 @@ async function putOnHold(itemId, desc){
                          action:'hold', worker:'Admin'})});
   if(r.ok){
     toast('⏸️ On hold — '+HOLD_KINDS[kind].label);
-    fireNotification('hold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
+    fireNotification('hold',{itemId, orderId:orderIdOf(itemId), desc, from:meName(),
       title:(desc||itemId)+' put on hold — '+HOLD_KINDS[kind].label, body:reason});
     // Put it on the RepairDesk ticket too, so it's visible to whoever looks there
     pushHoldToRepairDesk(itemId, desc, HOLD_KINDS[kind].label, reason, false);
@@ -5267,9 +5351,9 @@ async function releaseHold(itemId, desc){
   }
   // Keep the reason visible to the workers as well
   await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
-    body:JSON.stringify({item_id:itemId, note:'Off hold: '+res.note, worker:'Office', role:'Office'})}).catch(()=>{});
+    body:JSON.stringify({item_id:itemId, note:'Off hold: '+res.note, worker:meName(), role:'Office'})}).catch(()=>{});
   toast(res.go==='shop'?'📦 Back to Waiting for Shop':'▶ Back in the pipeline');
-  fireNotification('unhold',{itemId, orderId:orderIdOf(itemId), desc, from:'Office',
+  fireNotification('unhold',{itemId, orderId:orderIdOf(itemId), desc, from:meName(),
     title:(desc||itemId)+' taken off hold', body:res.note});
   pushHoldToRepairDesk(itemId, desc, '', res.note, true);
   await loadStageEvents(); await loadAllScans(); router();
@@ -5333,7 +5417,7 @@ async function updateHold(itemId, desc){
                          action:'hold', worker:'Admin'})});
   if(r.ok){
     await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
-      body:JSON.stringify({item_id:itemId, note:'Hold update: '+String(note).trim(), worker:'Office', role:'Office'})}).catch(()=>{});
+      body:JSON.stringify({item_id:itemId, note:'Hold update: '+String(note).trim(), worker:meName(), role:'Office'})}).catch(()=>{});
     toast('✅ Update saved'); await loadStageEvents(); router();
   } else toast('Could not save');
 }
@@ -5990,21 +6074,21 @@ async function fireNotification(event, opts){
 }
 
 // Post a message on an item; anyone @mentioned gets it in their inbox
-async function postItemMessage(itemId, body, author, desc){
+async function postItemMessage(itemId, body, author, desc, tagged){
   const mentions=[...String(body).matchAll(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*)/g)].map(m=>m[1]);
   const orderId=(String(itemId).match(/^(T-\d+)/i)||[])[1]||null;
-  const r=await sb('item_messages',{method:'POST',headers:{'Prefer':'return=minimal'},
-    body:JSON.stringify({item_id:itemId, order_id:orderId, author, body, mentions})});
-  if(!r.ok) return r;
-
-  // Match a mention to a real worker name, so "@Row" reaches Rowena
+  // Match a typed @name to a real person, so "@Row" reaches Rowena; add anyone picked
+  // from the name buttons
   const names=(workers||[]).map(w=>w.name).filter(Boolean);
   const hit=[...new Set(mentions.map(m=>{
     const low=m.toLowerCase();
     return names.find(n=>n.toLowerCase()===low)
         || names.find(n=>n.toLowerCase().startsWith(low))
         || null;
-  }).filter(Boolean))].filter(n=>n!==author);
+  }).filter(Boolean).concat(tagged||[]))].filter(n=>n!==author);
+  const r=await sb('item_messages',{method:'POST',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({item_id:itemId, order_id:orderId, author, body, mentions:hit})});
+  if(!r.ok) return r;
 
   if(hit.length){
     await sb('notifications',{method:'POST',headers:{'Prefer':'return=minimal'},
@@ -6017,7 +6101,7 @@ async function postItemMessage(itemId, body, author, desc){
 }
 
 // ===== INBOX =====
-let inboxWho=localStorage.getItem('glint_inbox_who')||'Admin';
+let inboxWho=(me&&!me.viaPassword&&me.name)||localStorage.getItem('glint_inbox_who')||'Admin';
 async function loadMyNotifs(){
   try{
     const r=await sbList('notifications?recipient=eq.'+encodeURIComponent(inboxWho)+
@@ -6054,13 +6138,13 @@ async function renderInboxPage(){
     `<div class="page-head"><div><div class="page-title">Inbox</div>
       <div class="page-sub">Alerts and messages for <strong>${esc(inboxWho)}</strong></div></div>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="setInboxWho()">Switch person</button>
+        ${isOwner()?'<button class="btn btn-ghost btn-sm" onclick="setInboxWho()">See someone else\'s</button>':''}
         <button class="btn btn-sm" onclick="markAllRead()">Mark all read</button>
       </div></div><div id="inbox-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
   await loadMyNotifs();
   const el=document.getElementById('inbox-body'); if(!el) return;
   if(!myNotifs.length){
-    el.innerHTML='<div class="card"><div class="empty">Nothing here yet. Alerts arrive when the rules you set in Settings are triggered.</div></div>';
+    el.innerHTML='<div class="card"><div class="empty">Nothing here yet. When someone tags you on an item, or a rule in Settings fires, it shows up here — and on your phone in the scanner.</div></div>';
     return;
   }
   el.innerHTML='<div class="card">'+myNotifs.map(n=>{
@@ -6147,7 +6231,7 @@ function invInWindow(){
   const cut=new Date(); cut.setMonth(cut.getMonth()-invMonths);
   return (invRows||[]).filter(r=>new Date(r.purchased||r.created_at)>=cut);
 }
-function money(v){ return '$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function money(v){ if(!canSeeMoney()) return '$•••'; return '$'+(Math.round(v*100)/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 async function renderInventoryPage(){
   document.getElementById('content').innerHTML=
@@ -6273,80 +6357,258 @@ async function invDelete(id){
 // ========================================================================
 // WEEKLY KPIs — Sunday to Friday
 // ========================================================================
-// Sales come straight from the ticket data we already hold. The other figures live in
-// RepairDesk reports the API doesn't expose, so those are entered or pasted each week.
+// Where every number comes from (the same explanation is printed on the page):
+//   New sales  RepairDesk invoices RAISED that week — every page, voided / estimates left out
+//   Payments   RepairDesk transaction log, payments and refunds dated that week — every page
+//   Sales tax  the tax on those same invoices
+//   Card fees  typed in from the card batch report (RepairDesk doesn't give it out)
+//   Net        payments − sales tax − card fees
+// Before this rebuild only the FIRST page of payments was read, refunds could be added
+// instead of taken off, and sales came from tickets rather than invoices — so the
+// figures drifted from RepairDesk. Now a pulled week keeps every row it was built from,
+// and any number can be opened and checked line by line against RepairDesk.
 let _orderDetailCache={};   // orders already fetched this session
 let kpiWeeks=[];
-let kpiWeeksBack=12;   // how many weeks the table shows
+let kpiWeeksBack=12;        // how many weeks the table shows
+let kpiDetail={};           // week -> the rows behind its numbers
+let kpiBusy={};             // week -> true while pulling
+let kpiOldColumns=false;    // add-users.sql not run yet: save the old columns only
+let kpiFocusWeek=null;
+
 function weekStartOf(d){
   const x=new Date(d); x.setHours(0,0,0,0);
   x.setDate(x.getDate()-x.getDay());          // back to Sunday
   return x;
 }
-function weekKey(d){ return weekStartOf(d).toISOString().slice(0,10); }
+function weekKey(d){ const x=weekStartOf(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
 function weekLabel(iso){
   const s=new Date(iso+'T00:00:00'), e=new Date(s); e.setDate(e.getDate()+5);   // Sun–Fri
   const f=x=>x.toLocaleDateString([], {month:'short',day:'numeric'});
-  return f(s)+' – '+f(e);
+  return f(s)+' – '+f(e)+(s.getFullYear()!==new Date().getFullYear()?' '+s.getFullYear():'');
+}
+// Sunday 00:00 to the next Sunday 00:00. Saturday is included so anything rung up on
+// a Saturday night still lands in a week instead of disappearing between two.
+function kpiRange(key){
+  const s=new Date(key+'T00:00:00'), e=new Date(s); e.setDate(e.getDate()+7);
+  return {s, e, from:Math.floor(s.getTime()/1000), to:Math.floor(e.getTime()/1000)-1};
 }
 async function loadKpiWeeks(){
-  try{ const r=await sbList('kpi_weeks?select=*&order=week_start.desc&limit=60',2); kpiWeeks=Array.isArray(r)?r:[]; }
+  try{ const r=await sbList('kpi_weeks?select=*&order=week_start.desc&limit=200',2); kpiWeeks=Array.isArray(r)?r:[]; }
   catch(e){ kpiWeeks=null; }
 }
-// New sales per week from tickets, excluding anything still an estimate
-function kpiSalesByWeek(){
-  const out={};
-  (allTickets||[]).forEach(t=>{
-    const s=t.summary||{};
-    const status=String(s.status||s.ticket_status||'').toLowerCase();
-    if(status.includes('estimate')) return;                 // not a sale yet
-    const created=s.created_date||s.created_at||s.created||s.order_date||null;
-    if(!created) return;
-    let d;
-    if(isNaN(created)) d=new Date(created);
-    else { const n=+created; d=new Date(n>1e12 ? n : n*1000); }   // seconds or milliseconds
-    if(isNaN(d)) return;
-    const cash=v=>parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''))||0;
-    const total=cash(s.total)||cash(s.net_total)||cash(s.grand_total)||cash(s.total_amount);
-    if(!total) return;
-    const k=weekKey(d);
-    out[k]=(out[k]||0)+total;
-  });
+function kpiRow(key){ return (kpiWeeks||[]).find(w=>w.week_start===key)||null; }
+
+// ---------- reading RepairDesk's data, whatever the field happens to be called ----------
+const kpiCash=v=>{ const n=parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; };
+function kpiPick(o, keys){
+  for(const k of keys){
+    const v=k.split('.').reduce((a,p)=>(a&&typeof a==='object')?a[p]:undefined, o);
+    if(v!==undefined && v!==null && v!=='' && typeof v!=='object') return v;
+  }
+  return null;
+}
+function kpiDate(v){
+  if(v==null||v==='') return null;
+  if(!isNaN(v)){ const n=+v; if(!n) return null; return new Date(n>1e12?n:n*1000); }
+  const d=new Date(v); return isNaN(d)?null:d;
+}
+function kpiFmtDate(d){ return d?d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'—'; }
+function kpiAgo(iso){
+  if(!iso) return '';
+  const m=Math.round((Date.now()-new Date(iso).getTime())/60000);
+  if(m<1) return 'just now'; if(m<60) return m+' min ago';
+  const h=Math.round(m/60); if(h<48) return h+' h ago';
+  return Math.round(h/24)+' days ago';
+}
+function kpiCheckReply(d){
+  if(d && d.success===false) throw new Error(d.message||'RepairDesk said no');
+  return (d&&d.data)||{};
+}
+
+function kpiInvoiceRow(inv){
+  const s=inv.summary||inv;
+  const status=String(kpiPick(s,['status','invoice_status','payment_status','status_name'])||'');
+  return {
+    num:String(kpiPick(s,['order_id','invoice_no','invoice_number','invoice_id','id'])||''),
+    ticket:String(kpiPick(s,['ticket_order_id','ticket.order_id','ticket_no','ticket_id'])||''),
+    customer:String(kpiPick(s,['customer.fullName','customer.fullname','customer.name','customer_name','customer'])||''),
+    date:kpiDate(kpiPick(s,['created_date','invoice_date','date','created_at','created_on'])),
+    total:kpiCash(kpiPick(s,['total','grand_total','net_total','total_amount'])),
+    tax:kpiCash(kpiPick(s,['total_tax','tax','tax_total'])),
+    status,
+    skip:/void|cancel|delet|estimate|draft/i.test(status)?'voided / estimate':''
+  };
+}
+async function kpiFetchInvoices(key){
+  const {s,e,from,to}=kpiRange(key);
+  const out=[], seen=new Set();
+  let page=1, pages=1;
+  do{
+    const data=kpiCheckReply(await fetchRD('invoices?from_date='+from+'&to_date='+to+'&page='+page+'&pagesize=50'));
+    const list=data.invoiceData||data.results||[];
+    let fresh=0;
+    list.forEach(inv=>{
+      const r=kpiInvoiceRow(inv);
+      const id=r.num||JSON.stringify(inv).slice(0,300);
+      if(seen.has(id)) return; seen.add(id); fresh++;
+      if(!r.skip && r.date && (r.date<s || r.date>=e)) r.skip='dated outside this week';
+      out.push(r);
+    });
+    pages=parseInt((data.pagination||{}).total_pages,10)||1;
+    if(!fresh) break;                 // the same page again — RepairDesk is done
+    page++;
+  } while(page<=pages && page<=80);
   return out;
 }
-// Shows what the ticket data actually looks like, so a wrong field name is obvious
-function kpiDiagnose(){
-  const t=(allTickets||[])[0];
-  if(!t){ toast('No tickets loaded yet'); return; }
-  const s=t.summary||{};
-  const sales=kpiSalesByWeek();
-  const weeks=Object.keys(sales).length;
-  alert('First ticket looks like:\n\n'+
-    'total: '+JSON.stringify(s.total)+'\n'+
-    'created_date: '+JSON.stringify(s.created_date)+'\n'+
-    'status: '+JSON.stringify(s.status||s.ticket_status)+'\n\n'+
-    'Tickets loaded: '+(allTickets||[]).length+'\n'+
-    'Weeks with sales: '+weeks+'\n'+
-    'This week: '+money(sales[weekKey(new Date())]||0)+
-    '\n\nIf total or created_date look wrong, send me this and I will correct the field names.');
+
+function kpiPayRow(x){
+  const typeTxt=String(kpiPick(x,['type_name','transaction_type','type','type_id'])||'');
+  let amount=kpiCash(x.amount);
+  const refund=/refund/i.test(typeTxt) || String(x.type_id)==='2';
+  if(refund && amount>0) amount=-amount;        // a refund takes money off, never adds it
+  return {
+    date:kpiDate(kpiPick(x,['created_date','transaction_date','date','created_at','created_on','time'])),
+    type:refund?'Refund':(/^\d+$/.test(typeTxt)?'Payment':(typeTxt||'Payment')),
+    method:String(kpiPick(x,['payment_method','method','payment_type'])||''),
+    ref:String(kpiPick(x,['invoice_order_id','invoice_no','invoice_id','order_id','ticket_id','reference'])||''),
+    customer:String(kpiPick(x,['customer_name','customer.fullName','customer.name','customer'])||''),
+    who:String(kpiPick(x,['employee_name','employee','user_name','created_by'])||''),
+    amount, skip:''
+  };
 }
+async function kpiFetchPayments(key){
+  const {s,e,from,to}=kpiRange(key);
+  const base='?from='+from+'&to='+to+'&Type_id=1,2';
+  const out=[], seen=new Set();
+  let summary=null, worked=false, lastErr=null;
+  for(const pth of ['report/transactionlogs','v1/report/transactionlogs']){
+    // Read page after page until RepairDesk stops giving anything new
+    for(let page=1; page<=60; page++){
+      let data;
+      try{ data=kpiCheckReply(await fetchRD(pth+base+'&page='+page+'&pagesize=100')); }
+      catch(err){ lastErr=err; break; }
+      if(page===1){
+        worked=worked || !!(data.results || data.summary);
+        if(data.summary && typeof data.summary==='object') summary=data.summary;
+      }
+      const rows=data.results||[];
+      let fresh=0;
+      rows.forEach(x=>{
+        const id=String(x.id||x.transaction_id||'')||JSON.stringify(x);
+        if(seen.has(id)) return; seen.add(id); fresh++;
+        const r=kpiPayRow(x);
+        if(r.date && (r.date<s || r.date>=e)) r.skip='dated outside this week';
+        out.push(r);
+      });
+      const tp=parseInt((data.pagination||{}).total_pages,10);
+      if(!fresh || (tp && page>=tp)) break;
+    }
+    if(worked) break;
+  }
+  if(!worked) throw (lastErr||new Error('the transaction log did not answer'));
+  // RepairDesk's own total for the same report — the check that we read everything
+  let rdTotal=null;
+  if(summary){ const v=kpiPick(summary,['combined_total','total','grand_total','total_amount']); if(v!=null) rdTotal=kpiCash(v); }
+  return {rows:out, rdTotal, summary};
+}
+
+function kpiTotals(det){
+  const t={sales:null,tax:null,invCount:0,pay:null,payCount:0,byMethod:{}};
+  if(det.invoices){
+    const inv=det.invoices.filter(r=>!r.skip);
+    t.sales=inv.reduce((a,r)=>a+r.total,0); t.tax=inv.reduce((a,r)=>a+r.tax,0); t.invCount=inv.length;
+  }
+  if(det.payments){
+    const p=det.payments.filter(r=>!r.skip);
+    t.pay=p.reduce((a,r)=>a+r.amount,0); t.payCount=p.length;
+    p.forEach(r=>{ const k=r.method||'Other'; t.byMethod[k]=(t.byMethod[k]||0)+r.amount; });
+  }
+  return t;
+}
+
+// Pull one week from RepairDesk, keep the rows, save the totals
+async function kpiPullWeek(key, quiet){
+  if(kpiBusy[key]) return;
+  kpiBusy[key]=true; drawKpi();
+  const det={pulledAt:new Date().toISOString()};
+  try{
+    const [inv,pay]=await Promise.allSettled([kpiFetchInvoices(key), kpiFetchPayments(key)]);
+    if(inv.status==='fulfilled') det.invoices=inv.value; else det.invErr=String((inv.reason&&inv.reason.message)||inv.reason);
+    if(pay.status==='fulfilled'){ det.payments=pay.value.rows; det.rdPayTotal=pay.value.rdTotal; det.rdSummary=pay.value.summary; }
+    else det.payErr=String((pay.reason&&pay.reason.message)||pay.reason);
+    kpiDetail[key]=det;
+    const t=kpiTotals(det);
+    const old=kpiRow(key)||{};
+    const row={week_start:key, cc_fees:old.cc_fees!=null?old.cc_fees:null, updated_at:det.pulledAt,
+               payments:old.payments!=null?old.payments:null, sales_tax:old.sales_tax!=null?old.sales_tax:null};
+    // Only overwrite what was actually read — a failed read is not a zero
+    if(det.invoices){ row.sales_tax=t.tax; row.new_sales=t.sales; row.invoice_count=t.invCount; }
+    if(det.payments){ row.payments=t.pay; row.payment_count=t.payCount; }
+    row.pulled_at=det.pulledAt;
+    const save=body=>sb('kpi_weeks?on_conflict=week_start',{method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)});
+    let r=kpiOldColumns?{ok:false}:await save(row);
+    if(!r.ok){
+      // The new columns aren't there yet (add-users.sql) — save what the old table holds
+      const {new_sales,invoice_count,payment_count,pulled_at,...oldOnly}=row;
+      const r2=await save(oldOnly);
+      if(r2.ok) kpiOldColumns=true;
+    }
+    await loadKpiWeeks();
+    if(!quiet){
+      if(det.invErr||det.payErr) toast('⚠️ '+weekLabel(key)+': '+[det.invErr?'invoices — '+det.invErr:'', det.payErr?'payments — '+det.payErr:''].filter(Boolean).join(' · '));
+      else toast('✅ '+weekLabel(key)+' pulled — '+t.invCount+' invoices, '+t.payCount+' payments');
+    }
+  }catch(e){ if(!quiet) toast('Could not pull: '+(e.message||e)); }
+  finally{ kpiBusy[key]=false; drawKpi(); }
+}
+async function kpiPullShown(){
+  const weeks=(window._kpiRowKeys||[]).slice();
+  if(!weeks.length) return;
+  if(!confirm('Pull all '+weeks.length+' weeks shown from RepairDesk?\n\nIt reads every invoice and payment for each week, so it takes a minute or two. Card fees you typed in are kept.')) return;
+  let n=0;
+  for(const k of weeks){ n++; toast('Week '+n+' of '+weeks.length+'…'); await kpiPullWeek(k, true); }
+  toast('✅ Pulled '+weeks.length+' weeks');
+}
+
+// ---------- the page ----------
 async function renderKpiPage(){
   document.getElementById('content').innerHTML=
     `<div class="page-head"><div><div class="page-title">Weekly KPIs</div>
-      <div class="page-sub">Sunday to Friday. Sales come from your tickets; the rest from the three RepairDesk reports.</div></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <input type="date" id="kpi-goto" onchange="kpiGoToWeek(this.value)" title="Jump to the week containing this date" style="padding:7px 10px;font-size:13px"><button class="btn btn-sm" onclick="kpiPullPayments()">↓ Pull payments</button>
-        <button class="btn btn-sm" onclick="kpiPullTax()">↓ Pull tax</button>
-        <button class="btn btn-sm" onclick="kpiFillAll()">⟳ Fill all weeks shown</button>
-        <button class="btn btn-gold btn-sm" onclick="kpiEnter()">+ Enter tax &amp; fees</button>
-        <button class="btn btn-ghost btn-sm" onclick="kpiDiagnose()">?</button>
-        <button class="btn btn-ghost btn-sm" onclick="kpiTestTransactionLog()">Test payments</button>
-        <button class="btn btn-ghost btn-sm" onclick="kpiTestTax()">Test tax</button>
+      <div class="page-sub">Sunday to Friday, straight from RepairDesk. Tap any number to see every invoice or payment behind it.</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input type="date" id="kpi-goto" onchange="kpiGoToWeek(this.value)" title="Jump to the week containing this date" style="padding:7px 10px;font-size:13px">
+        <button class="btn btn-gold btn-sm" onclick="kpiPullWeek(weekKey(new Date()))">⟳ Pull this week</button>
+        <button class="btn btn-sm" onclick="kpiPullShown()">⟳ Pull all weeks shown</button>
       </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
-  await ensureTicketsLoaded();
   await loadKpiWeeks();
   drawKpi();
+  if(kpiWeeks===null) return;
+  // Keep this week and last week fresh without anyone pressing anything
+  const now=weekKey(new Date()), last=weekKey(new Date(Date.now()-7*86400000));
+  const stale=(k,mins)=>{ const d=kpiDetail[k]; const w=kpiRow(k);
+    const at=(d&&d.pulledAt)||(w&&(w.pulled_at||null));
+    return !at || (Date.now()-new Date(at).getTime())>mins*60000; };
+  if(stale(now,30)) await kpiPullWeek(now, true);
+  if(stale(last,24*60) && !(kpiRow(last)&&kpiRow(last).new_sales!=null)) await kpiPullWeek(last, true);
+}
+function kpiCellsFor(k){
+  const w=kpiRow(k)||{}, d=kpiDetail[k];
+  const t=d?kpiTotals(d):null;
+  // Figures read this session win; otherwise what was saved
+  const sales = t&&t.sales!=null ? t.sales : (w.new_sales!=null?+w.new_sales:null);
+  const pay   = t&&t.pay!=null   ? t.pay   : (w.payments!=null?+w.payments:null);
+  const tax   = t&&t.tax!=null   ? t.tax   : (w.sales_tax!=null?+w.sales_tax:null);
+  const fees  = w.cc_fees!=null?+w.cc_fees:null;
+  const net   = pay!=null ? pay-(tax||0)-(fees||0) : null;
+  return {k, sales, pay, tax, fees, net, at:(d&&d.pulledAt)||w.pulled_at||null,
+          err:d&&(d.invErr||d.payErr)?[d.invErr&&'invoices: '+d.invErr, d.payErr&&'payments: '+d.payErr].filter(Boolean).join(' · '):'',
+          mismatch:d&&d.rdPayTotal!=null&&t&&t.pay!=null&&Math.abs(d.rdPayTotal-t.pay)>0.5};
+}
+function kpiNum(v, k, which, col){
+  if(v==null) return `<span class="clickable" style="color:var(--ink3)" onclick="kpiShow('${k}','${which}')">—</span>`;
+  return `<span class="clickable" style="${col?'color:'+col+';':''}text-decoration:underline dotted;text-underline-offset:3px" onclick="kpiShow('${k}','${which}')">${money(v)}</span>`;
 }
 function drawKpi(){
   const el=document.getElementById('kpi-body'); if(!el) return;
@@ -6354,153 +6616,190 @@ function drawKpi(){
     el.innerHTML='<div class="card"><div class="empty">The KPI table is not set up yet — run <strong>add-kpi.sql</strong> in Supabase.</div></div>';
     return;
   }
-  const sales=kpiSalesByWeek();
-  // A continuous run of weeks back from today, so you can look at any past week even
-  // if nothing was recorded for it yet — not only weeks that already have figures.
   const back=kpiWeeksBack||12;
   const keys=[];
   const cursor=weekStartOf(new Date());
-  for(let i=0;i<back;i++){
-    keys.push(cursor.toISOString().slice(0,10));
-    cursor.setDate(cursor.getDate()-7);
-  }
-  // Anything older that already has figures should still be reachable
-  [...Object.keys(sales), ...kpiWeeks.map(w=>w.week_start)].forEach(k=>{ if(!keys.includes(k)) keys.push(k); });
+  for(let i=0;i<back;i++){ keys.push(weekKey(cursor)); cursor.setDate(cursor.getDate()-7); }
+  if(kpiFocusWeek && !keys.includes(kpiFocusWeek)) keys.push(kpiFocusWeek);
   keys.sort().reverse();
-  const byKey={}; kpiWeeks.forEach(w=>byKey[w.week_start]=w);
-
-  const rows=keys.map(k=>{
-    const w=byKey[k]||{};
-    const pay=+w.payments||0, tax=+w.sales_tax||0, fees=+w.cc_fees||0;
-    const hasPay=!!(w.payments!=null && +w.payments>0);
-    // Net only means anything once payments are in. Without them it read as a loss.
-    return {k, sales:sales[k]||0, pay, tax, fees,
-            net:hasPay?(pay-tax-fees):null, hasPay, entered:!!byKey[k]};
-  });
+  const rows=keys.map(kpiCellsFor);
   window._kpiRowKeys=rows.map(r=>r.k);
-  const cur=rows[0]||{}, prev=rows[1]||{};
-  const delta=(a,b)=>{ if(!b) return ''; const p=(a-b)/b*100;
+  const cur=rows.find(r=>r.k===weekKey(new Date()))||rows[0]||{}, prev=rows.find(r=>r.k===weekKey(new Date(Date.now()-7*86400000)))||{};
+  const delta=(a,b)=>{ if(a==null||!b) return ''; const p=(a-b)/Math.abs(b)*100;
     return `<span style="font-size:11.5px;font-weight:700;color:${p>=0?'var(--green)':'var(--red)'}">${p>=0?'▲':'▼'} ${Math.abs(p).toFixed(0)}%</span>`; };
+  const tile=(label,v,which,col,extra)=>`<div class="stat-tile clickable" onclick="kpiShow('${cur.k}','${which}')" style="${extra||''}">
+      <div class="stat-num" style="font-size:24px;${col?'color:'+col:''}">${v==null?'—':money(v)}</div>
+      <div class="stat-label">${label}</div></div>`;
+  const busyAny=Object.values(kpiBusy).some(Boolean);
 
-  el.innerHTML=kpiFocusHtml()+`
+  el.innerHTML=kpiFocusHtml()+
+    (kpiOldColumns?`<div class="card" style="border-color:var(--orange);background:var(--orange-soft);font-size:13px">Run <strong>add-users.sql</strong> in Supabase so New sales is saved too. Until then it shows only for weeks pulled on this screen.</div>`:'')+
+    `<div style="font-size:12px;color:var(--ink3);margin:-4px 0 10px">This week · ${weekLabel(cur.k||weekKey(new Date()))}${cur.at?' · pulled '+kpiAgo(cur.at):''}${kpiBusy[cur.k]?' · <strong>pulling…</strong>':''}</div>
     <div class="stat-grid">
-      <div class="stat-tile" style="border-left:4px solid var(--gold)">
-        <div class="stat-num" style="font-size:24px">${money(cur.sales||0)}</div>
-        <div class="stat-label">New sales ${delta(cur.sales||0, prev.sales||0)}</div></div>
-      <div class="stat-tile">
-        <div class="stat-num" style="font-size:24px">${cur.hasPay?money(cur.pay):'—'}</div>
-        <div class="stat-label">Payments taken ${delta(cur.pay||0, prev.pay||0)}</div></div>
-      <div class="stat-tile">
-        <div class="stat-num" style="font-size:24px">${money(cur.tax||0)}</div>
-        <div class="stat-label">Sales tax collected</div></div>
-      <div class="stat-tile">
-        <div class="stat-num" style="font-size:24px;color:var(--orange)">${money(cur.fees||0)}</div>
-        <div class="stat-label">Card fees paid</div></div>
-      <div class="stat-tile" style="border-left:4px solid var(--green)">
-        <div class="stat-num" style="font-size:24px;color:var(--green)">${cur.net!=null?money(cur.net):'—'}</div>
-        <div class="stat-label">Net ${delta(cur.net||0, prev.net||0)}</div></div>
+      ${tile('New sales '+delta(cur.sales,prev.sales),cur.sales,'sales','','border-left:4px solid var(--gold)')}
+      ${tile('Payments taken '+delta(cur.pay,prev.pay),cur.pay,'pay')}
+      ${tile('Sales tax',cur.tax,'tax')}
+      ${tile('Card fees',cur.fees,'fees','var(--orange)')}
+      ${tile('Net '+delta(cur.net,prev.net),cur.net,'net','var(--green)','border-left:4px solid var(--green)')}
     </div>
-
     <div class="card">
-      <div class="card-label">Week by week <span style="font-weight:600;text-transform:none;color:var(--ink3)">— Sunday to Friday</span>
+      <div class="card-label">Week by week <span style="font-weight:600;text-transform:none;color:var(--ink3)">— Sunday to Friday · tap a number to check it</span>
         <span style="float:right;font-weight:600;text-transform:none">
           ${[8,12,26,52,104].map(n=>`<button class="btn ${back===n?'btn-gold':'btn-ghost'} btn-sm" style="padding:3px 9px;font-size:11px" onclick="kpiWeeksBack=${n};drawKpi()">${n>=52?(n/52)+'y':n+'w'}</button>`).join(' ')}
         </span></div>
-      <table><thead><tr>
+      <div style="overflow-x:auto"><table><thead><tr>
         <th>Week</th><th>New sales</th><th>Payments</th><th>Sales tax</th><th>Card fees</th><th>Net</th><th></th>
       </tr></thead><tbody>
-      ${rows.map(r=>`<tr>
-        <td style="font-weight:600;white-space:nowrap">${weekLabel(r.k)}</td>
-        <td style="font-weight:600">${money(r.sales)}</td>
-        <td>${r.hasPay?money(r.pay):'<span style="color:var(--ink3)">—</span>'}</td>
-        <td>${r.tax?money(r.tax):'<span style="color:var(--ink3)">—</span>'}</td>
-        <td style="color:${r.fees?'var(--orange)':'var(--ink3)'}">${r.fees?money(r.fees):'—'}</td>
-        <td style="font-weight:700;color:${r.net!=null?'var(--green)':'var(--ink3)'}">${r.net!=null?money(r.net):'—'}</td>
+      ${rows.map(r=>`<tr${r.k===kpiFocusWeek?' style="background:var(--accent-soft)"':''}>
+        <td style="white-space:nowrap"><div style="font-weight:600">${weekLabel(r.k)}</div>
+          <div style="font-size:11px;color:${r.err?'var(--red)':'var(--ink3)'}">${kpiBusy[r.k]?'pulling…':r.err?'⚠️ '+esc(r.err.slice(0,60)):r.at?'pulled '+kpiAgo(r.at):'not pulled yet'}${r.mismatch?' · <span style="color:var(--orange)">⚠️ check payments</span>':''}</div></td>
+        <td style="font-weight:600">${kpiNum(r.sales,r.k,'sales')}</td>
+        <td>${kpiNum(r.pay,r.k,'pay')}</td>
+        <td>${kpiNum(r.tax,r.k,'tax')}</td>
+        <td>${r.fees!=null?`<span class="clickable" style="color:var(--orange)" onclick="kpiEdit('${r.k}')">${money(r.fees)}</span>`:`<button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">+ Add</button>`}</td>
+        <td style="font-weight:700">${kpiNum(r.net,r.k,'net','var(--green)')}</td>
         <td style="white-space:nowrap">
-          <button class="btn btn-ghost btn-sm" title="Pull payments from RepairDesk" onclick="kpiPullPayments('${r.k}')">↓</button>
-          <button class="btn btn-ghost btn-sm" onclick="kpiEnter('${r.k}')">${r.entered?'Edit':'Enter'}</button></td>
+          <button class="btn btn-ghost btn-sm" title="Pull this week from RepairDesk" ${kpiBusy[r.k]?'disabled':''} onclick="kpiPullWeek('${r.k}')">⟳</button>
+          <button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">Edit</button></td>
       </tr>`).join('')}
-      </tbody></table>
+      </tbody></table></div>
       ${(function(){
-        const t=rows.reduce((a,r)=>({sales:a.sales+r.sales, pay:a.pay+r.pay, tax:a.tax+r.tax, fees:a.fees+r.fees, net:a.net+r.net}),
-                            {sales:0,pay:0,tax:0,fees:0,net:0});
-        t.net=rows.reduce((a,r)=>a+(r.net||0),0);
+        const sum=f=>rows.reduce((a,r)=>a+(r[f]||0),0);
         return `<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:2px solid var(--border);font-size:13px">
           <div><span style="color:var(--ink3)">Total over ${rows.length} weeks:</span></div>
-          <div><strong>${money(t.sales)}</strong> <span style="color:var(--ink3)">sales</span></div>
-          <div><strong>${money(t.pay)}</strong> <span style="color:var(--ink3)">payments</span></div>
-          <div><strong style="color:var(--green)">${money(t.net)}</strong> <span style="color:var(--ink3)">net</span></div>
+          <div><strong>${money(sum('sales'))}</strong> <span style="color:var(--ink3)">sales</span></div>
+          <div><strong>${money(sum('pay'))}</strong> <span style="color:var(--ink3)">payments</span></div>
+          <div><strong>${money(sum('tax'))}</strong> <span style="color:var(--ink3)">tax</span></div>
+          <div><strong style="color:var(--green)">${money(sum('net'))}</strong> <span style="color:var(--ink3)">net</span></div>
         </div>`;
       })()}
-      <div style="font-size:12px;color:var(--ink3);margin-top:10px;line-height:1.7">
-        <strong>New sales</strong> is worked out from your tickets, with estimates left out.<br>
-        <strong>Payments</strong> pulled straight from RepairDesk's transaction log (payments and refunds only) · <strong>Sales tax</strong> from the tax report · <strong>Card fees</strong> from the batch report.<br>
-        <strong>Net</strong> = payments − sales tax − card fees.
-      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">Where each number comes from</div>
+      <table style="font-size:13px"><tbody>
+        <tr><td style="font-weight:700;white-space:nowrap">New sales</td><td>Every RepairDesk <strong>invoice raised</strong> that week, at its full total (tax included). Voided invoices and estimates are left out.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Payments</td><td>RepairDesk's <strong>transaction log</strong> — money actually taken that week, by card, cash or anything else. Refunds are taken off. Every page is read, and the total is checked against RepairDesk's own total for the same report.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Sales tax</td><td>The tax on the invoices counted in New sales.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Card fees</td><td>Typed in from the card batch report — RepairDesk doesn't give this out.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Net</td><td>Payments − sales tax − card fees.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">The week</td><td>Sunday 12:00am to Friday night. Anything rung up on a Saturday counts with that week, so nothing falls between weeks.</td></tr>
+      </tbody></table>
+      <div style="font-size:12px;color:var(--ink3);margin-top:10px">Sales and payments won't match each other exactly, and that's expected: a job invoiced this week may be paid next week, or was paid as a deposit last week.
+        <span class="clickable" onclick="kpiTestTransactionLog()">Check the payments connection</span> ·
+        <span class="clickable" onclick="kpiTestTax()">Check the invoices connection</span></div>
     </div>`;
 }
-// Payments now come straight from RepairDesk's transaction log. Type_id=1,2 is
-// payments and refunds only — the other row types are cash-drawer movements, not sales,
-// so including them would overstate the week badly.
-async function kpiFetchPayments(weekKeyStr){
-  const start=new Date(weekKeyStr+'T00:00:00');
-  const end=new Date(start); end.setDate(end.getDate()+6);      // Sunday through Saturday
-  const from=Math.floor(start.getTime()/1000);
-  const to=Math.floor(end.getTime()/1000)-1;
-  const money2=s=>parseFloat(String(s||'').replace(/[^0-9.\-]/g,''))||0;
-  try{
-    // The docs show both /report/transactionlogs and /v1/report/transactionlogs, and the
-    // base URL already ends in /v1 — so try the plain one first, then the prefixed one.
-    let d=null, data={}, rows=[];
-    for(const pth of ['report/transactionlogs','v1/report/transactionlogs']){
-      try{
-        d=await fetchRD(pth+'?from='+from+'&to='+to+'&Type_id=1,2');
-        data=(d&&d.data)||{};
-        rows=data.results||[];
-        if(rows.length || data.summary) break;
-      }catch(e){}
+
+// ---------- tap a number: every row behind it ----------
+async function kpiShow(key, which){
+  if(which==='fees'){ kpiEdit(key); return; }
+  if(!kpiDetail[key]){
+    openModal(`<span class="modal-close" onclick="closeModal()">✕</span><h3>${weekLabel(key)}</h3><div class="empty">Reading every invoice and payment from RepairDesk…</div>`);
+    await kpiPullWeek(key, true);
+    if(!document.getElementById('modal-bg').classList.contains('show')) return;
+  }
+  const d=kpiDetail[key]||{}, t=kpiTotals(d), c=kpiCellsFor(key);
+  const th='style="position:sticky;top:0;background:var(--surface);z-index:1"';
+  const grey=r=>r.skip?' style="opacity:.45"':'';
+  const why=r=>r.skip?`<div style="font-size:10.5px;color:var(--red)">left out — ${esc(r.skip)}</div>`:'';
+  let title='', body='';
+  if(which==='sales'||which==='tax'){
+    title=which==='sales'?'New sales':'Sales tax';
+    if(!d.invoices){ body=`<div class="empty">Couldn't read the invoices: ${esc(d.invErr||'not pulled')}</div>`; }
+    else{
+      const left=d.invoices.filter(r=>r.skip).length;
+      body=`<div style="font-size:13px;margin-bottom:10px"><strong>${t.invCount}</strong> invoices counted · <strong>${money(which==='sales'?t.sales:t.tax)}</strong>${left?` · ${left} left out (shown faded)`:''}</div>
+        <div style="max-height:56vh;overflow:auto"><table style="font-size:12.5px"><thead><tr><th ${th}>Invoice</th><th ${th}>Date</th><th ${th}>Customer</th><th ${th}>Status</th><th ${th} style="text-align:right">Total</th><th ${th} style="text-align:right">Tax</th></tr></thead><tbody>
+        ${d.invoices.slice().sort((a,b)=>(a.date||0)-(b.date||0)).map(r=>`<tr${grey(r)}><td style="font-weight:600;white-space:nowrap">${esc(r.num||'?')}${r.ticket&&r.ticket!==r.num?`<div style="font-size:10.5px;color:var(--ink3)">${esc(r.ticket)}</div>`:''}${why(r)}</td>
+          <td style="white-space:nowrap">${kpiFmtDate(r.date)}</td><td>${esc(r.customer||'—')}</td><td>${esc(r.status||'—')}</td>
+          <td style="text-align:right;font-weight:600">${money(r.total)}</td><td style="text-align:right">${money(r.tax)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No invoices this week</td></tr>'}
+        </tbody></table></div>`;
     }
-    // Sum the rows ourselves rather than trusting a combined total
-    const total=rows.reduce((a,r)=>a+money2(r.amount),0);
-    const byMethod={};
-    rows.forEach(r=>{ const k=r.payment_method||'Other'; byMethod[k]=(byMethod[k]||0)+money2(r.amount); });
-    return {ok:true, total, rows:rows.length, byMethod};
-  }catch(e){ return {ok:false, why:e.message||String(e)}; }
+  } else if(which==='pay'){
+    title='Payments taken';
+    if(!d.payments){ body=`<div class="empty">Couldn't read the transaction log: ${esc(d.payErr||'not pulled')}</div>`; }
+    else{
+      const check=d.rdPayTotal!=null
+        ? (Math.abs(d.rdPayTotal-t.pay)<=0.5
+            ? `<div style="color:var(--green);font-weight:600">✓ Matches RepairDesk's own total for this report (${money(d.rdPayTotal)})</div>`
+            : `<div style="color:var(--orange);font-weight:600">⚠️ RepairDesk's own total says ${money(d.rdPayTotal)} — ${money(Math.abs(d.rdPayTotal-t.pay))} ${d.rdPayTotal>t.pay?'more':'less'} than the rows below. Send me a screenshot of this.</div>`)
+        : '';
+      body=`<div style="font-size:13px;margin-bottom:6px"><strong>${t.payCount}</strong> transactions · <strong>${money(t.pay)}</strong></div>${check}
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;margin:8px 0 10px">${Object.entries(t.byMethod).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span><span style="color:var(--ink3)">${esc(k)}</span> <strong>${money(v)}</strong></span>`).join('')}</div>
+        <div style="max-height:52vh;overflow:auto"><table style="font-size:12.5px"><thead><tr><th ${th}>Date</th><th ${th}>Type</th><th ${th}>Method</th><th ${th}>For</th><th ${th}>Taken by</th><th ${th} style="text-align:right">Amount</th></tr></thead><tbody>
+        ${d.payments.slice().sort((a,b)=>(a.date||0)-(b.date||0)).map(r=>`<tr${grey(r)}><td style="white-space:nowrap">${kpiFmtDate(r.date)}${why(r)}</td>
+          <td style="${r.type==='Refund'?'color:var(--red);font-weight:600':''}">${esc(r.type)}</td><td>${esc(r.method||'—')}</td>
+          <td>${esc([r.ref,r.customer].filter(Boolean).join(' · ')||'—')}</td><td>${esc(r.who||'—')}</td>
+          <td style="text-align:right;font-weight:600;${r.amount<0?'color:var(--red)':''}">${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No payments this week</td></tr>'}
+        </tbody></table></div>`;
+    }
+  } else {
+    title='Net';
+    const line=(l,v,sign,col)=>`<tr><td>${l}</td><td style="text-align:right;font-weight:700;${col?'color:'+col:''}">${v==null?'—':sign+money(v)}</td></tr>`;
+    body=`<table style="font-size:14px;max-width:360px">${line('Payments taken',c.pay,'')}${line('Sales tax',c.tax,'− ')}${line('Card fees',c.fees,'− ','var(--orange)')}
+      <tr><td style="border-top:2px solid var(--border);font-weight:800">Net</td><td style="border-top:2px solid var(--border);text-align:right;font-weight:800;color:var(--green)">${c.net==null?'—':money(c.net)}</td></tr></table>
+      ${c.fees==null?'<div style="font-size:12px;color:var(--orange);margin-top:8px">Card fees not entered yet for this week, so Net is before fees.</div>':''}`;
+  }
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:2px">${title}</h3>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:12px">Week of ${weekLabel(key)}${d.pulledAt?' · pulled '+kpiAgo(d.pulledAt):''}</div>
+    ${body}
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="closeModal();kpiPullWeek('${key}').then(()=>kpiShow('${key}','${which}'))">⟳ Pull again</button>
+      ${which!=='net'?`<button class="btn btn-ghost btn-sm" onclick="kpiCsv('${key}','${which}')">⬇ Download as a spreadsheet</button>`:''}
+    </div>`);
+  const inner=document.getElementById('modal-inner'); if(inner) inner.style.maxWidth='880px';
 }
-// Tax comes from each invoice's total_tax. Note this is filtered by the date the
-// invoice was RAISED, not when it was paid — RepairDesk offers no payment-date filter
-// for invoices — so it won't reconcile exactly with the cash-basis payments figure.
-async function kpiFetchTax(weekKeyStr){
-  const start=new Date(weekKeyStr+'T00:00:00');
-  const end=new Date(start); end.setDate(end.getDate()+6);
-  const from=Math.floor(start.getTime()/1000);
-  const to=Math.floor(end.getTime()/1000)-1;
-  const money2=s=>parseFloat(String(s||'').replace(/[^0-9.\-]/g,''))||0;
-  let tax=0, count=0, page=1, pages=1;
-  try{
-    do{
-      const d=await fetchRD('invoices?from_date='+from+'&to_date='+to+'&page='+page+'&pagesize=50');
-      const data=(d&&d.data)||{};
-      const list=data.invoiceData||[];
-      list.forEach(inv=>{
-        const s=inv.summary||{};
-        tax+=money2(s.total_tax);
-        count++;
-      });
-      const pg=data.pagination||{};
-      pages=parseInt(pg.total_pages,10)||1;
-      page++;
-      if(page>20) break;                       // don't run away on a huge week
-    } while(page<=pages);
-    return {ok:true, tax, count};
-  }catch(e){ return {ok:false, why:e.message||String(e)}; }
+function kpiCsv(key, which){
+  const d=kpiDetail[key]||{}; const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  let csv;
+  if(which==='pay'){
+    csv='Date,Type,Method,For,Taken by,Amount,Left out\n'+(d.payments||[]).map(r=>[r.date?r.date.toLocaleString():'',r.type,r.method,[r.ref,r.customer].filter(Boolean).join(' '),r.who,r.amount.toFixed(2),r.skip].map(q).join(',')).join('\n');
+  } else {
+    csv='Invoice,Ticket,Date,Customer,Status,Total,Tax,Left out\n'+(d.invoices||[]).map(r=>[r.num,r.ticket,r.date?r.date.toLocaleString():'',r.customer,r.status,r.total.toFixed(2),r.tax.toFixed(2),r.skip].map(q).join(',')).join('\n');
+  }
+  downloadCsv(csv,'glint-'+(which==='pay'?'payments':'invoices')+'-'+key+'.csv');
 }
-// Pick any date and see that week on its own — no scrolling back through months
-let kpiFocusWeek=null;
+
+// ---------- typing figures in: card fees, or a correction ----------
+function kpiEdit(key){
+  const c=kpiCellsFor(key);
+  const f=(id,label,v,hint)=>`<div class="field" style="margin-bottom:10px"><label>${label}</label>
+    <input id="${id}" inputmode="decimal" value="${v==null?'':(Math.round(v*100)/100)}" placeholder="0.00">
+    ${hint?`<div style="font-size:11px;color:var(--ink3);margin-top:3px">${hint}</div>`:''}</div>`;
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:2px">Week of ${weekLabel(key)}</h3>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:14px">Card fees are always typed in. The others fill themselves when you pull — only change them to correct something.</div>
+    ${f('ke-fees','Card fees paid',c.fees,'From the card batch report')}
+    ${f('ke-pay','Payments taken',c.pay,'Pulling again will replace this')}
+    ${f('ke-tax','Sales tax',c.tax,'Pulling again will replace this')}
+    ${f('ke-sales','New sales',c.sales,'Pulling again will replace this')}
+    <div id="ke-err" style="color:var(--red);font-size:12.5px;min-height:16px"></div>
+    <button class="btn btn-gold btn-block" onclick="kpiSaveEdit('${key}')">Save</button>`);
+  setTimeout(()=>{ const i=document.getElementById('ke-fees'); if(i) i.focus(); },50);
+}
+async function kpiSaveEdit(key){
+  const num=id=>{ const v=String(document.getElementById(id).value||'').trim(); if(v==='') return null; const n=parseFloat(v.replace(/[^0-9.\-]/g,'')); return isNaN(n)?null:n; };
+  const row={week_start:key, cc_fees:num('ke-fees'), payments:num('ke-pay'), sales_tax:num('ke-tax'), updated_at:new Date().toISOString()};
+  if(!kpiOldColumns) row.new_sales=num('ke-sales');
+  const d=kpiDetail[key];
+  // A typed correction replaces what was read this session too
+  if(d){ const t=kpiTotals(d);
+    if(d.payments && row.payments!=null && Math.abs(row.payments-(t.pay||0))>0.004) delete d.payments;
+    if(d.invoices && ((row.sales_tax!=null && Math.abs(row.sales_tax-(t.tax||0))>0.004) || (row.new_sales!=null && Math.abs(row.new_sales-(t.sales||0))>0.004))) delete d.invoices; }
+  let r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(row)});
+  if(!r.ok && 'new_sales' in row){ delete row.new_sales; r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(row)}); if(r.ok) kpiOldColumns=true; }
+  if(!r.ok){ let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
+    document.getElementById('ke-err').textContent='Could not save: '+(why||('HTTP '+r.status)); return; }
+  closeModal(); toast('✅ Saved'); await loadKpiWeeks(); drawKpi();
+}
+
+// ---------- jump to any week ----------
 function kpiGoToWeek(dateStr){
   if(!dateStr){ kpiFocusWeek=null; drawKpi(); return; }
   kpiFocusWeek=weekKey(new Date(dateStr+'T12:00:00'));
   drawKpi();
+  if(!kpiDetail[kpiFocusWeek]) kpiPullWeek(kpiFocusWeek, true);
   setTimeout(function(){ var el=document.getElementById('kpi-focus'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); },60);
 }
 function kpiClearFocus(){
@@ -6508,7 +6807,27 @@ function kpiClearFocus(){
   var g=document.getElementById('kpi-goto'); if(g) g.value='';
   drawKpi();
 }
-// Same idea as the payments test: show exactly what the invoice call returns
+function kpiFocusHtml(){
+  if(!kpiFocusWeek) return '';
+  const c=kpiCellsFor(kpiFocusWeek), k=kpiFocusWeek;
+  const cell=(label,v,which,col)=>'<div style="min-width:128px"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">'
+      +label+'</div><div style="font-size:21px;font-weight:800">'+kpiNum(v,k,which,col)+'</div></div>';
+  return '<div class="card" id="kpi-focus" style="border:2px solid var(--gold)">'
+   +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
+   +'<div><div class="card-label" style="margin:0">Week of '+weekLabel(k)+'</div>'
+   +'<div style="font-size:11.5px;color:var(--ink3)">'+(kpiBusy[k]?'pulling from RepairDesk…':c.at?'pulled '+kpiAgo(c.at):'not pulled yet')+'</div></div>'
+   +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
+   +'<button class="btn btn-sm" onclick="kpiPullWeek(\''+k+'\')">⟳ Pull</button>'
+   +'<button class="btn btn-gold btn-sm" onclick="kpiEdit(\''+k+'\')">Card fees</button>'
+   +'<button class="btn btn-ghost btn-sm" onclick="kpiClearFocus()">&times;</button>'
+   +'</div></div>'
+   +'<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px">'
+   +cell('New sales',c.sales,'sales')+cell('Payments',c.pay,'pay')+cell('Sales tax',c.tax,'tax')
+   +cell('Card fees',c.fees,'fees','var(--orange)')+cell('Net',c.net,'net','var(--green)')
+   +'</div></div>';
+}
+
+// Shows exactly what the invoice call returns, week by week
 async function kpiTestTax(){
   const key=kpiFocusWeek||weekKey(new Date());
   const start=new Date(key+'T00:00:00');
@@ -6544,55 +6863,8 @@ async function kpiTestTax(){
   out+='The last line has no date filter — if that returns invoices but the dated ones\nreturn none, the date parameters are the problem.';
   alert(out);
 }
-function kpiFocusHtml(){
-  if(!kpiFocusWeek) return '';
-  var sales=kpiSalesByWeek();
-  var w=kpiWeeks.find(function(x){return x.week_start===kpiFocusWeek;})||{};
-  var pay=+w.payments||0, tax=+w.sales_tax||0, fees=+w.cc_fees||0;
-  var hasPay=!!(w.payments!=null && +w.payments>0);
-  var net=hasPay?(pay-tax-fees):null;
-  function cell(label,val,col){
-    return '<div style="min-width:128px"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.05em">'
-      +label+'</div><div style="font-size:21px;font-weight:800;'+(col?'color:'+col:'')+'">'+val+'</div></div>';
-  }
-  return '<div class="card" id="kpi-focus" style="border:2px solid var(--gold)">'
-   +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'
-   +'<div><div class="card-label" style="margin:0">Week of '+weekLabel(kpiFocusWeek)+'</div>'
-   +'<div style="font-size:11.5px;color:var(--ink3)">'+kpiFocusWeek+' &middot; Sunday to Friday</div></div>'
-   +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
-   +'<button class="btn btn-sm" onclick="kpiPullPayments(\''+kpiFocusWeek+'\')">&darr; Payments</button>'
-   +'<button class="btn btn-sm" onclick="kpiPullTax(\''+kpiFocusWeek+'\')">&darr; Tax</button>'
-   +'<button class="btn btn-gold btn-sm" onclick="kpiEnter(\''+kpiFocusWeek+'\')">Enter figures</button>'
-   +'<button class="btn btn-ghost btn-sm" onclick="kpiClearFocus()">&times;</button>'
-   +'</div></div>'
-   +'<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:14px">'
-   +cell('New sales', money(sales[kpiFocusWeek]||0))
-   +cell('Payments', hasPay?money(pay):'&mdash;')
-   +cell('Sales tax', w.sales_tax!=null?money(tax):'&mdash;')
-   +cell('Card fees', w.cc_fees!=null?money(fees):'&mdash;','var(--orange)')
-   +cell('Net', net!=null?money(net):'&mdash;','var(--green)')
-   +'</div></div>';
-}
-async function kpiPullTax(which){
-  const key=which||weekKey(new Date());
-  toast('Adding up the tax on the invoices…');
-  const res=await kpiFetchTax(key);
-  if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
-  if(!res.count){ alert('No invoices found for the week of '+weekLabel(key)+'.\n\nNothing saved — use "Test tax" to see what the invoice call returns.'); return; }
-  if(!confirm('Week of '+weekLabel(key)+'\n\nTax on invoices raised: '+money(res.tax)+
-              '\nAcross '+res.count+' invoices\n\n'+
-              'Note: this counts invoices RAISED this week, not payments taken this week, '+
-              'so it will not match your tax report exactly.\n\nSave it anyway?')) return;
-  const existing=kpiWeeks.find(w=>w.week_start===key)||{};
-  const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-    body:JSON.stringify({week_start:key, payments:existing.payments||null, sales_tax:res.tax,
-      cc_fees:existing.cc_fees||null, updated_at:new Date().toISOString()})});
-  if(r.ok){ toast('✅ Tax saved'); await loadKpiWeeks(); drawKpi(); }
-  else toast('Could not save');
-}
-// Shows exactly what the transaction log returns, path by path, so a failure names
-// itself instead of arriving as an empty result.
+
+// Shows exactly what the transaction log returns, path by path
 async function kpiTestTransactionLog(){
   const key=kpiFocusWeek||weekKey(new Date());
   const start=new Date(key+'T00:00:00');
@@ -6630,89 +6902,6 @@ async function kpiTestTransactionLog(){
   out+='If every path shows rows=0 but your RepairDesk transaction log has payments\n'+
        'that week, the endpoint is likely not enabled on your API key.';
   alert(out);
-}
-// Fill in every week on screen in one go, rather than pressing the arrow on each row
-async function kpiFillAll(){
-  const weeks=(window._kpiRowKeys||[]).slice();
-  if(!weeks.length){ toast('Nothing to fill'); return; }
-  if(!confirm('Fetch payments and tax for all '+weeks.length+' weeks shown?\n\n'+
-              'This reads from RepairDesk for each week, so it takes a moment.\n'+
-              'Anything already filled in will be overwritten.')) return;
-  let done=0, failed=0;
-  for(const k of weeks){
-    toast('Week '+(done+failed+1)+' of '+weeks.length+'…');
-    try{
-      const pay=await kpiFetchPayments(k);
-      const tax=await kpiFetchTax(k);
-      if(!pay.ok && !tax.ok){ failed++; continue; }
-      const existing=kpiWeeks.find(w=>w.week_start===k)||{};
-      // Only save figures we actually retrieved. A week with no invoices found is not
-      // a week with zero tax — saving it as zero is how the misleading rows appeared.
-      const payVal = (pay.ok && pay.rows) ? pay.total : (existing.payments!=null?existing.payments:null);
-      const taxVal = (tax.ok && tax.count) ? tax.tax   : (existing.sales_tax!=null?existing.sales_tax:null);
-      const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
-        headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-        body:JSON.stringify({week_start:k, payments:payVal, sales_tax:taxVal,
-          cc_fees: existing.cc_fees!=null?existing.cc_fees:null,
-          updated_at:new Date().toISOString()})});
-      r.ok?done++:failed++;
-    }catch(e){ failed++; }
-  }
-  await loadKpiWeeks();
-  drawKpi();
-  toast('✅ Filled '+done+' week'+(done!==1?'s':'')+(failed?' · '+failed+' failed':'')+
-        '. Card fees still need entering by hand.');
-}
-async function kpiPullPayments(which){
-  const key=which||weekKey(new Date());
-  toast('Reading the transaction log…');
-  const res=await kpiFetchPayments(key);
-  if(!res.ok){ toast('Could not read it: '+(res.why||'')); return; }
-  if(!res.rows){
-    alert('RepairDesk returned no transactions for the week of '+weekLabel(key)+'.\n\n'+
-      'That usually means one of:\n'+
-      '• the report endpoint is not enabled on your API key\n'+
-      '• no payments were recorded that week\n'+
-      '• the endpoint path differs on your account\n\n'+
-      'Nothing has been saved. Enter the figure by hand if you need it now.');
-    return;
-  }
-  const methods=Object.entries(res.byMethod).map(([k,v])=>k+' '+money(v)).join(' · ');
-  if(!confirm('Week of '+weekLabel(key)+'\n\nPayments and refunds: '+money(res.total)+
-              '\nFrom '+res.rows+' transactions\n'+(methods?'\n'+methods:'')+
-              '\n\nSave this as the payments figure?')) return;
-  const existing=kpiWeeks.find(w=>w.week_start===key)||{};
-  const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-    body:JSON.stringify({week_start:key, payments:res.total,
-      sales_tax:existing.sales_tax||null, cc_fees:existing.cc_fees||null,
-      updated_at:new Date().toISOString()})});
-  if(r.ok){ toast('✅ Payments saved'); await loadKpiWeeks(); drawKpi(); }
-  else toast('Could not save');
-}
-async function kpiEnter(which){
-  const key=which||weekKey(new Date());
-  const existing=kpiWeeks.find(w=>w.week_start===key)||{};
-  const ask=(label,cur)=>{
-    const v=prompt(label+'\n\nWeek of '+weekLabel(key)+'\n\nJust the number.', cur!=null?String(cur):'');
-    if(v===null) return null;
-    return parseFloat(String(v).replace(/[^0-9.\-]/g,''))||0;
-  };
-  const payments=ask('Payments processed — total from the transaction log', existing.payments);
-  if(payments===null) return;
-  const tax=ask('Sales tax collected — from the tax report', existing.sales_tax);
-  if(tax===null) return;
-  const fees=ask('Card fees paid — from the batch report', existing.cc_fees);
-  if(fees===null) return;
-
-  const r=await sb('kpi_weeks?on_conflict=week_start',{method:'POST',
-    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
-    body:JSON.stringify({week_start:key, payments, sales_tax:tax, cc_fees:fees, updated_at:new Date().toISOString()})});
-  if(r.ok){ toast('✅ Saved — net '+money(payments-tax-fees)); await loadKpiWeeks(); drawKpi(); }
-  else {
-    let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
-    toast('Could not save: '+(why||('HTTP '+r.status)));
-  }
 }
 
 // ========================================================================
@@ -8039,19 +8228,20 @@ async function renderItemDetailPage(itemId){
     // Conversation — type @name to send it to someone's inbox
     let msgs=[];
     try{ msgs=await sb('item_messages?item_id=eq.'+encodeURIComponent(itemId)+'&select=*&order=created_at.asc&limit=100'); }catch(e){}
-    notesHtml+=`<div class="card">
-      <div class="card-label">💬 Conversation${Array.isArray(msgs)&&msgs.length?' ('+msgs.length+')':''}</div>
-      <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">Type <strong>@name</strong> to send it straight to that person's inbox.</div>
+    notesHtml=`<div class="card" id="item-chat">
+      <div class="card-label">💬 Conversation &amp; tags${Array.isArray(msgs)&&msgs.length?' ('+msgs.length+')':''}</div>
+      <div style="font-size:11.5px;color:var(--ink3);margin-bottom:8px">Tap a name to tag them — it goes to their Inbox here and on their phone. You're writing as <strong>${esc(meName())}</strong>.</div>
       ${(Array.isArray(msgs)?msgs:[]).map(m=>`
         <div style="padding:9px 0;border-bottom:1px solid var(--border)">
           <div style="font-size:13.5px;white-space:pre-wrap">${esc(m.body).replace(/@([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'-]*)/g,'<strong style="color:var(--gold2)">@$1</strong>')}</div>
-          <div style="font-size:11px;color:var(--ink3);margin-top:3px">${esc(m.author)} · ${fmtDateFull(m.created_at)}</div>
+          <div style="font-size:11px;color:var(--ink3);margin-top:3px">${esc(m.author)} · ${fmtDateFull(m.created_at)}${Array.isArray(m.mentions)&&m.mentions.length?' · → '+esc(m.mentions.join(', ')):''}</div>
         </div>`).join('')||'<div style="color:var(--ink3);font-style:italic;font-size:13px;padding:4px 0 8px">No messages yet</div>'}
-      <div style="display:flex;gap:8px;align-items:flex-start;margin-top:10px">
-        <textarea id="msg-input" rows="2" placeholder="Write a message — @Rowena can you check this one" style="flex:1;resize:vertical"></textarea>
-        <button class="btn btn-gold btn-sm" onclick="sendItemMessage('${jsstr(itemId)}','${jsstr(name||'')}')">Send</button>
+      ${tagPeopleHtml()}
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <textarea id="msg-input" rows="2" placeholder="Write a message (optional if you tag someone)" style="flex:1;resize:vertical"></textarea>
+        <button class="btn btn-gold btn-sm" id="msg-send" onclick="sendItemMessage('${jsstr(itemId)}','${jsstr(name||'')}')">Send</button>
       </div>
-    </div>`;
+    </div>`+notesHtml;
   }catch(err){ notesErr=(err&&err.message)||String(err); }
 
   let photosHtml='', photosErr='';
@@ -8150,7 +8340,7 @@ async function quickNote(itemId, name){
   if(note===null) return;
   if(!String(note).trim()){ toast('Nothing to save'); return; }
   const r=await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
-    body:JSON.stringify({item_id:itemId, note:String(note).trim(), worker:'Office', role:'Office'})});
+    body:JSON.stringify({item_id:itemId, note:String(note).trim(), worker:meName(), role:'Office'})});
   if(r.ok) toast('✅ Note added to '+(name||itemId));
   else toast('Could not save the note');
 }
@@ -8158,10 +8348,33 @@ async function quickNote(itemId, name){
 async function sendItemMessage(itemId, desc){
   const el=document.getElementById('msg-input');
   const body=(el&&el.value||'').trim();
-  if(!body){ toast('Type a message first'); return; }
-  const r=await postItemMessage(itemId, body, inboxWho||'Office', desc);
-  if(r&&r.ok){ if(el) el.value=''; toast('💬 Sent'); renderItemDetailPage(itemId); }
+  const tagged=[...document.querySelectorAll('#msg-tags .tag-chip.on')].map(b=>b.dataset.name);
+  if(!body && !tagged.length){ toast('Type a message or tap a name first'); return; }
+  const text=body||'Please look at this one';
+  const r=await postItemMessage(itemId, text, meName(), desc, tagged);
+  if(r&&r.ok){
+    if(el) el.value='';
+    toast(tagged.length?'💬 Sent to '+tagged.join(', '):'💬 Sent');
+    renderItemDetailPage(itemId);
+  }
   else toast('Could not send');
+}
+function toggleTagChip(b){
+  b.classList.toggle('on');
+  const on=b.classList.contains('on');
+  b.style.background=on?'var(--gold)':'var(--surface2)'; b.style.color=on?'#fff':'var(--ink)';
+  const n=document.querySelectorAll('#msg-tags .tag-chip.on').length;
+  const s=document.getElementById('msg-send'); if(s) s.textContent=n?'Send to '+n:'Send';
+}
+// The people you can tag: everyone on the team, you last
+function tagPeopleHtml(){
+  const names=[...new Set((workers||[]).filter(w=>w.name && w.active!==false).map(w=>w.name))]
+    .filter(n=>n!==meName()).sort((a,b)=>a.localeCompare(b));
+  if(!names.length) return '';
+  return '<div id="msg-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 8px">'+
+    '<span style="font-size:12px;color:var(--ink3);align-self:center;margin-right:2px">Tag:</span>'+
+    names.map(n=>`<button type="button" class="tag-chip" data-name="${esc(n)}" onclick="toggleTagChip(this)" style="border:1px solid var(--border);background:var(--surface2);color:var(--ink);border-radius:18px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer">@${esc(n)}</button>`).join('')+
+    '</div>';
 }
 // Push a note to RepairDesk using the documented endpoint. The exact field names are
 // confirmed by the tester in Settings and remembered, so this uses whatever worked.
@@ -8247,7 +8460,7 @@ async function addItemNote(itemId){
   const note=(el&&el.value||'').trim();
   if(!note){ toast('Type a note first'); return; }
   const r=await sb('item_notes',{method:'POST',headers:{'Prefer':'return=minimal'},
-    body:JSON.stringify({item_id:itemId, note, worker:'Office', role:'Office'})});
+    body:JSON.stringify({item_id:itemId, note, worker:meName(), role:'Office'})});
   if(r.ok){
     if(el) el.value='';
     toast('✅ Note added');
@@ -8332,7 +8545,7 @@ async function uploadDashFiles(files, itemId, itemName){
       }
       const url=SUPABASE_URL+'/storage/v1/object/public/item-photos/'+fname;
       await sb('item_images',{method:'POST',headers:{'Prefer':'return=minimal'},
-        body:JSON.stringify({item_id:itemId, item_desc:itemName||'', image_url:url, worker:'Office', role:'Office'})});
+        body:JSON.stringify({item_id:itemId, item_desc:itemName||'', image_url:url, worker:meName(), role:'Office'})});
       done++;
     }catch(e){ failed++; problems.push((f.name||'file')+': '+(e.message||e)); }
   }
@@ -8477,6 +8690,7 @@ function renderWorkersPage(){
       <div class="row" style="margin-bottom:12px">
         <div class="field"><label>Name</label><input id="nw-name" placeholder="Full name"></div>
         <div class="field"><label>4-digit PIN</label><input id="nw-pin" maxlength="4" placeholder="1234"></div>
+        <div class="field"><label>Control Room</label><select id="nw-access">${accessOptionsHtml('staff')}</select></div>
       </div>
       <div class="field" style="margin-bottom:12px"><label>Roles</label><div id="nw-roles" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
       <button class="btn btn-gold btn-block" onclick="addWorker()">Add Worker</button>
@@ -8491,7 +8705,8 @@ function renderWorkersPage(){
     </div>
     <div class="card">
       <div class="card-label">All Workers</div>
-      <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th style="text-align:center">Print Labels</th><th></th></tr></thead><tbody></tbody></table></div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6"><strong>Owner</strong> sees everything · <strong>Manager</strong> everything except money (KPIs, inventory, costs, prices) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
+      <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th>Control Room</th><th style="text-align:center">Print Labels</th><th></th></tr></thead><tbody></tbody></table></div>
     </div>
   `;
   loadWorkersAndRoles();
@@ -8508,8 +8723,10 @@ async function addWorker(){
   const name=document.getElementById('nw-name').value.trim();
   const pin=document.getElementById('nw-pin').value.trim();
   const checked=[...document.querySelectorAll('#nw-roles input:checked')].map(c=>c.value);
+  const access=(document.getElementById('nw-access')||{}).value||'staff';
   if(!name||!pin){ toast('Name and PIN required'); return; }
-  const r=await sb('workers',{method:'POST',body:JSON.stringify({name,pin,roles:checked})});
+  let r=await sb('workers',{method:'POST',body:JSON.stringify({name,pin,roles:checked,access})});
+  if(!r.ok){ r=await sb('workers',{method:'POST',body:JSON.stringify({name,pin,roles:checked})}); if(r.ok) toast('Added — run add-users.sql so Control Room access saves'); }
   if(r.ok){ toast('✅ Worker added'); document.getElementById('nw-name').value=''; document.getElementById('nw-pin').value=''; document.querySelectorAll('#nw-roles input').forEach(c=>c.checked=false); await loadWorkersAndRoles(); }
   else toast('Could not add worker');
 }
@@ -8562,12 +8779,23 @@ function renderWorkersTable(){
   el.innerHTML=workers.length?workers.map(w=>`
     <tr><td><strong>${esc(w.name)}</strong></td><td><span style="font-variant-numeric:tabular-nums">${esc(w.pin||'—')}</span></td>
     <td>${esc((w.roles||[]).join(', ')||'—')}</td>
+    <td><select onchange="setWorkerAccess(${w.id},this.value)" style="width:auto;padding:5px 8px;font-size:12.5px">${accessOptionsHtml(workerAccess(w))}</select></td>
     <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.can_print?'checked':''} onchange="togglePrint(${w.id},this.checked)"></td>
     <td style="text-align:right;white-space:nowrap">
       <button class="btn btn-gold btn-sm" onclick="navigate('${h('worker',w.name).replace(/'/g,"\\'")}')">📊 Report</button>
       <button class="btn btn-ghost btn-sm" onclick="openEditWorker(${w.id})">Edit</button>
       <button class="btn btn-danger btn-sm" onclick="deleteWorker(${w.id},'${jsstr(w.name)}')">Remove</button>
-    </td></tr>`).join(''):'<tr><td colspan="5" class="empty">No workers yet</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="6" class="empty">No workers yet</td></tr>';
+}
+function accessOptionsHtml(sel){
+  return ['owner','manager','staff','none'].map(v=>`<option value="${v}"${v===sel?' selected':''}>${ACCESS_LABEL[v]}</option>`).join('');
+}
+async function setWorkerAccess(id, level){
+  const w=workers.find(x=>x.id===id);
+  if(w && me && !me.viaPassword && w.name===me.name && level!=='owner' && !confirm('That takes away your own owner access. Carry on?')){ renderWorkersTable(); return; }
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({access:level})});
+  if(r.ok){ toast('✅ '+(w?w.name:'')+' → '+ACCESS_LABEL[level]); if(w) w.access=level; }
+  else { toast('Could not save — run add-users.sql in Supabase first'); renderWorkersTable(); }
 }
 async function togglePrint(id, on){
   const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({can_print:on})});
