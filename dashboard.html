@@ -305,7 +305,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-02-d</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-03-a</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -1255,7 +1255,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-02-d';
+const APP_VERSION='2026-11-03-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -6419,7 +6419,16 @@ function kpiPick(o, keys){
 function kpiDate(v){
   if(v==null||v==='') return null;
   if(!isNaN(v)){ const n=+v; if(!n) return null; return new Date(n>1e12?n:n*1000); }
-  const d=new Date(v); return isNaN(d)?null:d;
+  let d=new Date(v); if(!isNaN(d)) return d;
+  // RepairDesk writes some times as "14:40:29 PM" — 24-hour clock with AM/PM after it
+  const m=/^(.*?\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AP]M)?\s*$/i.exec(String(v).trim());
+  if(m){
+    let h=parseInt(/(\d{1,2})$/.exec(m[1])[1],10); const pre=m[1].replace(/\d{1,2}$/,'');
+    if(m[4] && h<=12){ if(/pm/i.test(m[4]) && h<12) h+=12; if(/am/i.test(m[4]) && h===12) h=0; }
+    d=new Date(pre+String(h).padStart(2,'0')+':'+m[2]+':'+(m[3]||'00'));
+    if(!isNaN(d)) return d;
+  }
+  return null;
 }
 function kpiFmtDate(d){ return d?d.toLocaleDateString([], {weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'—'; }
 function kpiAgo(iso){
@@ -6589,9 +6598,14 @@ async function renderKpiPage(){
         <input type="date" id="kpi-goto" onchange="kpiGoToWeek(this.value)" title="Jump to the week containing this date" style="padding:7px 10px;font-size:13px">
         <button class="btn btn-gold btn-sm" onclick="kpiPullWeek(weekKey(new Date()))">⟳ Pull this week</button>
         <button class="btn btn-sm" onclick="kpiPullShown()">⟳ Pull all weeks shown</button>
+        <label class="btn btn-sm" style="cursor:pointer" title="RepairDesk → Reports → Batch Report → Export (any dates), then pick the file here">💳 Card fees file
+          <input type="file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="kpiFeesFromFile(this)"></label>
+        <label class="btn btn-sm" style="cursor:pointer" title="Payroll summary export (any dates) — it's spread over the right weeks">👷 Payroll file
+          <input type="file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="kpiPayrollFromFile(this)"></label>
+        <button class="btn btn-ghost btn-sm" onclick="kpiExport()">⬇ Export</button>
       </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
-  await loadKpiWeeks();
+  await Promise.all([loadKpiWeeks(), loadKpiUploads()]);
   drawKpi();
   if(kpiWeeks===null) return;
   // Keep this week and last week fresh without anyone pressing anything
@@ -6609,11 +6623,12 @@ function kpiCellsFor(k){
   const sales = t&&t.sales!=null ? t.sales : (w.new_sales!=null?+w.new_sales:null);
   const pay   = t&&t.pay!=null   ? t.pay   : (w.payments!=null?+w.payments:null);
   const tax   = t&&t.tax!=null   ? t.tax   : (w.sales_tax!=null?+w.sales_tax:null);
-  const fees  = w.cc_fees!=null?+w.cc_fees:null;
+  const imp   = kpiImported(k);
+  const fees  = imp&&imp.feeN ? imp.fees : (w.cc_fees!=null?+w.cc_fees:null);
   const net   = pay!=null ? pay-(tax||0)-(fees||0) : null;
-  const labor = w.labor!=null?+w.labor:null;
+  const labor = imp&&imp.laborDays ? imp.labor : (w.labor!=null?+w.labor:null);
   const after = net!=null && labor!=null ? net-labor : null;     // what's left once the team is paid
-  return {k, sales, pay, tax, fees, net, labor, after, at:(d&&d.pulledAt)||w.pulled_at||null,
+  return {k, sales, pay, tax, fees, net, labor, after, feeN:imp?imp.feeN:0, laborDays:imp?imp.laborDays:0, at:(d&&d.pulledAt)||w.pulled_at||null,
           err:d&&(d.invErr||d.payErr)?[d.invErr&&'invoices: '+d.invErr, d.payErr&&'payments: '+d.payErr].filter(Boolean).join(' · '):'',
           mismatch:d&&d.rdPayTotal!=null&&t&&t.pay!=null&&Math.abs(d.rdPayTotal-t.pay)>0.5};
 }
@@ -6668,9 +6683,9 @@ function drawKpi(){
         <td style="font-weight:600">${kpiNum(r.sales,r.k,'sales')}</td>
         <td>${kpiNum(r.pay,r.k,'pay')}</td>
         <td>${kpiNum(r.tax,r.k,'tax')}</td>
-        <td>${r.fees!=null?`<span class="clickable" style="color:var(--orange)" onclick="kpiEdit('${r.k}')">${money(r.fees)}</span>`:`<button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">+ Add</button>`}</td>
+        <td>${r.fees!=null?`<span class="clickable" style="color:var(--orange)" onclick="kpiEdit('${r.k}')">${money(r.fees)}</span>${r.feeN?`<div style="font-size:10.5px;color:var(--ink3)">${r.feeN} batch${r.feeN!==1?'es':''}</div>`:''}`:`<button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">+ Add</button>`}</td>
         <td style="font-weight:700">${kpiNum(r.net,r.k,'net','var(--green)')}</td>
-        <td>${r.labor!=null?`<span class="clickable" onclick="kpiEdit('${r.k}')">${money(r.labor)}</span>`:`<button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">+ Add</button>`}</td>
+        <td>${r.labor!=null?`<span class="clickable" onclick="kpiEdit('${r.k}')">${money(r.labor)}</span>${r.laborDays?`<div style="font-size:10.5px;color:${r.laborDays<6?'var(--orange)':'var(--ink3)'}">${r.laborDays<6?r.laborDays+' of 6 days':'payroll'}</div>`:''}`:`<button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">+ Add</button>`}</td>
         <td style="font-weight:700">${kpiNum(r.after,r.k,'after',r.after!=null&&r.after<0?'var(--red)':'')}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" title="Pull this week from RepairDesk" ${kpiBusy[r.k]?'disabled':''} onclick="kpiPullWeek('${r.k}')">⟳</button>
@@ -6696,16 +6711,16 @@ function drawKpi(){
         <tr><td style="font-weight:700;white-space:nowrap">New sales</td><td>Every RepairDesk <strong>invoice raised</strong> that week, at its full total (tax included). Voided invoices and estimates are left out.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">Payments</td><td>RepairDesk's <strong>transaction log</strong> — money actually taken that week, by card, cash or anything else. Refunds are taken off. Every page is read, and the total is checked against RepairDesk's own total for the same report.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">Sales tax</td><td>The tax on the invoices counted in New sales.</td></tr>
-        <tr><td style="font-weight:700;white-space:nowrap">Card fees</td><td>Typed in from the card batch report — RepairDesk doesn't give this out.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Card fees</td><td>The <strong>Processing Fee</strong> from RepairDesk's Batch Report. Export any date range there and press <strong>💳 Card fees file</strong>. Each batch goes to the day it was opened, and a batch already uploaded is never counted again — overlapping files are fine.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">Net</td><td>Payments − sales tax − card fees.</td></tr>
-        <tr><td style="font-weight:700;white-space:nowrap">Labor</td><td>Typed in each week from the payroll report — or pick the payroll file and it adds up gross pay plus the employer's payroll taxes. Not connected to payroll.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Labor</td><td>Gross pay + the employer's payroll taxes, from the payroll file (<strong>👷 Payroll file</strong>) — any date range. The total is spread evenly over the working days (Sunday–Friday) it covers. A newer file for the same days replaces them instead of adding. "3 of 6 days" means only part of that week has payroll so far.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">After labor</td><td>Net − labor.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">The week</td><td>Sunday 12:00am to Friday night. Anything rung up on a Saturday counts with that week, so nothing falls between weeks.</td></tr>
       </tbody></table>
       <div style="font-size:12px;color:var(--ink3);margin-top:10px">Sales and payments won't match each other exactly, and that's expected: a job invoiced this week may be paid next week, or was paid as a deposit last week.
         <span class="clickable" onclick="kpiTestTransactionLog()">Check the payments connection</span> ·
         <span class="clickable" onclick="kpiTestTax()">Check the invoices connection</span></div>
-    </div>`;
+    </div>`+kpiUploadsHtml();
 }
 
 // ---------- tap a number: every row behind it ----------
@@ -6792,11 +6807,8 @@ function kpiEdit(key){
   openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
     <h3 style="margin-bottom:2px">Week of ${weekLabel(key)}</h3>
     <div style="font-size:12px;color:var(--ink3);margin-bottom:14px">Card fees are always typed in. The others fill themselves when you pull — only change them to correct something.</div>
-    ${f('ke-fees','Card fees paid',c.fees,'From the card batch report')}
-    ${f('ke-labor','Labor',c.labor,'From the payroll report — gross pay plus employer payroll taxes')}
-    <label class="btn btn-ghost btn-sm" style="margin:-4px 0 12px;display:inline-block;cursor:pointer">📄 Fill labor from the payroll file (.csv)
-      <input type="file" accept=".csv,text/csv" style="display:none" onchange="kpiLaborFromFile(this)"></label>
-    <div id="ke-labor-how" style="font-size:11.5px;color:var(--ink3);margin:-6px 0 12px"></div>
+    ${f('ke-fees','Card fees paid',c.fees,c.feeN?'⚠️ This week comes from '+c.feeN+' uploaded batches — a number typed here is ignored while they\'re there':'Easier: 💳 Card fees file at the top fills every week from the Batch Report')}
+    ${f('ke-labor','Labor',c.labor,c.laborDays?'⚠️ This week comes from uploaded payroll ('+c.laborDays+' days) — a number typed here is ignored while it\'s there':'Easier: 👷 Payroll file at the top spreads payroll over the right weeks')}
     ${f('ke-pay','Payments taken',c.pay,'Pulling again will replace this')}
     ${f('ke-tax','Sales tax',c.tax,'Pulling again will replace this')}
     ${f('ke-sales','New sales',c.sales,'Pulling again will replace this')}
@@ -6837,32 +6849,354 @@ function kpiParseCsv(text){
   if(cell!==''||row.length){ row.push(cell); rows.push(row); }
   return rows.filter(r=>r.some(x=>String(x).trim()!==''));
 }
-function kpiLaborFromFile(input){
-  const file=input.files&&input.files[0]; if(!file) return;
-  const how=document.getElementById('ke-labor-how');
-  const rd=new FileReader();
-  rd.onload=()=>{
-    try{
-      const rows=kpiParseCsv(String(rd.result||''));
-      const head=(rows[0]||[]).map(h=>String(h).trim());
-      const gi=head.findIndex(h=>/^gross total$/i.test(h));
-      if(gi<0) throw new Error('no "Gross Total" column in this file');
-      const er=head.map((h,i)=>/\(ER\)\s*$/i.test(h)?i:-1).filter(i=>i>=0);
-      const body=rows.slice(1);
-      // The last row with no name is the report's own totals — use it; otherwise add the people up
-      const totals=body.find(r=>!String(r[0]||'').trim() && !String(r[1]||'').trim());
-      const people=body.filter(r=>r!==totals && (String(r[0]||'').trim()||String(r[1]||'').trim()));
-      const n=v=>parseFloat(String(v||'').replace(/[^0-9.\-]/g,''))||0;
-      const sumCol=i=>totals?n(totals[i]):people.reduce((a,r)=>a+n(r[i]),0);
-      const gross=sumCol(gi), taxes=er.reduce((a,i)=>a+sumCol(i),0);
-      const total=Math.round((gross+taxes)*100)/100;
-      document.getElementById('ke-labor').value=total.toFixed(2);
-      const paid=people.filter(r=>n(r[gi])>0).length;
-      how.innerHTML='From <strong>'+esc(file.name)+'</strong>: gross pay '+money(gross)+' + employer taxes '+money(taxes)+' = <strong>'+money(total)+'</strong> · '+paid+' people paid. Check it\'s the right week, then Save.';
-    }catch(e){ how.innerHTML='<span style="color:var(--red)">Couldn\'t read that file: '+esc(e.message||String(e))+'. Type the number in instead.</span>'; }
-    input.value='';
+
+// ---------- card fees from RepairDesk's Batch Report export ----------
+// RepairDesk → Reports → Batch Report → Export. One row per card batch with its open
+// date and processing fee; every batch is added to the week it was opened in.
+function kpiLoadSheetJs(){
+  if(window.XLSX) return Promise.resolve();
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=()=>res(); s.onerror=()=>rej(new Error('could not load the Excel reader — export as CSV instead'));
+    document.head.appendChild(s);
+  });
+}
+async function kpiReadRows(file){
+  if(/\.xlsx?$/i.test(file.name)){
+    await kpiLoadSheetJs();
+    const wb=XLSX.read(await file.arrayBuffer(), {type:'array', cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, {header:1, raw:false, defval:''});
+  }
+  return kpiParseCsv(await file.text());
+}
+
+// ========================================================================
+// UPLOADED FILES — payroll and card fees, split by their own dates, never counted twice
+// ========================================================================
+// Whatever week is open on screen doesn't matter: every file is read for the dates it
+// covers and the money is put on the right days.
+//   Card fees (Batch Report)  one row per batch, keyed by batch + opening time. Uploading
+//                             the same or an overlapping report again finds the same rows.
+//   Payroll                   one row per working day. The file's total is spread over the
+//                             working days (Sunday–Friday) of its period; a newer file that
+//                             covers the same days replaces them instead of adding to them.
+// Weekly figures are then just the days in that week added up. Each upload is listed on
+// the KPI page and can be deleted, which takes its money back out.
+let kpiUploads=null;        // null = tables not set up yet (add-kpi-uploads.sql)
+let kpiDaily=[];
+let _kpiImpIdx={};
+let _kpiPending=null;       // what the preview is about to save
+const _p2=n=>String(n).padStart(2,'0');
+function kpiDayIso(d){ return d.getFullYear()+'-'+_p2(d.getMonth()+1)+'-'+_p2(d.getDate()); }
+function kpiDayDate(iso){ return new Date(iso+'T12:00:00'); }
+
+async function loadKpiUploads(){
+  try{
+    const ups=await sbList('kpi_uploads?select=id,kind,file_name,file_hash,period_start,period_end,total,rows_count,uploaded_by,created_at&order=created_at.desc&limit=500',2);
+    let all=[];
+    for(let off=0; off<40000; off+=1000){
+      const r=await sbList('kpi_daily?select=kind,entry_key,day,amount,upload_id&order=day.asc&limit=1000&offset='+off,2);
+      all=all.concat(r); if(r.length<1000) break;
+    }
+    kpiUploads=ups; kpiDaily=all;
+  }catch(e){ kpiUploads=null; kpiDaily=[]; }
+  _kpiImpIdx={};
+  kpiDaily.forEach(r=>{
+    const k=weekKey(kpiDayDate(r.day));
+    const w=_kpiImpIdx[k]||(_kpiImpIdx[k]={fees:0,feeN:0,labor:0,laborDays:0});
+    if(r.kind==='fees'){ w.fees+=+r.amount||0; w.feeN++; }
+    if(r.kind==='labor'){ w.labor+=+r.amount||0; w.laborDays++; }
+  });
+}
+function kpiImported(k){ return _kpiImpIdx[k]||null; }
+// Working days the shop counts: Sunday to Friday
+function kpiWorkdays(startIso, endIso){
+  const out=[], d=kpiDayDate(startIso), e=kpiDayDate(endIso);
+  for(let i=0; d<=e && i<1200; i++){ if(d.getDay()!==6) out.push(kpiDayIso(d)); d.setDate(d.getDate()+1); }
+  if(!out.length){ const x=kpiDayDate(startIso); for(let i=0; x<=e && i<1200; i++){ out.push(kpiDayIso(x)); x.setDate(x.getDate()+1); } }
+  return out;
+}
+async function kpiFileHash(text){
+  try{
+    const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){ let h=0; for(let i=0;i<text.length;i++){ h=(h*31+text.charCodeAt(i))|0; } return 'h'+h+'-'+text.length; }
+}
+function kpiNeedTables(){
+  if(kpiUploads!==null) return false;
+  alert('One Supabase step first: run add-kpi-uploads.sql in the SQL Editor, then reload this page.');
+  return true;
+}
+// Any date range written in the file name — "…_09-01-25-10-31-26.csv" → Sep 1 2025 to Oct 31 2026
+function kpiPeriodFromName(name){
+  const m=/(\d{1,2})[-_.](\d{1,2})[-_.](\d{2,4})\D+(\d{1,2})[-_.](\d{1,2})[-_.](\d{2,4})/.exec(String(name||''));
+  if(!m) return null;
+  const y=v=>{ v=+v; return v<100?2000+v:v; };
+  const a=new Date(y(m[3]),+m[1]-1,+m[2]), b=new Date(y(m[6]),+m[4]-1,+m[5]);
+  if(isNaN(a)||isNaN(b)||a>b) return null;
+  return {start:kpiDayIso(a), end:kpiDayIso(b)};
+}
+function kpiUploadName(id){ const u=(kpiUploads||[]).find(x=>x.id===id); return u?u.file_name:'an earlier upload'; }
+
+// ---------- payroll ----------
+async function kpiPayrollFromFile(input){
+  const file=input.files&&input.files[0]; input.value='';
+  if(!file || kpiNeedTables()) return;
+  try{
+    const rows=await kpiReadRows(file);
+    const hi=rows.findIndex(r=>r.some(h=>/^gross( total| pay)?$/i.test(String(h).trim())));
+    if(hi<0) throw new Error('no "Gross Total" column — is this the payroll summary?');
+    const head=rows[hi].map(h=>String(h).trim());
+    const col=re=>head.findIndex(h=>re.test(h));
+    const gi=col(/^gross( total| pay)?$/i);
+    const er=head.map((h,i)=>/\(ER\)\s*$/i.test(h)||/^employer/i.test(h)?i:-1).filter(i=>i>=0);
+    const si=col(/period\s*(start|begin)|start\s*date|from/i), ei=col(/period\s*end|end\s*date|^to$/i);
+    const ln=col(/last\s*name/i), fn=col(/first\s*name/i), nm=col(/^(employee|name)$/i);
+    const n=v=>parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''))||0;
+    const body=rows.slice(hi+1);
+    const nameOf=r=>nm>=0?String(r[nm]||'').trim():[fn>=0?r[fn]:'', ln>=0?r[ln]:''].map(x=>String(x||'').trim()).filter(Boolean).join(' ');
+    const people=body.filter(r=>nameOf(r) && !/total/i.test(nameOf(r)))
+      .map(r=>({name:nameOf(r), gross:n(r[gi]), taxes:er.reduce((a,i)=>a+n(r[i]),0),
+                start:si>=0?kpiDate(r[si]):null, end:ei>=0?kpiDate(r[ei]):null}))
+      .filter(p=>p.gross||p.taxes);
+    if(!people.length) throw new Error('no one with pay found in the file');
+    const perRow=people.every(p=>p.start&&p.end);
+    const text=rows.map(r=>r.join(',')).join('\n');
+    _kpiPending={kind:'labor', file:file.name, hash:await kpiFileHash(text), people, perRow,
+                 period:perRow?null:(kpiPeriodFromName(file.name)||null)};
+    kpiPayrollPreview();
+  }catch(e){ toast('Couldn\'t read that file: '+(e.message||e)); }
+}
+// Works out what each day gets — from the rows' own pay periods, or the one period for the file
+function kpiPayrollDays(p){
+  const days={};
+  const spread=(s,e,amt)=>{
+    const ws=kpiWorkdays(s,e), each=Math.floor(amt*100/ws.length)/100;
+    ws.forEach((d,i)=>{ const part=i===ws.length-1 ? Math.round((amt-each*(ws.length-1))*100)/100 : each; days[d]=Math.round(((days[d]||0)+part)*100)/100; });
   };
-  rd.readAsText(file);
+  if(p.perRow) p.people.forEach(x=>spread(kpiDayIso(x.start),kpiDayIso(x.end),x.gross+x.taxes));
+  else if(p.period){ const t=p.people.reduce((a,x)=>a+x.gross+x.taxes,0); spread(p.period.start,p.period.end,t); }
+  return days;
+}
+function kpiPayrollPreview(){
+  const p=_kpiPending; if(!p) return;
+  const gross=p.people.reduce((a,x)=>a+x.gross,0), taxes=p.people.reduce((a,x)=>a+x.taxes,0);
+  const days=kpiPayrollDays(p), dayList=Object.keys(days).sort();
+  const byWeek={}; dayList.forEach(d=>{ const k=weekKey(kpiDayDate(d)); const w=byWeek[k]||(byWeek[k]={amt:0,days:0}); w.amt+=days[d]; w.days++; });
+  // Days already covered by an earlier payroll file — these get replaced, not added to
+  const have={}; kpiDaily.filter(r=>r.kind==='labor').forEach(r=>{ have[r.day]=r; });
+  const replaced=dayList.filter(d=>have[d]);
+  const fromFiles=[...new Set(replaced.map(d=>have[d].upload_id))].map(kpiUploadName);
+  const same=(kpiUploads||[]).find(u=>u.kind==='labor' && u.file_hash===p.hash);
+  const weeks=Object.keys(byWeek).sort().reverse();
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:2px">Payroll — ${esc(p.file)}</h3>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">${p.people.length} people · gross pay ${money(gross)} + employer taxes ${money(taxes)} = <strong style="color:var(--ink)">${money(gross+taxes)}</strong></div>
+    ${same?`<div style="background:var(--orange-soft);border-radius:8px;padding:9px 11px;font-size:12.5px;margin-bottom:10px">This exact file was already uploaded on ${new Date(same.created_at).toLocaleDateString()}. Saving again changes nothing — nothing is counted twice.</div>`:''}
+    ${p.perRow?`<div style="font-size:12.5px;margin-bottom:10px">Each person's pay period is read from the file.</div>`:`
+    <div style="font-size:12.5px;margin-bottom:6px">${p.period?'Pay period read from the file name — check it:':'<strong style="color:var(--orange)">Which dates does this payroll cover?</strong>'}</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <input type="date" id="kp-from" value="${p.period?p.period.start:''}" onchange="kpiPayrollPeriod()" style="padding:7px">
+      <span>to</span>
+      <input type="date" id="kp-to" value="${p.period?p.period.end:''}" onchange="kpiPayrollPeriod()" style="padding:7px">
+    </div>`}
+    ${dayList.length?`
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:6px">Spread over ${dayList.length} working days (Sunday–Friday) — about ${money((gross+taxes)/dayList.length)} a day — into ${weeks.length} week${weeks.length!==1?'s':''}.
+      ${replaced.length?`<br><strong style="color:var(--orange)">${replaced.length} of these days already have payroll</strong> from ${esc(fromFiles.join(', '))} — this file replaces them. Nothing is added twice.`:''}</div>
+    <div style="max-height:40vh;overflow:auto"><table style="font-size:13px"><thead><tr><th>Week</th><th>Days</th><th style="text-align:right">Labor</th><th style="text-align:right">Before</th></tr></thead><tbody>
+      ${weeks.map(k=>{ const imp=kpiImported(k), cur=imp&&imp.laborDays?imp.labor:(kpiRow(k)||{}).labor;
+        return `<tr><td style="white-space:nowrap;font-weight:600">${weekLabel(k)}</td><td>${byWeek[k].days}${byWeek[k].days<6?' <span style="color:var(--ink3);font-size:11px">(part)</span>':''}</td>
+          <td style="text-align:right;font-weight:700">${money(byWeek[k].amt)}</td><td style="text-align:right;color:var(--ink3)">${cur!=null?money(+cur):'—'}</td></tr>`; }).join('')}
+    </tbody></table></div>`:'<div class="empty">Pick the dates this payroll covers.</div>'}
+    <div id="kp-msg" style="font-size:12.5px;min-height:16px;margin-top:8px"></div>
+    <button class="btn btn-gold btn-block" style="margin-top:6px" ${dayList.length?'':'disabled'} onclick="kpiSaveUpload()">Save payroll</button>`);
+  const inner=document.getElementById('modal-inner'); if(inner) inner.style.maxWidth='720px';
+}
+function kpiPayrollPeriod(){
+  const a=document.getElementById('kp-from').value, b=document.getElementById('kp-to').value;
+  if(!_kpiPending) return;
+  _kpiPending.period=(a&&b&&a<=b)?{start:a,end:b}:null;
+  kpiPayrollPreview();
+}
+
+// ---------- card fees (RepairDesk → Reports → Batch Report → Export) ----------
+async function kpiFeesFromFile(input){
+  const file=input.files&&input.files[0]; input.value='';
+  if(!file || kpiNeedTables()) return;
+  try{
+    const rows=await kpiReadRows(file);
+    const hi=rows.findIndex(r=>r.some(h=>/processing\s*fee/i.test(String(h))));
+    if(hi<0) throw new Error('no "Processing Fee" column — is this the Batch Report export?');
+    const head=rows[hi].map(h=>String(h).trim());
+    const col=re=>head.findIndex(h=>re.test(h));
+    const fi=col(/processing\s*fee/i), oi=col(/open\s*date/i), ci=col(/close\s*date/i), ai=col(/captured/i), bi=col(/batch/i);
+    const n=v=>parseFloat(String(v==null?'':v).replace(/[^0-9.\-]/g,''))||0;
+    const batches=[]; let skipped=0;
+    rows.slice(hi+1).forEach(r=>{
+      if(r.some(x=>/total/i.test(String(x)))) return;          // page / grand total lines
+      const d=kpiDate(r[oi>=0?oi:ci]) || kpiDate(r[ci]);
+      if(!d){ if(r.some(x=>String(x).trim())) skipped++; return; }
+      const id=String(bi>=0?r[bi]:'').trim();
+      const stamp=kpiDayIso(d)+'T'+_p2(d.getHours())+':'+_p2(d.getMinutes());
+      batches.push({key:'batch:'+id+'|'+stamp, day:kpiDayIso(d), fee:n(r[fi]), captured:ai>=0?n(r[ai]):0, id});
+    });
+    if(!batches.length) throw new Error('no batches with a date found in the file');
+    const text=rows.map(r=>r.join(',')).join('\n');
+    _kpiPending={kind:'fees', file:file.name, hash:await kpiFileHash(text), batches, skipped};
+    kpiFeesPreview();
+  }catch(e){ toast('Couldn\'t read that file: '+(e.message||e)); }
+}
+function kpiFeesPreview(){
+  const p=_kpiPending;
+  const have=new Set(kpiDaily.filter(r=>r.kind==='fees').map(r=>r.entry_key));
+  const fresh=p.batches.filter(b=>!have.has(b.key)), already=p.batches.length-fresh.length;
+  const byWeek={};
+  p.batches.forEach(b=>{ const k=weekKey(kpiDayDate(b.day)); const w=byWeek[k]||(byWeek[k]={fee:0,captured:0,n:0,isNew:0}); w.fee+=b.fee; w.captured+=b.captured; w.n++; if(!have.has(b.key)) w.isNew++; });
+  const weeks=Object.keys(byWeek).sort().reverse();
+  const days=p.batches.map(b=>b.day).sort();
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:2px">Card fees — ${esc(p.file)}</h3>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:10px">${p.batches.length} batches from ${kpiDayDate(days[0]).toLocaleDateString()} to ${kpiDayDate(days[days.length-1]).toLocaleDateString()} · ${money(p.batches.reduce((a,b)=>a+b.fee,0))} in processing fees${p.skipped?' · '+p.skipped+' rows without a date skipped':''}</div>
+    <div style="font-size:12.5px;margin-bottom:10px"><strong>${fresh.length} new</strong>${already?` · ${already} already uploaded before — kept once, not added again`:''}</div>
+    <div style="max-height:44vh;overflow:auto"><table style="font-size:13px"><thead><tr><th>Week</th><th>Batches</th><th style="text-align:right">Card payments</th><th style="text-align:right">Processing fees</th></tr></thead><tbody>
+      ${weeks.map(k=>{ const w=byWeek[k];
+        return `<tr><td style="white-space:nowrap;font-weight:600">${weekLabel(k)}</td><td>${w.n}${w.isNew<w.n?` <span style="color:var(--ink3);font-size:11px">(${w.n-w.isNew} already in)</span>`:''}</td>
+          <td style="text-align:right">${money(w.captured)}</td><td style="text-align:right;font-weight:700;color:var(--orange)">${money(w.fee)}</td></tr>`; }).join('')}
+    </tbody></table></div>
+    <div id="kp-msg" style="font-size:12.5px;min-height:16px;margin-top:8px"></div>
+    <button class="btn btn-gold btn-block" style="margin-top:6px" onclick="kpiSaveUpload()">${fresh.length?'Save card fees':'Nothing new — save anyway'}</button>`);
+  const inner=document.getElementById('modal-inner'); if(inner) inner.style.maxWidth='720px';
+}
+
+// ---------- saving an upload ----------
+async function kpiSaveUpload(){
+  const p=_kpiPending; if(!p) return;
+  const msg=document.getElementById('kp-msg');
+  const say=(t,bad)=>{ if(msg){ msg.style.color=bad?'var(--red)':'var(--ink3)'; msg.textContent=t; } };
+  let entries, period, total, detail, count;
+  if(p.kind==='labor'){
+    const days=kpiPayrollDays(p), list=Object.keys(days).sort();
+    if(!list.length){ say('Pick the dates this payroll covers first.',true); return; }
+    entries=list.map(d=>({kind:'labor', entry_key:'day:'+d, day:d, amount:Math.round(days[d]*100)/100}));
+    period={start:list[0], end:list[list.length-1]};
+    total=p.people.reduce((a,x)=>a+x.gross+x.taxes,0);
+    detail={perRow:!!p.perRow, period:p.period||null, people:p.people.map(x=>({name:x.name, gross:x.gross, taxes:Math.round(x.taxes*100)/100,
+      start:x.start?kpiDayIso(x.start):null, end:x.end?kpiDayIso(x.end):null}))};
+    count=p.people.length;
+  } else {
+    // One row per batch even if the file lists it twice
+    const seen={}; p.batches.forEach(b=>{ seen[b.key]=b; });
+    const bs=Object.values(seen);
+    entries=bs.map(b=>({kind:'fees', entry_key:b.key, day:b.day, amount:Math.round(b.fee*100)/100}));
+    const days=bs.map(b=>b.day).sort();
+    period={start:days[0], end:days[days.length-1]};
+    total=bs.reduce((a,b)=>a+b.fee,0);
+    detail={batches:bs.map(b=>({key:b.key, id:b.id, day:b.day, fee:b.fee, captured:b.captured}))};
+    count=bs.length;
+  }
+  const same=(kpiUploads||[]).find(u=>u.kind===p.kind && u.file_hash===p.hash && kpiDaily.some(r=>r.upload_id===u.id));
+  const have=new Set(kpiDaily.filter(r=>r.kind===p.kind).map(r=>r.entry_key+'='+(+r.amount).toFixed(2)));
+  if(same || entries.every(e=>have.has(e.entry_key+'='+e.amount.toFixed(2)))){
+    _kpiPending=null; closeModal(); toast('Already uploaded — nothing new, nothing changed'); return;
+  }
+  say('Saving…');
+  const r=await sb('kpi_uploads',{method:'POST',headers:{'Prefer':'return=representation'},
+    body:JSON.stringify({kind:p.kind, file_name:p.file, file_hash:p.hash, period_start:period.start, period_end:period.end,
+      total:Math.round(total*100)/100, rows_count:count, detail, uploaded_by:meName()})});
+  let up=null; try{ const j=await r.json(); up=Array.isArray(j)?j[0]:j; }catch(e){}
+  if(!r.ok || !up || up.id==null){ say('Could not save the upload — run add-kpi-uploads.sql in Supabase.',true); return; }
+  entries.forEach(e=>e.upload_id=up.id);
+  for(let i=0;i<entries.length;i+=500){
+    const w=await sb('kpi_daily?on_conflict=kind,entry_key',{method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(entries.slice(i,i+500))});
+    if(!w.ok){ say('Saved part of it, then failed — press Save again (nothing will double).',true); return; }
+  }
+  _kpiPending=null; closeModal();
+  toast('✅ '+(p.kind==='labor'?'Payroll':'Card fees')+' saved — '+period.start+' to '+period.end);
+  await loadKpiUploads(); drawKpi();
+}
+async function kpiDeleteUpload(id){
+  const u=(kpiUploads||[]).find(x=>x.id===id); if(!u) return;
+  const left=kpiDaily.filter(r=>r.upload_id===id).length;
+  if(!confirm('Delete "'+(u.file_name||'this upload')+'"?\n\nThe '+(u.kind==='labor'?'payroll':'card fees')+' it still adds ('+left+' '+(u.kind==='labor'?'days':'batches')+') come out of the weeks. Days another file replaced are not affected.')) return;
+  const r=await sb('kpi_uploads?id=eq.'+id,{method:'DELETE'});
+  if(!r.ok){ toast('Could not delete'); return; }
+  await loadKpiUploads();
+  const back=await kpiRefill(u.kind);
+  toast('Deleted'+(back?' — '+back+' '+(u.kind==='labor'?'days':'batches')+' went back to an older file':''));
+  await loadKpiUploads(); drawKpi();
+}
+// After a delete, any day or batch an older upload also had goes back to that older
+// upload's figure — newest remaining file first, so the newest still wins.
+async function kpiRefill(kind){
+  try{
+    const ups=await sbList('kpi_uploads?kind=eq.'+kind+'&select=id,period_start,period_end,detail,created_at&order=created_at.desc&limit=500',2);
+    const have=new Set(kpiDaily.filter(r=>r.kind===kind).map(r=>r.entry_key));
+    const add=[];
+    ups.forEach(u=>{
+      const d=u.detail||{};
+      let entries=[];
+      if(kind==='fees') entries=(d.batches||[]).filter(b=>b.key).map(b=>({entry_key:b.key, day:b.day, amount:Math.round(b.fee*100)/100}));
+      else{
+        const people=(d.people||[]).map(x=>({...x, start:x.start?kpiDayDate(x.start):null, end:x.end?kpiDayDate(x.end):null}));
+        const days=kpiPayrollDays({perRow:!!d.perRow, people, period:d.period||(u.period_start?{start:u.period_start,end:u.period_end}:null)});
+        entries=Object.keys(days).map(day=>({entry_key:'day:'+day, day, amount:days[day]}));
+      }
+      entries.forEach(e=>{ if(!have.has(e.entry_key)){ have.add(e.entry_key); add.push({kind, ...e, upload_id:u.id}); } });
+    });
+    for(let i=0;i<add.length;i+=500)
+      await sb('kpi_daily?on_conflict=kind,entry_key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(add.slice(i,i+500))});
+    return add.length;
+  }catch(e){ return 0; }
+}
+function kpiUploadsHtml(){
+  if(kpiUploads===null) return `<div class="card" style="font-size:13px"><div class="card-label">Uploaded files</div>
+    To upload payroll and card-fee files, run <strong>add-kpi-uploads.sql</strong> in Supabase once, then reload.</div>`;
+  if(!kpiUploads.length) return `<div class="card" style="font-size:13px"><div class="card-label">Uploaded files</div>
+    <div style="color:var(--ink3)">Nothing uploaded yet. Use <strong>👷 Payroll file</strong> or <strong>💳 Card fees file</strong> above — any date range, it sorts itself into the right weeks.</div></div>`;
+  return `<div class="card"><div class="card-label">Uploaded files</div>
+    <div style="overflow-x:auto"><table style="font-size:12.5px"><thead><tr><th>What</th><th>File</th><th>Covers</th><th style="text-align:right">Total</th><th>Still counted</th><th>Uploaded</th><th></th></tr></thead><tbody>
+    ${kpiUploads.map(u=>{ const left=kpiDaily.filter(r=>r.upload_id===u.id);
+      const unit=u.kind==='labor'?'days':'batches';
+      const leftAmt=left.reduce((a,r)=>a+(+r.amount||0),0);
+      return `<tr${left.length?'':' style="opacity:.5"'}><td style="white-space:nowrap">${u.kind==='labor'?'👷 Payroll':'💳 Card fees'}</td>
+        <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(u.file_name||'')}">${esc(u.file_name||'—')}</td>
+        <td style="white-space:nowrap">${u.period_start?kpiDayDate(u.period_start).toLocaleDateString():''} – ${u.period_end?kpiDayDate(u.period_end).toLocaleDateString():''}</td>
+        <td style="text-align:right">${money(+u.total||0)}</td>
+        <td>${left.length?left.length+' '+unit+' · '+money(leftAmt):'<span style="color:var(--ink3)">none — replaced by a newer file</span>'}</td>
+        <td style="white-space:nowrap">${new Date(u.created_at).toLocaleDateString()}${u.uploaded_by?' · '+esc(u.uploaded_by):''}</td>
+        <td><button class="btn btn-ghost btn-sm" title="Delete this upload" onclick="kpiDeleteUpload(${u.id})">🗑️</button></td></tr>`; }).join('')}
+    </tbody></table></div></div>`;
+}
+
+// Saves a CSV file (opens in Excel). The \uFEFF at the start keeps Excel from garbling
+// characters like é or ’.
+function downloadCsv(csv, name){
+  try{
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=name||'export.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }catch(e){ toast('Could not download: '+(e.message||e)); }
+}
+// ---------- export what's on screen ----------
+function kpiExport(){
+  const keys=(window._kpiRowKeys||[]).slice().sort();
+  if(!keys.length){ toast('Nothing to export'); return; }
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const num=v=>v==null?'':(Math.round(v*100)/100).toFixed(2);
+  const lines=['Week starting,Week,New sales,Payments,Sales tax,Card fees,Net,Labor,After labor,Invoices,Payments count,Pulled'];
+  keys.forEach(k=>{
+    const c=kpiCellsFor(k), w=kpiRow(k)||{}, d=kpiDetail[k], t=d?kpiTotals(d):null;
+    lines.push([k, weekLabel(k), num(c.sales), num(c.pay), num(c.tax), num(c.fees), num(c.net), num(c.labor), num(c.after),
+      t?t.invCount:(w.invoice_count??''), t?t.payCount:(w.payment_count??''), c.at?new Date(c.at).toLocaleString():''].map(q).join(','));
+  });
+  const sum=f=>keys.reduce((a,k)=>a+(kpiCellsFor(k)[f]||0),0);
+  lines.push(['Total','', num(sum('sales')), num(sum('pay')), num(sum('tax')), num(sum('fees')), num(sum('net')), num(sum('labor')), num(sum('after')),'','',''].map(q).join(','));
+  downloadCsv(lines.join('\n'), 'glint-weekly-kpis-'+keys[0]+'-to-'+keys[keys.length-1]+'.csv');
 }
 
 // ---------- jump to any week ----------
