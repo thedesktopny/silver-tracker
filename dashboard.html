@@ -305,7 +305,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-03-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-04-a</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -1026,7 +1026,10 @@ if(!me && sessionStorage.getItem('glint_admin')==='1') me={name:'Owner', level:'
 function meName(){ return (me && !me.viaPassword && me.name) || 'Office'; }
 function myLevel(){ return (me && me.level) || 'staff'; }
 function isOwner(){ return myLevel()==='owner'; }
-function canSeeMoney(){ return isOwner(); }
+// Repair costs can be opened up per person (Workers → "Repair costs") so someone who
+// bills repairs onto invoices sees them, without seeing KPIs or any other money.
+let _moneyScope=null;
+function canSeeMoney(){ return isOwner() || (_moneyScope==='repairs' && !!(me && me.repair_costs)); }
 const MANAGER_HIDDEN=['kpi','inventory','costs','ask','workers','settings'];
 const STAFF_PAGES=['orders','order','item','pipeline','inbox','priority','hold','boxes','photofind'];
 function canOpen(route){
@@ -1093,7 +1096,7 @@ async function adminLogin(){
   if(!w || String(w.pin||'')!==pass){ err.textContent='Wrong PIN'; return; }
   const level=workerAccess(w);
   if(level==='none'){ err.textContent='You don\'t have Control Room access — ask the owner'; return; }
-  startSession({name:w.name, level, can_print:!!w.can_print});
+  startSession({name:w.name, level, can_print:!!w.can_print, repair_costs:!!w.see_repair_costs});
 }
 function doLogout(){ sessionStorage.removeItem('glint_admin'); sessionStorage.removeItem('glint_user'); location.reload(); }
 // Access changed in Workers takes effect the next time the page loads
@@ -1103,8 +1106,8 @@ function refreshMe(){
   if(!w) return;
   const level=workerAccess(w);
   if(level==='none'){ doLogout(); return; }
-  if(level!==me.level || !!w.can_print!==!!me.can_print){
-    me.level=level; me.can_print=!!w.can_print;
+  if(level!==me.level || !!w.can_print!==!!me.can_print || !!w.see_repair_costs!==!!me.repair_costs){
+    me.level=level; me.can_print=!!w.can_print; me.repair_costs=!!w.see_repair_costs;
     sessionStorage.setItem('glint_user', JSON.stringify(me));
   }
 }
@@ -1255,7 +1258,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-03-a';
+const APP_VERSION='2026-11-04-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -7632,6 +7635,10 @@ async function renderRepairsPage(){
   drawRepairs();
 }
 function drawRepairs(){
+  _moneyScope='repairs';
+  try{ return _drawRepairsInner(); } finally{ _moneyScope=null; }
+}
+function _drawRepairsInner(){
   const el=document.getElementById('rp-body'); if(!el) return;
   if(repairRows===null){
     el.innerHTML='<div class="card"><div class="empty">The repairs table is not set up yet — run <strong>add-repairs.sql</strong> in Supabase.</div></div>';
@@ -9110,8 +9117,8 @@ function renderWorkersPage(){
     </div>
     <div class="card">
       <div class="card-label">All Workers</div>
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6">Only you set or change PINs. Give each person theirs privately — it works here and on the scanner.<br><strong>Owner</strong> sees everything · <strong>Manager</strong> everything except money (KPIs, inventory, costs, prices) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
-      <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th>Control Room</th><th style="text-align:center">Print Labels</th><th></th></tr></thead><tbody></tbody></table></div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6">Only you set or change PINs. Give each person theirs privately — it works here and on the scanner.<br><strong>Owner</strong> sees everything · <strong>Manager</strong> everything except money (KPIs, inventory, costs, prices — tick <em>Repair costs</em> to show repair prices only) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
+      <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th>Control Room</th><th style="text-align:center">Print Labels</th><th style="text-align:center" title="See repair prices on the Repairs page, without seeing KPIs or other money">Repair costs</th><th></th></tr></thead><tbody></tbody></table></div>
     </div>
   `;
   loadWorkersAndRoles();
@@ -9189,11 +9196,12 @@ function renderWorkersTable(){
     <td>${esc((w.roles||[]).join(', ')||'—')}</td>
     <td><select onchange="setWorkerAccess(${w.id},this.value)" style="width:auto;padding:5px 8px;font-size:12.5px">${accessOptionsHtml(workerAccess(w))}</select></td>
     <td style="text-align:center"><input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.can_print?'checked':''} onchange="togglePrint(${w.id},this.checked)"></td>
+    <td style="text-align:center">${workerAccess(w)==='owner'?'<span style="color:var(--ink3);font-size:11px">always</span>':`<input type="checkbox" style="width:20px;height:20px;accent-color:var(--ink);cursor:pointer" ${w.see_repair_costs?'checked':''} onchange="toggleRepairCosts(${w.id},this.checked)">`}</td>
     <td style="text-align:right;white-space:nowrap">
       <button class="btn btn-gold btn-sm" onclick="navigate('${h('worker',w.name).replace(/'/g,"\\'")}')">📊 Report</button>
       <button class="btn btn-ghost btn-sm" onclick="openEditWorker(${w.id})">Edit</button>
       <button class="btn btn-danger btn-sm" onclick="deleteWorker(${w.id},'${jsstr(w.name)}')">Remove</button>
-    </td></tr>`).join(''):'<tr><td colspan="6" class="empty">No workers yet</td></tr>';
+    </td></tr>`).join(''):'<tr><td colspan="7" class="empty">No workers yet</td></tr>';
 }
 function accessOptionsHtml(sel){
   return ['owner','manager','staff','none'].map(v=>`<option value="${v}"${v===sel?' selected':''}>${ACCESS_LABEL[v]}</option>`).join('');
@@ -9204,6 +9212,12 @@ async function setWorkerAccess(id, level){
   const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({access:level})});
   if(r.ok){ toast('✅ '+(w?w.name:'')+' → '+ACCESS_LABEL[level]); if(w) w.access=level; }
   else { toast('Could not save — run add-users.sql in Supabase first'); renderWorkersTable(); }
+}
+async function toggleRepairCosts(id, on){
+  const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({see_repair_costs:on})});
+  const w=workers.find(x=>x.id===id);
+  if(r.ok){ toast(on?'✅ '+(w?w.name:'')+' can see repair costs (next sign-in)':'Repair costs hidden for '+(w?w.name:'')); if(w) w.see_repair_costs=on; }
+  else { toast('Could not save — run add-repair-costs-access.sql in Supabase first'); renderWorkersTable(); }
 }
 async function togglePrint(id, on){
   const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({can_print:on})});
