@@ -305,7 +305,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-04-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-11-a</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -1129,6 +1129,7 @@ if(sessionStorage.getItem('glint_admin')==='1'){
 function renderSidebar(){
   const route=currentRoute();
   try{ _attnCount = (typeof attentionCount==='function' && scans.length) ? attentionCount() : 0; }catch(e){ _attnCount=0; }
+  try{ _attnCount += priceOpenTickets().length; }catch(e){}
   document.getElementById('sidebar-nav').innerHTML=NAV_ITEMS.filter(n=>canOpen(n.route)).map(n=>
     `<a class="snav-link ${route===n.route?'active':''}" href="${h(n.route)}" onclick="closeNav()"><span class="snav-icon">${n.icon}</span>${n.label}${n.route==='attention'&&_attnCount?`<span style="margin-left:auto;background:var(--red);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px">${_attnCount}</span>`:''}${n.route==='inbox'?`<span id="inbox-badge" style="margin-left:auto;background:var(--gold);color:#fff;font-size:11px;font-weight:800;border-radius:11px;min-width:20px;height:20px;display:${notifUnread?'inline-flex':'none'};align-items:center;justify-content:center;padding:0 6px">${notifUnread||''}</span>`:''}</a>`
   ).join('');
@@ -1258,7 +1259,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-04-a';
+const APP_VERSION='2026-11-11-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1473,9 +1474,12 @@ async function bootstrap(){
 
   // RepairDesk changes after a ticket is created (added services, new notes), so pull
   // the ticket list again periodically rather than trusting the copy from page load.
+  // Older tickets stay loaded (search keeps working); prices are checked after each pull.
   setInterval(async ()=>{
-    try{ allTickets=[]; await ensureTicketsLoaded(); }catch(e){}
+    try{ await refreshRecentTickets(); }catch(e){}
+    try{ await priceCheck(); }catch(e){}
   }, 15*60*1000);
+  setTimeout(()=>{ priceCheck(); }, 8000);
 
   // Keep courier status fresh without anyone pressing a button
   setTimeout(()=>{ if(typeof scanovSync==='function') scanovSync(true); }, 3000);
@@ -3802,6 +3806,217 @@ async function ensureTicketsLoaded(){
   }catch(e){}
 }
 
+// ========================================================================
+// AGREED PRICES — a safety net for RepairDesk resetting custom prices
+// ========================================================================
+// RepairDesk sometimes puts a ticket's custom (agreed) prices back to the standard ones
+// without warning; nobody notices until the invoice is wrong, and then someone has to
+// dig out what the customer was quoted. Control Room can't stop it, but it can remember:
+//   1. the first time it sees a ticket line, that price + discount is saved as AGREED
+//   2. every ticket refresh compares RepairDesk's price with the agreed one; a difference
+//      is flagged on Needs Attention with the agreed price next to the new one
+//   3. "Accept" makes the new price the agreed one (a genuine change); fixing it in
+//      RepairDesk closes the flag by itself on the next check
+// Lines are matched by RepairDesk's line id. If RepairDesk replaces a line (new id, same
+// item name), the agreed price carries over to the new line, so that's caught too.
+// Only recent tickets are watched (last 180 days) — the ones still being invoiced.
+const PRICE_WATCH_DAYS=180;
+let priceOpen=[];              // open price changes, for Needs Attention
+let priceTablesOk=null;        // false = add-price-guard.sql not run yet
+let _priceChecking=false, _priceLastCheck=null;
+function canSeePrices(){ return isOwner() || !!(me && me.repair_costs); }
+function withPriceMoney(fn){ const was=_moneyScope; _moneyScope='repairs'; try{ return fn(); } finally{ _moneyScope=was; } }
+const _pr=v=>Math.round((+v||0)*100)/100;
+function lineNet(p,d){ return _pr(_pr(p)-_pr(d)); }
+
+// RepairDesk's newest tickets again, merged into the list — older ones stay loaded
+async function refreshRecentTickets(){
+  if(!allTickets || !allTickets.length){ await ensureTicketsLoaded(); return; }
+  const fresh=[];
+  for(let page=1; page<=2; page++){
+    const d=await fetchRD('tickets?per_page=250&page='+page+'&default_order=1', true);
+    const batch=(d.data&&d.data.ticketData)||[];
+    fresh.push(...batch);
+    const pg=d.data&&d.data.pagination; if(!pg || page>=parseInt(pg.total_pages||1,10)) break;
+  }
+  if(!fresh.length) return;
+  const byId=new Map(fresh.map(t=>[getOrderId(t),t]));
+  allTickets=fresh.concat(allTickets.filter(t=>!byId.has(getOrderId(t))));
+  prodValueCache={}; prodValueSrc={};
+}
+async function priceLoadAll(path){
+  let all=[];
+  for(let off=0; off<60000; off+=1000){
+    const r=await sbList(path+'&limit=1000&offset='+off,2);
+    all=all.concat(r); if(r.length<1000) break;
+  }
+  return all;
+}
+async function priceLoadOpen(){
+  try{ priceOpen=await priceLoadAll('price_changes?status=eq.open&select=*&order=detected_at.desc'); priceTablesOk=true; }
+  catch(e){ priceOpen=[]; priceTablesOk=false; }
+}
+async function priceCheck(){
+  if(_priceChecking) return;
+  _priceChecking=true;
+  try{
+    await ensureTicketsLoaded();
+    let agreed;
+    try{ agreed=await priceLoadAll('price_agreed?select=line_key,order_id,item_name,price,discount'); priceTablesOk=true; }
+    catch(e){ priceTablesOk=false; return; }
+    await priceLoadOpen();
+    const byKey={}, byOrder={};
+    agreed.forEach(a=>{ byKey[a.line_key]=a; (byOrder[a.order_id]=byOrder[a.order_id]||[]).push(a); });
+    const openByLine={}; priceOpen.forEach(c=>{ (openByLine[c.line_key]=openByLine[c.line_key]||[]).push(c); });
+    const cutoff=Date.now()-PRICE_WATCH_DAYS*86400000;
+    const newAgreed=[], changes=[], restoredIds=[], supersededIds=[];
+    const now=new Date().toISOString();
+
+    (allTickets||[]).forEach(t=>{
+      const s=t.summary||{}, oid=getOrderId(t);
+      if(!oid) return;
+      const made=kpiDate(s.created_date);
+      if(made && made.getTime()<cutoff) return;
+      if(/estimate/i.test(String((s.status&&s.status.name)||s.status||''))) return;   // not agreed yet
+      const devs=(t.devices||[]).filter(d=>d && d.id!=null);
+      if(!devs.length) return;
+      const pieces=piecesOf(oid, devs);
+      const customer=(s.customer&&(s.customer.fullName||s.customer.name))||'';
+      const onTicket=new Set(devs.map(d=>oid+'|'+d.id));
+      // Agreed lines whose RepairDesk line has disappeared — a replaced line takes one over
+      const gone=(byOrder[oid]||[]).filter(a=>!onTicket.has(a.line_key));
+      const nameOf=d=>String((d.device&&d.device.name)||d.device_name||'').trim();
+
+      devs.forEach((d,i)=>{
+        const key=oid+'|'+d.id, price=_pr(rdMoney(d.price)), disc=_pr(rdMoney(d.line_discount));
+        const name=nameOf(d), itemId=(pieces[i]&&pieces[i].itemId)||'';
+        let a=byKey[key];
+        if(!a){
+          const gi=gone.findIndex(g=>g.item_name===name);
+          if(gi>=0){
+            const g=gone.splice(gi,1)[0];
+            a={line_key:key, order_id:oid, item_name:name, price:g.price, discount:g.discount};
+            newAgreed.push({...a, item_id:itemId, set_by:'carried over from a replaced line'});
+          } else {
+            newAgreed.push({line_key:key, order_id:oid, item_id:itemId, item_name:name, price, discount:disc, set_by:'first seen'});
+            return;
+          }
+        }
+        const same=Math.abs(_pr(a.price)-price)<0.005 && Math.abs(_pr(a.discount)-disc)<0.005;
+        const open=openByLine[key]||[];
+        if(same){ open.forEach(c=>restoredIds.push(c.id)); return; }
+        // Already flagged with these exact numbers?
+        if(open.some(c=>Math.abs(_pr(c.new_price)-price)<0.005 && Math.abs(_pr(c.new_discount)-disc)<0.005)) return;
+        open.forEach(c=>supersededIds.push(c.id));   // it changed again — the newest flag replaces it
+        changes.push({line_key:key, order_id:oid, ticket_id:s.id!=null?String(s.id):null, item_id:itemId, item_name:name, customer,
+          old_price:_pr(a.price), old_discount:_pr(a.discount), new_price:price, new_discount:disc,
+          change_key:key+'|'+price.toFixed(2)+'|'+disc.toFixed(2)+'|from '+_pr(a.price).toFixed(2)+'|'+_pr(a.discount).toFixed(2)+'|'+now.slice(0,10), status:'open'});
+      });
+    });
+
+    const post=(path,rows,prefer)=>sb(path,{method:'POST',headers:{'Prefer':prefer||'resolution=ignore-duplicates,return=minimal'},body:JSON.stringify(rows)});
+    for(let i=0;i<newAgreed.length;i+=500) await post('price_agreed?on_conflict=line_key', newAgreed.slice(i,i+500));
+    if(changes.length) await post('price_changes?on_conflict=change_key', changes);
+    const close=(ids,status,by)=>ids.length?sb('price_changes?id=in.('+ids.join(',')+')',{method:'PATCH',headers:{'Prefer':'return=minimal'},
+      body:JSON.stringify({status, resolved_at:now, resolved_by:by})}):null;
+    await close([...new Set(restoredIds)],'restored','RepairDesk is back to the agreed price');
+    await close([...new Set(supersededIds)],'superseded','changed again');
+    _priceLastCheck=now;
+    await priceLoadOpen();
+    if(changes.length && canSeePrices()) toast('💲 '+changes.length+' price'+(changes.length>1?'s':'')+' changed in RepairDesk — see Needs Attention');
+    try{ renderSidebar(); }catch(e){}
+    if(currentRoute()==='attention') renderAttentionPage();
+  }catch(e){ console.warn('price check', e); }
+  finally{ _priceChecking=false; }
+}
+// Tickets with an open price change (what the Needs Attention badge counts)
+function priceOpenTickets(){
+  if(!canSeePrices()) return [];
+  const by={};
+  priceOpen.forEach(c=>{ (by[c.order_id]=by[c.order_id]||[]).push(c); });
+  return Object.entries(by).map(([oid,list])=>({oid, list, at:list.reduce((m,c)=>c.detected_at>m?c.detected_at:m,'')}))
+    .sort((a,b)=>b.at.localeCompare(a.at));
+}
+function priceSectionHtml(){
+  if(!canSeePrices()) return '';
+  if(priceTablesOk===false) return `<div class="card" style="font-size:13px;border-left:4px solid var(--orange)">💲 To watch for RepairDesk resetting agreed prices, run <strong>add-price-guard.sql</strong> in Supabase once, then reload.</div>`;
+  const groups=priceOpenTickets();
+  if(!groups.length) return `<div class="card" style="font-size:12.5px;color:var(--ink3);padding:11px 16px">💲 Agreed prices: all match RepairDesk${_priceLastCheck?' · checked '+kpiAgo(_priceLastCheck):''}
+    <span class="clickable" style="margin-left:8px" onclick="priceCheckNow()">Check now</span></div>`;
+  return withPriceMoney(()=>groups.map(g=>{
+    const reset=g.list.length>1;
+    const lines=g.list.map(c=>{
+      const was=lineNet(c.old_price,c.old_discount), now=lineNet(c.new_price,c.new_discount);
+      return `<tr><td><div style="font-weight:600">${esc(c.item_name||'—')}</div><div style="font-size:11px;color:var(--ink3)">${esc(c.item_id||'')}</div></td>
+        <td style="text-align:right;font-weight:700;color:var(--green)">${money(c.old_price)}${_pr(c.old_discount)?`<div style="font-size:11px;font-weight:500;color:var(--ink3)">− ${money(c.old_discount)} discount</div>`:''}</td>
+        <td style="text-align:right;font-weight:700;color:var(--red)">${money(c.new_price)}${_pr(c.new_discount)?`<div style="font-size:11px;font-weight:500;color:var(--ink3)">− ${money(c.new_discount)} discount</div>`:''}</td>
+        <td style="text-align:right;color:${now>was?'var(--red)':'var(--orange)'};font-weight:600">${now>was?'+':'−'}${money(Math.abs(now-was))}</td></tr>`;
+    }).join('');
+    const custName=(g.list.find(c=>c.customer)||{}).customer||'';
+    const ids=g.list.map(c=>c.id).join(',');
+    return `<div class="card" style="border-left:4px solid var(--red)">
+      <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div style="font-size:26px;line-height:1">💲</div>
+        <div style="flex:1;min-width:240px">
+          <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--red)">${reset?'⚠️ Looks like a RepairDesk price reset — '+g.list.length+' lines changed together':'Price changed in RepairDesk'}</div>
+          <div class="clickable" style="font-family:'Outfit',sans-serif;font-size:17px;font-weight:700;margin-top:2px" onclick="navigate('${h('order',g.oid).replace(/'/g,"\\'")}')">${esc(g.oid)}${custName?' · '+esc(custName):''}</div>
+          <div style="font-size:12px;color:var(--ink3)">Noticed ${kpiAgo(g.at)}</div>
+          <div style="overflow-x:auto;margin-top:8px"><table style="font-size:13px"><thead><tr><th>Item</th><th style="text-align:right">Agreed</th><th style="text-align:right">RepairDesk now</th><th style="text-align:right">Difference</th></tr></thead><tbody>${lines}</tbody></table></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+          <button class="btn btn-gold btn-sm" onclick="priceRestoreHelp('${jsstr(g.oid)}')">Put agreed prices back</button>
+          <button class="btn btn-sm" onclick="priceAccept('${ids}','${jsstr(g.oid)}')">✓ New price is right</button>
+          <button class="btn btn-ghost btn-sm" onclick="navigate('${h('order',g.oid).replace(/'/g,"\\'")}')">View order</button>
+        </div>
+      </div></div>`;
+  }).join(''));
+}
+async function priceCheckNow(){
+  toast('Checking prices against RepairDesk…');
+  try{ await refreshRecentTickets(); }catch(e){}
+  await priceCheck();
+  if(currentRoute()==='attention') renderAttentionPage();
+  toast(priceOpenTickets().length?'💲 '+priceOpenTickets().length+' ticket(s) need a look':'✅ All agreed prices match RepairDesk');
+}
+// A genuine change: the new price becomes the agreed one
+async function priceAccept(idsCsv, oid){
+  const ids=String(idsCsv).split(',').map(Number).filter(Boolean);
+  const list=priceOpen.filter(c=>ids.includes(c.id));
+  if(!list.length) return;
+  if(!confirm('Make RepairDesk\'s new price the agreed price for '+list.length+' line'+(list.length>1?'s':'')+' on '+oid+'?\n\nOnly do this if the price was changed on purpose.')) return;
+  const now=new Date().toISOString();
+  const r=await sb('price_agreed?on_conflict=line_key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify(list.map(c=>({line_key:c.line_key, order_id:c.order_id, item_id:c.item_id, item_name:c.item_name,
+      price:c.new_price, discount:c.new_discount, updated_at:now, set_by:meName()})))});
+  if(!r.ok){ toast('Could not save'); return; }
+  await sb('price_changes?id=in.('+ids.join(',')+')',{method:'PATCH',headers:{'Prefer':'return=minimal'},
+    body:JSON.stringify({status:'accepted', resolved_at:now, resolved_by:meName()})});
+  toast('✅ New price saved as agreed');
+  await priceLoadOpen(); try{ renderSidebar(); }catch(e){} renderAttentionPage();
+}
+// Until RepairDesk's "update ticket" instructions arrive, this lays out exactly what to
+// type back in; the flag then clears by itself on the next check.
+function priceRestoreHelp(oid){
+  const list=priceOpen.filter(c=>c.order_id===oid);
+  if(!list.length) return;
+  const text=oid+' — agreed prices\n'+list.map(c=>'• '+(c.item_name||c.item_id)+': $'+_pr(c.old_price).toFixed(2)+(_pr(c.old_discount)?' (discount $'+_pr(c.old_discount).toFixed(2)+')':'')).join('\n');
+  window._priceCopy=text;
+  withPriceMoney(()=>openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:4px">Put the agreed prices back on ${esc(oid)}</h3>
+    <div style="font-size:12.5px;color:var(--ink3);margin-bottom:12px">Open ${esc(oid)} in RepairDesk and set each line to its agreed price. When it's done, press <strong>Check again</strong> — the flag clears by itself.</div>
+    <table style="font-size:14px"><thead><tr><th>Item</th><th style="text-align:right">Set price to</th><th style="text-align:right">Discount</th><th style="text-align:right">Now shows</th></tr></thead><tbody>
+    ${list.map(c=>`<tr><td><strong>${esc(c.item_name||'—')}</strong><div style="font-size:11px;color:var(--ink3)">${esc(c.item_id||'')}</div></td>
+      <td style="text-align:right;font-weight:800;color:var(--green)">${money(c.old_price)}</td>
+      <td style="text-align:right">${_pr(c.old_discount)?money(c.old_discount):'—'}</td>
+      <td style="text-align:right;color:var(--red)">${money(c.new_price)}</td></tr>`).join('')}
+    </tbody></table>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="navigator.clipboard&&navigator.clipboard.writeText(window._priceCopy).then(()=>toast('Copied'))">📋 Copy the list</button>
+      <button class="btn btn-gold btn-sm" onclick="closeModal();priceCheckNow()">⟳ Check again</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink3);margin-top:10px">Once RepairDesk sends the instructions for their "update ticket" connection, this becomes one tap.</div>`));
+}
+
 
 // ========================================================================
 // NEEDS ATTENTION — the problems worth chasing, not every scan
@@ -3963,6 +4178,7 @@ function renderAttentionPage(){
         <div class="stat-label">${t.icon} ${t.label}</div></div>`).join('')}
   </div>`;
 
+  html+=priceSectionHtml();
   html+=`<div class="card" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px">
     <div style="font-size:12.5px;color:var(--ink3)">Flag a piece once it hasn't moved for
       <strong style="color:var(--ink)">${STUCK_HOURS>=24?(STUCK_HOURS/24)+' day'+(STUCK_HOURS/24!==1?'s':''):STUCK_HOURS+'h'}</strong></div>
@@ -6608,7 +6824,7 @@ async function renderKpiPage(){
         <button class="btn btn-ghost btn-sm" onclick="kpiExport()">⬇ Export</button>
       </div></div>
      <div id="kpi-body"><div class="card"><div class="empty">Loading…</div></div></div>`;
-  await Promise.all([loadKpiWeeks(), loadKpiUploads()]);
+  await Promise.all([loadKpiWeeks(), loadKpiUploads(), loadKpiExpenses()]);
   drawKpi();
   if(kpiWeeks===null) return;
   // Keep this week and last week fresh without anyone pressing anything
@@ -6631,7 +6847,9 @@ function kpiCellsFor(k){
   const net   = pay!=null ? pay-(tax||0)-(fees||0) : null;
   const labor = imp&&imp.laborDays ? imp.labor : (w.labor!=null?+w.labor:null);
   const after = net!=null && labor!=null ? net-labor : null;     // what's left once the team is paid
-  return {k, sales, pay, tax, fees, net, labor, after, feeN:imp?imp.feeN:0, laborDays:imp?imp.laborDays:0, at:(d&&d.pulledAt)||w.pulled_at||null,
+  const exp   = expensesForWeek(k).total;                       // everything added by hand
+  const profit= net!=null ? net-(labor||0)-(exp||0) : null;     // what's actually left
+  return {k, sales, pay, tax, fees, net, labor, after, exp, profit, feeN:imp?imp.feeN:0, laborDays:imp?imp.laborDays:0, at:(d&&d.pulledAt)||w.pulled_at||null,
           err:d&&(d.invErr||d.payErr)?[d.invErr&&'invoices: '+d.invErr, d.payErr&&'payments: '+d.payErr].filter(Boolean).join(' · '):'',
           mismatch:d&&d.rdPayTotal!=null&&t&&t.pay!=null&&Math.abs(d.rdPayTotal-t.pay)>0.5};
 }
@@ -6670,7 +6888,7 @@ function drawKpi(){
       ${tile('Sales tax',cur.tax,'tax')}
       ${tile('Card fees',cur.fees,'fees','var(--orange)')}
       ${tile('Net '+delta(cur.net,prev.net),cur.net,'net','var(--green)','border-left:4px solid var(--green)')}
-      ${tile('After labor'+(cur.labor!=null?' · labor '+money(cur.labor):''),cur.after,'after',cur.after!=null&&cur.after<0?'var(--red)':'var(--ink)','border-left:4px solid var(--ink3)')}
+      ${tile('Profit · after labor'+(cur.exp?' & expenses':''),cur.profit,'profit',cur.profit!=null&&cur.profit<0?'var(--red)':'var(--ink)','border-left:4px solid var(--ink)')}
     </div>
     <div class="card">
       <div class="card-label">Week by week <span style="font-weight:600;text-transform:none;color:var(--ink3)">— Sunday to Friday · tap a number to check it</span>
@@ -6678,7 +6896,7 @@ function drawKpi(){
           ${[8,12,26,52,104].map(n=>`<button class="btn ${back===n?'btn-gold':'btn-ghost'} btn-sm" style="padding:3px 9px;font-size:11px" onclick="kpiWeeksBack=${n};drawKpi()">${n>=52?(n/52)+'y':n+'w'}</button>`).join(' ')}
         </span></div>
       <div style="overflow-x:auto"><table><thead><tr>
-        <th>Week</th><th>New sales</th><th>Payments</th><th>Sales tax</th><th>Card fees</th><th>Net</th><th>Labor</th><th>After labor</th><th></th>
+        <th>Week</th><th>New sales</th><th>Payments</th><th>Sales tax</th><th>Card fees</th><th>Net</th><th>Labor</th><th>After labor</th><th>Expenses</th><th>Profit</th><th></th>
       </tr></thead><tbody>
       ${rows.map(r=>`<tr${r.k===kpiFocusWeek?' style="background:var(--accent-soft)"':''}>
         <td style="white-space:nowrap"><div style="font-weight:600">${weekLabel(r.k)}</div>
@@ -6690,6 +6908,8 @@ function drawKpi(){
         <td style="font-weight:700">${kpiNum(r.net,r.k,'net','var(--green)')}</td>
         <td>${r.labor!=null?`<span class="clickable" onclick="kpiEdit('${r.k}')">${money(r.labor)}</span>${r.laborDays?`<div style="font-size:10.5px;color:${r.laborDays<6?'var(--orange)':'var(--ink3)'}">${r.laborDays<6?r.laborDays+' of 6 days':'payroll'}</div>`:''}`:`<button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">+ Add</button>`}</td>
         <td style="font-weight:700">${kpiNum(r.after,r.k,'after',r.after!=null&&r.after<0?'var(--red)':'')}</td>
+        <td>${r.exp!=null?kpiNum(r.exp,r.k,'exp','var(--orange)'):`<span class="clickable" style="color:var(--ink3)" onclick="kpiShow('${r.k}','exp')">—</span>`}</td>
+        <td style="font-weight:800">${kpiNum(r.profit,r.k,'profit',r.profit!=null&&r.profit<0?'var(--red)':'')}</td>
         <td style="white-space:nowrap">
           <button class="btn btn-ghost btn-sm" title="Pull this week from RepairDesk" ${kpiBusy[r.k]?'disabled':''} onclick="kpiPullWeek('${r.k}')">⟳</button>
           <button class="btn btn-ghost btn-sm" onclick="kpiEdit('${r.k}')">Edit</button></td>
@@ -6705,6 +6925,8 @@ function drawKpi(){
           <div><strong style="color:var(--green)">${money(sum('net'))}</strong> <span style="color:var(--ink3)">net</span></div>
           <div><strong>${money(sum('labor'))}</strong> <span style="color:var(--ink3)">labor</span></div>
           <div><strong>${money(sum('after'))}</strong> <span style="color:var(--ink3)">after labor</span></div>
+          <div><strong>${money(sum('exp'))}</strong> <span style="color:var(--ink3)">expenses</span></div>
+          <div><strong>${money(sum('profit'))}</strong> <span style="color:var(--ink3)">profit</span></div>
         </div>`;
       })()}
     </div>
@@ -6718,18 +6940,20 @@ function drawKpi(){
         <tr><td style="font-weight:700;white-space:nowrap">Net</td><td>Payments − sales tax − card fees.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">Labor</td><td>Gross pay + the employer's payroll taxes, from the payroll file (<strong>👷 Payroll file</strong>) — any date range. The total is spread evenly over the working days (Sunday–Friday) it covers. A newer file for the same days replaces them instead of adding. "3 of 6 days" means only part of that week has payroll so far.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">After labor</td><td>Net − labor.</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Expenses</td><td>Everything you add in the <strong>Expenses</strong> list below — one time (in that date's week), every week, or every month (spread over the month).</td></tr>
+        <tr><td style="font-weight:700;white-space:nowrap">Profit</td><td>Net − labor − expenses.</td></tr>
         <tr><td style="font-weight:700;white-space:nowrap">The week</td><td>Sunday 12:00am to Friday night. Anything rung up on a Saturday counts with that week, so nothing falls between weeks.</td></tr>
       </tbody></table>
       <div style="font-size:12px;color:var(--ink3);margin-top:10px">Sales and payments won't match each other exactly, and that's expected: a job invoiced this week may be paid next week, or was paid as a deposit last week.
         <span class="clickable" onclick="kpiTestTransactionLog()">Check the payments connection</span> ·
         <span class="clickable" onclick="kpiTestTax()">Check the invoices connection</span></div>
-    </div>`+kpiUploadsHtml();
+    </div>`+kpiExpensesHtml()+kpiUploadsHtml();
 }
 
 // ---------- tap a number: every row behind it ----------
 async function kpiShow(key, which){
   if(which==='fees'||which==='labor'){ kpiEdit(key); return; }
-  if(which==='after') which='net';
+  if(which==='after'||which==='profit') which='net';
   if(!kpiDetail[key]){
     openModal(`<span class="modal-close" onclick="closeModal()">✕</span><h3>${weekLabel(key)}</h3><div class="empty">Reading every invoice and payment from RepairDesk…</div>`);
     await kpiPullWeek(key, true);
@@ -6770,13 +6994,24 @@ async function kpiShow(key, which){
           <td style="text-align:right;font-weight:600;${r.amount<0?'color:var(--red)':''}">${money(r.amount)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No payments this week</td></tr>'}
         </tbody></table></div>`;
     }
+  } else if(which==='exp'){
+    title='Expenses';
+    const ex=expensesForWeek(key);
+    body=ex.list.length?`<table style="font-size:13.5px"><thead><tr><th>Expense</th><th>How often</th><th style="text-align:right">This week</th></tr></thead><tbody>
+      ${ex.list.map(r=>`<tr><td><strong>${esc(r.x.name)}</strong>${r.x.category?`<div style="font-size:11px;color:var(--ink3)">${esc(r.x.category)}</div>`:''}</td>
+        <td style="font-size:12px">${EXP_KIND[r.x.kind]||''} · ${money(+r.x.amount)}</td><td style="text-align:right;font-weight:700">${money(r.amt)}</td></tr>`).join('')}
+      <tr><td colspan="2" style="border-top:2px solid var(--border);font-weight:800">Total</td><td style="border-top:2px solid var(--border);text-align:right;font-weight:800">${money(ex.total)}</td></tr></tbody></table>`
+      :'<div class="empty">No expenses this week.</div>';
+    body+=`<button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="closeModal();expEdit()">+ Add expense</button>`;
   } else {
     title='Net';
     const line=(l,v,sign,col)=>`<tr><td>${l}</td><td style="text-align:right;font-weight:700;${col?'color:'+col:''}">${v==null?'—':sign+money(v)}</td></tr>`;
     body=`<table style="font-size:14px;max-width:360px">${line('Payments taken',c.pay,'')}${line('Sales tax',c.tax,'− ')}${line('Card fees',c.fees,'− ','var(--orange)')}
       <tr><td style="border-top:2px solid var(--border);font-weight:800">Net</td><td style="border-top:2px solid var(--border);text-align:right;font-weight:800;color:var(--green)">${c.net==null?'—':money(c.net)}</td></tr>
       ${line('Labor',c.labor,'− ')}
-      <tr><td style="border-top:2px solid var(--border);font-weight:800">After labor</td><td style="border-top:2px solid var(--border);text-align:right;font-weight:800">${c.after==null?'—':money(c.after)}</td></tr></table>
+      <tr><td style="border-top:2px solid var(--border);font-weight:800">After labor</td><td style="border-top:2px solid var(--border);text-align:right;font-weight:800">${c.after==null?'—':money(c.after)}</td></tr>
+      ${expensesForWeek(key).list.map(r=>line('<span style="color:var(--ink3)">'+esc(r.x.name)+'</span>',r.amt,'− ','var(--orange)')).join('')}
+      <tr><td style="border-top:2px solid var(--border);font-weight:800">Profit</td><td style="border-top:2px solid var(--border);text-align:right;font-weight:800;color:${c.profit!=null&&c.profit<0?'var(--red)':'var(--ink)'}">${c.profit==null?'—':money(c.profit)}</td></tr></table>
       ${c.labor==null?'<div style="font-size:12px;color:var(--ink3);margin-top:8px">Labor not entered yet for this week.</div>':''}
       ${c.fees==null?'<div style="font-size:12px;color:var(--orange);margin-top:8px">Card fees not entered yet for this week, so Net is before fees.</div>':''}`;
   }
@@ -7174,6 +7409,163 @@ function kpiUploadsHtml(){
     </tbody></table></div></div>`;
 }
 
+
+// ========================================================================
+// EXPENSES — everything that isn't pulled or uploaded automatically
+// ========================================================================
+// Added by hand on the KPI page. Three kinds:
+//   once     one amount on one date (lands in that date's week)
+//   weekly   the amount every week, from a start date until stopped
+//   monthly  the amount every month, spread over that month's days so each week
+//            carries its fair share and every month adds up to exactly the amount
+// A recurring expense is never deleted to stop it — it gets an end date, so the
+// weeks it covered keep their history.
+let kpiExpenses=null;       // null = table not set up yet (add-kpi-expenses.sql)
+const EXP_CATS=['Worker (not on payroll)','Rent','Utilities','Supplies','Insurance','Software & subscriptions','Vehicle & delivery','Repairs & maintenance','Marketing','Fees & bank','Other'];
+const EXP_KIND={once:'One time', weekly:'Every week', monthly:'Every month'};
+async function loadKpiExpenses(){
+  try{ kpiExpenses=await sbList('kpi_expenses?select=*&order=start_date.desc&limit=2000',2); }
+  catch(e){ kpiExpenses=null; }
+}
+function _expDay(iso){ return new Date(String(iso).slice(0,10)+'T12:00:00'); }
+// How much of one expense falls in the week starting Sunday `wk` (yyyy-mm-dd)
+function expenseInWeek(x, wk){
+  const amt=+x.amount||0; if(!amt) return 0;
+  const ws=_expDay(wk), we=new Date(ws); we.setDate(we.getDate()+6);
+  const s=_expDay(x.start_date), e=x.end_date?_expDay(x.end_date):null;
+  if(x.kind==='once') return (s>=ws && s<=we) ? amt : 0;
+  let total=0;
+  for(let i=0;i<7;i++){
+    const d=new Date(ws); d.setDate(d.getDate()+i);
+    if(d<s || (e && d>e)) continue;
+    if(x.kind==='weekly') total+=amt/7;
+    else if(x.kind==='monthly') total+=amt/new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  }
+  return Math.round(total*100)/100;
+}
+function expensesForWeek(wk){
+  if(!kpiExpenses) return {total:null, list:[]};
+  const list=kpiExpenses.map(x=>({x, amt:expenseInWeek(x,wk)})).filter(r=>r.amt>0);
+  return {total:list.length?Math.round(list.reduce((a,r)=>a+r.amt,0)*100)/100:null, list};
+}
+function expActive(x){ return x.kind!=='once' && (!x.end_date || _expDay(x.end_date)>=_expDay(kpiDayIso(new Date()))); }
+function expPerWeek(x){ return x.kind==='weekly'?+x.amount : x.kind==='monthly'?(+x.amount)*12/52 : 0; }
+
+function kpiExpensesHtml(){
+  if(kpiExpenses===null) return `<div class="card" style="font-size:13px"><div class="card-label">Expenses</div>
+    To add your own expenses, run <strong>add-kpi-expenses.sql</strong> in Supabase once, then reload.</div>`;
+  const recurring=kpiExpenses.filter(x=>x.kind!=='once').sort((a,b)=>(expActive(b)-expActive(a))||String(a.name).localeCompare(String(b.name)));
+  const once=kpiExpenses.filter(x=>x.kind==='once').sort((a,b)=>String(b.start_date).localeCompare(String(a.start_date)));
+  const perWeek=recurring.filter(expActive).reduce((a,x)=>a+expPerWeek(x),0);
+  const fmtD=iso=>iso?_expDay(iso).toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'}):'';
+  const row=x=>{
+    const live=x.kind==='once'||expActive(x);
+    return `<tr${live?'':' style="opacity:.5"'}>
+      <td><div style="font-weight:600">${esc(x.name||'—')}</div>${x.notes?`<div style="font-size:11px;color:var(--ink3)">${esc(x.notes)}</div>`:''}</td>
+      <td style="font-size:12px;color:var(--ink2)">${esc(x.category||'')}</td>
+      <td style="text-align:right;font-weight:700">${money(+x.amount||0)}</td>
+      <td style="font-size:12px;white-space:nowrap">${EXP_KIND[x.kind]||x.kind}</td>
+      <td style="font-size:12px;white-space:nowrap">${x.kind==='once'?fmtD(x.start_date):'from '+fmtD(x.start_date)+(x.end_date?'<br>until '+fmtD(x.end_date):'')}</td>
+      <td style="white-space:nowrap;text-align:right">
+        <button class="btn btn-ghost btn-sm" onclick="expEdit(${x.id})">Edit</button>
+        ${x.kind!=='once'&&expActive(x)?`<button class="btn btn-ghost btn-sm" onclick="expStop(${x.id})">Stop</button>`:''}
+        <button class="btn btn-ghost btn-sm" title="Delete" onclick="expDelete(${x.id})">🗑️</button></td></tr>`;
+  };
+  const head='<thead><tr><th>Expense</th><th>Category</th><th style="text-align:right">Amount</th><th>How often</th><th>When</th><th></th></tr></thead>';
+  return `<div class="card" id="kpi-expenses">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <div><div class="card-label" style="margin:0">Expenses</div>
+        <div style="font-size:12px;color:var(--ink3)">Anything not pulled or uploaded automatically. Recurring ones fill every week on their own${perWeek?` — currently <strong style="color:var(--ink)">${money(perWeek)}</strong> a week`:''}.</div></div>
+      <button class="btn btn-gold btn-sm" onclick="expEdit()">+ Add expense</button>
+    </div>
+    ${recurring.length?`<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--ink3);margin:6px 0 4px">EVERY WEEK / EVERY MONTH</div>
+      <div style="overflow-x:auto"><table style="font-size:13px">${head}<tbody>${recurring.map(row).join('')}</tbody></table></div>`:''}
+    ${once.length?`<div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--ink3);margin:14px 0 4px">ONE TIME</div>
+      <div style="overflow-x:auto;max-height:360px;overflow-y:auto"><table style="font-size:13px">${head}<tbody>${once.map(row).join('')}</tbody></table></div>`:''}
+    ${!recurring.length&&!once.length?'<div style="color:var(--ink3);font-size:13px">No expenses yet. Add rent, workers paid outside payroll, supplies, subscriptions — anything.</div>':''}
+  </div>`;
+}
+
+function expEdit(id){
+  const x=id?(kpiExpenses||[]).find(e=>e.id===id):null;
+  if(kpiExpenses===null){ alert('Run add-kpi-expenses.sql in Supabase first, then reload.'); return; }
+  const today=kpiDayIso(new Date());
+  const kind=x?x.kind:'once';
+  openModal(`<span class="modal-close" onclick="closeModal()">✕</span>
+    <h3 style="margin-bottom:12px">${x?'Edit expense':'Add an expense'}</h3>
+    <div class="field" style="margin-bottom:10px"><label>What is it?</label>
+      <input id="ex-name" value="${esc(x?x.name:'')}" placeholder="e.g. Shop rent, Yossi (cash), Lacquer order"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div class="field" style="margin-bottom:10px;flex:1;min-width:140px"><label>Amount</label>
+        <input id="ex-amt" inputmode="decimal" value="${x?(+x.amount).toFixed(2):''}" placeholder="0.00"></div>
+      <div class="field" style="margin-bottom:10px;flex:1;min-width:160px"><label>Category</label>
+        <input id="ex-cat" list="ex-cats" value="${esc(x?x.category||'':'')}" placeholder="Choose or type">
+        <datalist id="ex-cats">${[...new Set(EXP_CATS.concat((kpiExpenses||[]).map(e=>e.category).filter(Boolean)))].map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+    </div>
+    <div class="field" style="margin-bottom:10px"><label>How often?</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${Object.entries(EXP_KIND).map(([k,l])=>`<label style="flex:1;min-width:100px;border:2px solid var(--border);border-radius:9px;padding:9px;cursor:pointer;text-align:center;font-weight:600;font-size:13px">
+          <input type="radio" name="ex-kind" value="${k}" ${kind===k?'checked':''} onchange="expKindChanged()" style="margin-right:5px">${l}</label>`).join('')}
+      </div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div class="field" style="margin-bottom:10px;flex:1;min-width:150px"><label id="ex-start-l">${kind==='once'?'Date':'Starts'}</label>
+        <input type="date" id="ex-start" value="${x?String(x.start_date).slice(0,10):today}"></div>
+      <div class="field" id="ex-end-w" style="margin-bottom:10px;flex:1;min-width:150px;display:${kind==='once'?'none':'block'}"><label>Ends <span style="color:var(--ink3);font-weight:400">(leave empty = keeps going)</span></label>
+        <input type="date" id="ex-end" value="${x&&x.end_date?String(x.end_date).slice(0,10):''}"></div>
+    </div>
+    <div id="ex-how" style="font-size:11.5px;color:var(--ink3);margin:-4px 0 10px"></div>
+    <div class="field" style="margin-bottom:10px"><label>Note <span style="color:var(--ink3);font-weight:400">(optional)</span></label>
+      <input id="ex-notes" value="${esc(x?x.notes||'':'')}"></div>
+    <div id="ex-err" style="color:var(--red);font-size:12.5px;min-height:16px;margin-bottom:6px"></div>
+    <button class="btn btn-gold btn-block" onclick="expSave(${x?x.id:'null'})">${x?'Save changes':'Add expense'}</button>`);
+  expKindChanged();
+  setTimeout(()=>{ const i=document.getElementById('ex-name'); if(i&&!x) i.focus(); },50);
+}
+function expKindChanged(){
+  const k=(document.querySelector('input[name=ex-kind]:checked')||{}).value||'once';
+  const l=document.getElementById('ex-start-l'), w=document.getElementById('ex-end-w'), how=document.getElementById('ex-how');
+  if(l) l.textContent=k==='once'?'Date':'Starts';
+  if(w) w.style.display=k==='once'?'none':'block';
+  if(how) how.textContent=k==='once'?'Counts in the week of that date.'
+    : k==='weekly'?'Counts the full amount every week (a week that starts or stops partway gets its share).'
+    : 'Spread over the month, so each week carries its share and each month adds up to exactly this amount.';
+}
+async function expSave(id){
+  const v=i=>(document.getElementById(i)||{}).value||'';
+  const err=document.getElementById('ex-err');
+  const name=v('ex-name').trim(), amount=parseFloat(v('ex-amt').replace(/[^0-9.\-]/g,''));
+  const kind=(document.querySelector('input[name=ex-kind]:checked')||{}).value||'once';
+  const start=v('ex-start'), end=kind==='once'?null:(v('ex-end')||null);
+  if(!name){ err.textContent='What is the expense?'; return; }
+  if(!(amount>0)){ err.textContent='Enter the amount'; return; }
+  if(!start){ err.textContent=kind==='once'?'Pick the date':'Pick when it starts'; return; }
+  if(end && end<start){ err.textContent='The end date is before the start'; return; }
+  const row={name, amount:Math.round(amount*100)/100, category:v('ex-cat').trim()||null, kind, start_date:start, end_date:end,
+             notes:v('ex-notes').trim()||null, updated_at:new Date().toISOString()};
+  if(!id) row.created_by=meName();
+  const r=id
+    ? await sb('kpi_expenses?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(row)})
+    : await sb('kpi_expenses',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(row)});
+  if(!r.ok){ let why=''; try{ const j=await r.json(); why=j.message||''; }catch(_){}
+    err.textContent='Could not save: '+(why||('HTTP '+r.status)); return; }
+  closeModal(); toast('✅ '+(id?'Saved':'Added')+' — '+name);
+  await loadKpiExpenses(); drawKpi();
+}
+async function expStop(id){
+  const x=(kpiExpenses||[]).find(e=>e.id===id); if(!x) return;
+  const when=prompt('Stop "'+x.name+'" — last day it applies? (yyyy-mm-dd)\n\nWeeks before that keep it; nothing after counts.', kpiDayIso(new Date()));
+  if(when===null) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(when.trim())){ toast('Use the format 2026-11-30'); return; }
+  const r=await sb('kpi_expenses?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({end_date:when.trim(), updated_at:new Date().toISOString()})});
+  if(r.ok){ toast('Stopped after '+when.trim()); await loadKpiExpenses(); drawKpi(); } else toast('Could not save');
+}
+async function expDelete(id){
+  const x=(kpiExpenses||[]).find(e=>e.id===id); if(!x) return;
+  if(!confirm('Delete "'+x.name+'" completely?\n\n'+(x.kind==='once'?'It comes out of its week.':'It comes out of EVERY week it covered. To keep the history and just end it, use Stop instead.'))) return;
+  const r=await sb('kpi_expenses?id=eq.'+id,{method:'DELETE'});
+  if(r.ok){ toast('Deleted'); await loadKpiExpenses(); drawKpi(); } else toast('Could not delete');
+}
+
 // Saves a CSV file (opens in Excel). The \uFEFF at the start keeps Excel from garbling
 // characters like é or ’.
 function downloadCsv(csv, name){
@@ -7191,14 +7583,14 @@ function kpiExport(){
   if(!keys.length){ toast('Nothing to export'); return; }
   const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const num=v=>v==null?'':(Math.round(v*100)/100).toFixed(2);
-  const lines=['Week starting,Week,New sales,Payments,Sales tax,Card fees,Net,Labor,After labor,Invoices,Payments count,Pulled'];
+  const lines=['Week starting,Week,New sales,Payments,Sales tax,Card fees,Net,Labor,After labor,Expenses,Profit,Invoices,Payments count,Pulled'];
   keys.forEach(k=>{
     const c=kpiCellsFor(k), w=kpiRow(k)||{}, d=kpiDetail[k], t=d?kpiTotals(d):null;
-    lines.push([k, weekLabel(k), num(c.sales), num(c.pay), num(c.tax), num(c.fees), num(c.net), num(c.labor), num(c.after),
+    lines.push([k, weekLabel(k), num(c.sales), num(c.pay), num(c.tax), num(c.fees), num(c.net), num(c.labor), num(c.after), num(c.exp), num(c.profit),
       t?t.invCount:(w.invoice_count??''), t?t.payCount:(w.payment_count??''), c.at?new Date(c.at).toLocaleString():''].map(q).join(','));
   });
   const sum=f=>keys.reduce((a,k)=>a+(kpiCellsFor(k)[f]||0),0);
-  lines.push(['Total','', num(sum('sales')), num(sum('pay')), num(sum('tax')), num(sum('fees')), num(sum('net')), num(sum('labor')), num(sum('after')),'','',''].map(q).join(','));
+  lines.push(['Total','', num(sum('sales')), num(sum('pay')), num(sum('tax')), num(sum('fees')), num(sum('net')), num(sum('labor')), num(sum('after')), num(sum('exp')), num(sum('profit')),'','',''].map(q).join(','));
   downloadCsv(lines.join('\n'), 'glint-weekly-kpis-'+keys[0]+'-to-'+keys[keys.length-1]+'.csv');
 }
 
