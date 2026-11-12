@@ -278,6 +278,7 @@ tr.clickable:hover td{background:var(--surface2)}
   .page-title{font-size:19px}
   .btn{padding:8px 12px;font-size:12.5px}
 }
+@media (max-width:760px){ .lead-grid{grid-template-columns:1fr !important} }
 </style>
 </head>
 <body>
@@ -305,7 +306,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-11-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-12-a</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -509,6 +510,7 @@ const NAV_ITEMS = [
   {route:'insights', label:'Insights', icon:'◆'},
   {route:'ask', label:'Ask Glint', icon:'✨'},
   {route:'inbox', label:'Inbox', icon:'📬', badge:'inbox-badge'},
+  {route:'leads', label:'Leads', icon:'🧲'},
   {route:'priority', label:'What to Work On', icon:'🎯'},
   {route:'boxes', label:'Boxes', icon:'📦'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
@@ -1240,7 +1242,7 @@ function navigate(hash){
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={live:'Live',pipeline:'Pipeline',repairs:'Repairs',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={leads:'Leads',live:'Live',pipeline:'Pipeline',repairs:'Repairs',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -1259,7 +1261,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-11-a';
+const APP_VERSION='2026-11-12-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -1315,6 +1317,7 @@ const ROUTE_RENDERERS={
   boxes: renderBoxesPage,
   hold: renderHoldPage,
   repairs: renderRepairsPage,
+  leads: renderLeadsPage,
   timeline: renderTimelinePage,
   production: renderProductionPage,
   costs: renderCostsPage,
@@ -7564,6 +7567,295 @@ async function expDelete(id){
   if(!confirm('Delete "'+x.name+'" completely?\n\n'+(x.kind==='once'?'It comes out of its week.':'It comes out of EVERY week it covered. To keep the history and just end it, use Stop instead.'))) return;
   const r=await sb('kpi_expenses?id=eq.'+id,{method:'DELETE'});
   if(r.ok){ toast('Deleted'); await loadKpiExpenses(); drawKpi(); } else toast('Could not delete');
+}
+
+
+// ========================================================================
+// LEADS — people who called, texted or got a quote and never ordered
+// ========================================================================
+// Everything is grouped by phone number (last 10 digits) and built from RepairDesk:
+//   calls     GET calllogs      Phone Pro — direction, missed/voicemail, recording, AI summary
+//   texts     GET sms-inbox     RepairDesk SMS, sent and received
+//   leads     GET appointment   RepairDesk's own leads / appointments
+//   quotes    estimate tickets  already in the ticket list
+// Anyone who had an order BEFORE the period shown is an existing customer and is left
+// out. Someone whose first order came DURING the period shows under "Became customers".
+// WhatsApp, email and Facebook live only inside RepairDesk Connect — its API doesn't
+// hand them out. Follow-up (who's on it, when, notes, not interested) is kept here.
+let leadsDays=parseInt(localStorage.getItem('glint_leads_days')||'60',10);
+let leadsFilter='open', leadsQ='', leadsOpen=new Set();
+let _leadsData=null, _leadsBusy=false, _leadsErr='';
+let leadTrack={}, leadNotes={}, leadTablesOk=null;
+const LEAD_STAGE={contacted:{label:'Called / texted', hue:'var(--blue)', icon:'📞'}, lead:{label:'Lead in RepairDesk', hue:'var(--gold)', icon:'📝'},
+  quoted:{label:'Quoted', hue:'var(--orange)', icon:'💬'}, won:{label:'Became a customer', hue:'var(--green)', icon:'✅'}};
+function leadPhone(v){ const d=String(v||'').replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+function leadFmtPhone(p){ return p&&p.length===10?'('+p.slice(0,3)+') '+p.slice(3,6)+'-'+p.slice(6):(p||''); }
+function leadDate(v){ if(v==null||v==='') return null; if(!isNaN(v)&&String(v).length>=9){ const n=+v; return new Date(n>1e12?n:n*1000); }
+  const d=new Date(String(v).trim().replace(' ','T')); return isNaN(d)?null:d; }
+function leadYmd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// RepairDesk wraps lists differently per endpoint — find the array, whatever it's called
+function rdItems(d){
+  if(!d || d.success===false) return [];
+  const data=d.data!==undefined?d.data:d;
+  if(Array.isArray(data)) return data;
+  if(data && typeof data==='object'){
+    for(const k of ['items','data','results','list','leadData','appointmentData','smsData','callLogs','records']) if(Array.isArray(data[k])) return data[k];
+    const arr=Object.values(data).find(Array.isArray); if(arr) return arr;
+  }
+  return [];
+}
+async function rdAllPages(path, sizeParam, size, maxPages){
+  const out=[], seen=new Set();
+  for(let page=1; page<=(maxPages||40); page++){
+    const d=await fetchRD(path+(path.includes('?')?'&':'?')+sizeParam+'='+size+'&page='+page, true);
+    if(d && d.error) throw new Error(d.error);
+    const rows=rdItems(d);
+    let fresh=0;
+    rows.forEach(r=>{ const k=r&&r.id!=null?String(r.id):JSON.stringify(r); if(!seen.has(k)){ seen.add(k); fresh++; out.push(r); } });
+    if(!fresh || rows.length<size) break;
+  }
+  return out;
+}
+async function leadsLoad(force){
+  if(_leadsBusy) return;
+  const key=leadsDays;
+  if(!force && _leadsData && _leadsData.days===key && Date.now()-_leadsData.at<10*60000) return;
+  _leadsBusy=true; _leadsErr=''; drawLeads();
+  try{
+    const to=new Date(), from=new Date(Date.now()-leadsDays*86400000);
+    const [calls,sms,rdl]=await Promise.allSettled([
+      rdAllPages('calllogs?from_date='+leadYmd(from)+'&to_date='+leadYmd(to),'per_page',100,60),
+      rdAllPages('sms-inbox?from_date='+leadYmd(from)+'&to_date='+leadYmd(to),'per_page',100,60),
+      rdAllPages('appointment?from_date='+Math.floor(from/1000)+'&to_date='+Math.floor(to/1000),'pagesize',100,20)
+    ]);
+    const why=[];
+    if(calls.status!=='fulfilled') why.push('calls ('+(calls.reason&&calls.reason.message||calls.reason)+')');
+    if(sms.status!=='fulfilled') why.push('texts ('+(sms.reason&&sms.reason.message||sms.reason)+')');
+    if(rdl.status!=='fulfilled') why.push('RepairDesk leads ('+(rdl.reason&&rdl.reason.message||rdl.reason)+')');
+    _leadsErr=why.length?'Couldn\'t read '+why.join(', ')+'. If it says "path not allowed", the server function needs the update (edge-function.ts).':'';
+    _leadsData={days:key, at:Date.now(), from, calls:calls.value||[], sms:sms.value||[], rdLeads:rdl.value||[]};
+    await leadsLoadTracking();
+  }catch(e){ _leadsErr=String(e.message||e); }
+  finally{ _leadsBusy=false; drawLeads(); }
+}
+async function leadsLoadTracking(){
+  try{
+    const t=await sbList('lead_tracking?select=*&limit=5000',2);
+    const n=await sbList('lead_notes?select=*&order=created_at.desc&limit=5000',2);
+    leadTrack={}; t.forEach(r=>leadTrack[r.phone]=r);
+    leadNotes={}; n.forEach(r=>(leadNotes[r.phone]=leadNotes[r.phone]||[]).push(r));
+    leadTablesOk=true;
+  }catch(e){ leadTablesOk=false; }
+}
+// Everyone in the period, by phone, with where they're up to
+function leadsBuild(){
+  const D=_leadsData; if(!D) return [];
+  const people={};
+  const P=ph=>people[ph]||(people[ph]={phone:ph, name:'', calls:[], sms:[], rdLeads:[], quotes:[], orders:[], events:[]});
+  const setName=(p,n)=>{ n=String(n||'').trim(); if(n && !/unknown caller/i.test(n) && !p.name) p.name=n; };
+  D.calls.forEach(c=>{
+    const dir=String(c.direction||'').toLowerCase(), typ=String(c.callType||'').toLowerCase();
+    const out=/out/.test(dir)||/outbound/.test(typ);
+    const ph=leadPhone(c.contact_number)||leadPhone(out?c.to:c.from); if(!ph) return;
+    const p=P(ph), cu=c.customer||{};
+    setName(p,[cu.first_name,cu.last_name].filter(Boolean).join(' '));
+    if(cu.customer_id) p.custId=p.custId||cu.customer_id;
+    const missed=/missed/.test(typ)||/voicemail/.test(dir)||/voicemail/.test(typ);
+    const at=leadDate(c.start_time||c.created_on);
+    const ev={kind:'call', at, out, missed, vm:/voicemail/.test(dir+typ), dur:c.callDuration||'', agent:c.agent_name||'', summary:c.summary||'', rec:c.recording_url||'', type:c.callType||c.direction||''};
+    p.calls.push(ev); p.events.push(ev);
+  });
+  D.sms.forEach(m=>{
+    const out=String(m.direction||'').toLowerCase()==='outbound';
+    const ph=leadPhone(out?m.to:m.from); if(!ph) return;
+    const ev={kind:'sms', at:leadDate(m.date_time), out, text:m.message||'', status:m.status||'', module:m.module||''};
+    const p=P(ph); p.sms.push(ev); p.events.push(ev);
+  });
+  D.rdLeads.forEach(l=>{
+    const s=l.summary||l;
+    const ph=leadPhone(kpiPick(s,['mobile','phone','customer.mobile','customer.phone','customer_mobile','customer_phone'])); if(!ph) return;
+    const p=P(ph);
+    setName(p, kpiPick(s,['customer.fullName','fullName','customer_name'])||[kpiPick(s,['firstName','first_name','customer.first_name']),kpiPick(s,['lastName','last_name','customer.last_name'])].filter(Boolean).join(' '));
+    const devs=(l.devices||[]).map(d=>kpiPick(d,['name','device.name','device_name'])).filter(Boolean);
+    const ev={kind:'lead', at:leadDate(kpiPick(s,['created_date','created_on','created_at','date','start_time','startTime'])),
+      text:[kpiPick(s,['order_id','lead_id','id'])&&('#'+kpiPick(s,['order_id','lead_id','id'])), devs.join(', '), kpiPick(s,['status','status_name','status.name'])].filter(Boolean).join(' · ')};
+    p.rdLeads.push(ev); p.events.push(ev);
+  });
+  // Orders and quotes from the ticket list — the same customer, by phone
+  const start=D.from.getTime();
+  (allTickets||[]).forEach(t=>{
+    const ph=leadPhone(getCustomerPhone(t)); if(!ph || !people[ph]) return;
+    const s=t.summary||{}, p=people[ph];
+    const est=/estimate/i.test(String((s.status&&s.status.name)||s.status||''));
+    const made=kpiDate(s.created_date);
+    setName(p,(s.customer&&(s.customer.fullName||s.customer.name))||'');
+    if(est){ const ev={kind:'quote', at:made, oid:getOrderId(t), total:rdMoney(s.total), items:(t.devices||[]).map(d=>d.device&&d.device.name).filter(Boolean).join(', ')}; p.quotes.push(ev); p.events.push(ev); }
+    else p.orders.push({oid:getOrderId(t), at:made});
+  });
+  const today=leadYmd(new Date());
+  return Object.values(people).map(p=>{
+    p.events.sort((a,b)=>(b.at||0)-(a.at||0));
+    const firstOrder=p.orders.reduce((m,o)=>(o.at&&(!m||o.at<m))?o.at:m,null);
+    if(firstOrder && firstOrder.getTime()<start) return null;           // existing customer
+    p.track=leadTrack[p.phone]||{}; p.notes=leadNotes[p.phone]||[];
+    if(p.track.name && !p.name) p.name=p.track.name;
+    p.stage=firstOrder?'won':p.quotes.length?'quoted':p.rdLeads.length?'lead':'contacted';
+    p.wonOid=firstOrder?(p.orders.find(o=>o.at&&o.at.getTime()===firstOrder.getTime())||{}).oid:'';
+    p.last=p.events[0]&&p.events[0].at;
+    const lastOut=p.events.find(e=>e.out||e.kind==='quote');
+    const missed=p.calls.filter(c=>c.missed && (!lastOut||!lastOut.at||c.at>lastOut.at));
+    const inAfter=p.events.find(e=>(e.kind==='sms'||e.kind==='call') && !e.out && (!lastOut||!lastOut.at||e.at>lastOut.at));
+    p.flags=[];
+    if(p.stage!=='won'){
+      if(missed.length) p.flags.push({k:'missed', t:'Missed call — not called back'+(missed.length>1?' ('+missed.length+')':''), hue:'var(--red)'});
+      else if(inAfter && inAfter.kind==='sms') p.flags.push({k:'reply', t:'Texted us — no reply yet', hue:'var(--red)'});
+      const q=p.quotes[0];
+      if(q && q.at && (Date.now()-q.at)>3*86400000 && (!p.last||p.last<=q.at||!p.events.some(e=>e.out&&e.at>q.at)))
+        p.flags.push({k:'quote', t:'Quoted '+Math.floor((Date.now()-q.at)/86400000)+' days ago — no follow-up', hue:'var(--orange)'});
+      if(p.track.follow_up_on && p.track.follow_up_on<=today) p.flags.push({k:'due', t:'Follow up '+(p.track.follow_up_on===today?'today':'was due '+_expDay(p.track.follow_up_on).toLocaleDateString()), hue:'var(--gold)'});
+    }
+    return p;
+  }).filter(Boolean).sort((a,b)=>(b.flags.length?1:0)-(a.flags.length?1:0)||(b.last||0)-(a.last||0));
+}
+
+async function renderLeadsPage(){
+  document.getElementById('content').innerHTML=`<div class="page-head">
+      <div><div class="page-title">Leads</div>
+        <div class="page-sub">New people who called, texted or got a quote — and haven't ordered yet. Existing customers aren't shown.</div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <input id="leads-q" placeholder="Search name or number" value="${esc(leadsQ)}" oninput="leadsQ=this.value;drawLeads()" style="padding:7px 10px;font-size:13px;width:200px">
+        <select onchange="leadsDays=+this.value;try{localStorage.setItem('glint_leads_days',this.value)}catch(e){};leadsLoad(true)" style="width:auto;padding:7px 10px;font-size:13px">
+          ${[14,30,60,90,180].map(n=>`<option value="${n}"${leadsDays===n?' selected':''}>Last ${n} days</option>`).join('')}</select>
+        <button class="btn btn-sm" onclick="leadsLoad(true)">⟳ Refresh</button>
+      </div></div>
+    <div id="leads-body"><div class="card"><div class="empty">Reading calls, texts and leads from RepairDesk…</div></div></div>`;
+  if(!allTickets || !allTickets.length){ try{ await ensureTicketsLoaded(); }catch(e){} }
+  await leadsLoad(false);
+  drawLeads();
+}
+function drawLeads(){
+  const el=document.getElementById('leads-body'); if(!el) return;
+  if(!_leadsData){ el.innerHTML=`<div class="card"><div class="empty">${_leadsBusy?'Reading calls, texts and leads from RepairDesk…':esc(_leadsErr||'Nothing loaded')}</div></div>`; return; }
+  const all=leadsBuild();
+  const live=all.filter(p=>p.stage!=='won' && !['not_interested','not_a_lead'].includes(p.track.status));
+  const cnt={
+    open:live.length,
+    missed:live.filter(p=>p.flags.some(f=>f.k==='missed'||f.k==='reply')).length,
+    quote:live.filter(p=>p.flags.some(f=>f.k==='quote')).length,
+    due:live.filter(p=>p.flags.some(f=>f.k==='due')).length,
+    won:all.filter(p=>p.stage==='won').length,
+    closed:all.filter(p=>p.stage!=='won' && ['not_interested','not_a_lead'].includes(p.track.status)).length
+  };
+  const q=leadsQ.trim().toLowerCase(), qd=q.replace(/\D/g,'');
+  let list=leadsFilter==='won'?all.filter(p=>p.stage==='won')
+    : leadsFilter==='closed'?all.filter(p=>p.stage!=='won' && ['not_interested','not_a_lead'].includes(p.track.status))
+    : leadsFilter==='missed'?live.filter(p=>p.flags.some(f=>f.k==='missed'||f.k==='reply'))
+    : leadsFilter==='quote'?live.filter(p=>p.flags.some(f=>f.k==='quote'))
+    : leadsFilter==='due'?live.filter(p=>p.flags.some(f=>f.k==='due'))
+    : live;
+  if(q) list=list.filter(p=>(p.name||'').toLowerCase().includes(q) || (qd.length>=3 && p.phone.includes(qd)));
+  const tile=(k,n,label,hue)=>`<div class="stat-tile clickable" onclick="leadsFilter='${k}';drawLeads()" style="border-left:4px solid ${hue};${leadsFilter===k?'box-shadow:0 0 0 2px '+hue:''}">
+    <div class="stat-num" style="color:${hue}">${n}</div><div class="stat-label">${label}</div></div>`;
+  const ago=d=>d?kpiAgo(d.toISOString()):'';
+  el.innerHTML=(_leadsErr?`<div class="card" style="border-left:4px solid var(--orange);font-size:13px">⚠️ ${esc(_leadsErr)}</div>`:'')+
+    (leadTablesOk===false?`<div class="card" style="font-size:13px;border-left:4px solid var(--orange)">To keep follow-ups and notes, run <strong>add-leads.sql</strong> in Supabase once, then reload.</div>`:'')+
+    (!olderTicketsLoaded&&olderTicketsLoading?`<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Still loading older orders — a few existing customers may show until it finishes.</div>`:'')+
+    `<div class="stat-grid">
+      ${tile('open',cnt.open,'Open leads','var(--blue)')}
+      ${tile('missed',cnt.missed,'Waiting on us','var(--red)')}
+      ${tile('quote',cnt.quote,'Quoted — no follow-up','var(--orange)')}
+      ${tile('due',cnt.due,'Follow-ups due','var(--gold)')}
+      ${tile('won',cnt.won,'Became customers','var(--green)')}
+    </div>
+    <div style="font-size:12px;color:var(--ink3);margin:-4px 0 12px">Last ${leadsDays} days · ${_leadsData.calls.length} calls, ${_leadsData.sms.length} texts, ${_leadsData.rdLeads.length} RepairDesk leads read ${kpiAgo(new Date(_leadsData.at).toISOString())}${_leadsBusy?' · <strong>refreshing…</strong>':''}
+      ${cnt.closed?` · <span class="clickable" onclick="leadsFilter='closed';drawLeads()">${cnt.closed} closed</span>`:''}</div>
+    ${list.slice(0,150).map(p=>leadCardHtml(p,ago)).join('')||'<div class="card"><div class="empty">Nobody here.</div></div>'}
+    ${list.length>150?`<div style="font-size:12px;color:var(--ink3)">Showing 150 of ${list.length} — search to narrow down.</div>`:''}`;
+}
+function leadEventHtml(e){
+  const when=e.at?e.at.toLocaleDateString([], {month:'short',day:'numeric'})+' '+e.at.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
+  let icon, head, body='';
+  if(e.kind==='call'){
+    icon=e.missed?(e.vm?'📼':'❌'):e.out?'↗️':'📞';
+    head=(e.missed?(e.vm?'Voicemail':'Missed call'):e.out?'We called':'They called')+(e.dur&&!e.missed?' · '+esc(e.dur):'')+(e.agent?' · '+esc(e.agent):'');
+    body=(e.summary?`<div style="font-size:12.5px;color:var(--ink2);margin-top:2px">${esc(e.summary)}</div>`:'')+(e.rec?`<a href="${esc(e.rec)}" target="_blank" rel="noopener" style="font-size:12px">▶ Recording</a>`:'');
+  } else if(e.kind==='sms'){
+    icon='💬'; head=e.out?'We texted':'They texted'; body=`<div style="font-size:12.5px;color:var(--ink2);margin-top:2px;white-space:pre-wrap">${esc(e.text)}</div>`;
+  } else if(e.kind==='lead'){
+    icon='📝'; head='Lead in RepairDesk'; body=e.text?`<div style="font-size:12.5px;color:var(--ink2)">${esc(e.text)}</div>`:'';
+  } else if(e.kind==='quote'){
+    icon='💲'; head='Quote <span class="clickable" onclick="navigate(\''+h('order',e.oid).replace(/'/g,"\\'")+'\')">'+esc(e.oid)+'</span>'+(e.total?' · '+money(e.total):'');
+    body=e.items?`<div style="font-size:12.5px;color:var(--ink2)">${esc(e.items)}</div>`:'';
+  } else if(e.kind==='note'){
+    icon='🗒️'; head='Note · '+esc(e.by||''); body=`<div style="font-size:12.5px;color:var(--ink2);white-space:pre-wrap">${esc(e.text)}</div>`;
+  }
+  return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+    <div style="font-size:16px;width:22px;text-align:center">${icon}</div>
+    <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">${head} <span style="font-weight:400;color:var(--ink3)">· ${when}</span></div>${body}</div></div>`;
+}
+function leadCardHtml(p, ago){
+  const st=LEAD_STAGE[p.stage]||LEAD_STAGE.contacted, open=leadsOpen.has(p.phone), tr=p.track;
+  const last=p.events[0];
+  const lastTxt=last?(last.kind==='call'?(last.missed?'missed call':last.out?'we called':'called'):last.kind==='sms'?(last.out?'we texted':'texted'):last.kind==='quote'?'quoted':'lead'):'';
+  const snippet=(p.calls.find(c=>c.summary)||{}).summary||(p.sms.find(s=>!s.out)||{}).text||'';
+  const closed=['not_interested','not_a_lead'].includes(tr.status);
+  const timeline=open?p.events.concat(p.notes.map(n=>({kind:'note', at:new Date(n.created_at), text:n.note, by:n.created_by}))).sort((a,b)=>(b.at||0)-(a.at||0)):[];
+  const ph=jsstr(p.phone);
+  return `<div class="card" style="border-left:4px solid ${p.flags[0]?p.flags[0].hue:st.hue};${closed?'opacity:.6':''}">
+    <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;cursor:pointer" onclick="leadToggle('${ph}')">
+      <div style="font-size:24px;line-height:1">${st.icon}</div>
+      <div style="flex:1;min-width:220px">
+        <div style="font-family:'Outfit',sans-serif;font-size:16.5px;font-weight:700">${esc(p.name||'Unknown caller')} <span style="font-size:13px;font-weight:500;color:var(--ink3)">${esc(leadFmtPhone(p.phone))}</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+          <span style="font-size:11px;font-weight:700;color:${st.hue};border:1px solid ${st.hue};border-radius:10px;padding:1px 8px">${st.label}${p.stage==='won'&&p.wonOid?' · '+esc(p.wonOid):''}</span>
+          ${p.flags.map(f=>`<span style="font-size:11px;font-weight:700;color:#fff;background:${f.hue};border-radius:10px;padding:2px 8px">${esc(f.t)}</span>`).join('')}
+          ${closed?`<span style="font-size:11px;color:var(--ink3)">${tr.status==='not_a_lead'?'Not a lead':'Not interested'}</span>`:''}
+          ${tr.owner?`<span style="font-size:11px;color:var(--ink2)">👤 ${esc(tr.owner)}</span>`:''}
+        </div>
+        ${snippet&&!open?`<div style="font-size:12.5px;color:var(--ink2);margin-top:5px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(snippet)}</div>`:''}
+      </div>
+      <div style="text-align:right;font-size:12px;color:var(--ink3);flex-shrink:0">${last?ago(last.at)+'<br>'+lastTxt:''}
+        <div style="margin-top:4px">${p.calls.length?'📞'+p.calls.length+' ':''}${p.sms.length?'💬'+p.sms.length+' ':''}${p.quotes.length?'💲'+p.quotes.length:''}</div></div>
+    </div>
+    ${open?`<div style="margin-top:12px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(220px,1fr);gap:16px" class="lead-grid">
+      <div>${timeline.map(leadEventHtml).join('')||'<div class="empty">Nothing yet</div>'}</div>
+      <div onclick="event.stopPropagation()">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px">FOLLOW-UP</div>
+        <a class="btn btn-gold btn-sm btn-block" href="tel:+1${esc(p.phone)}" style="margin-bottom:8px;text-align:center">📞 Call ${esc(leadFmtPhone(p.phone))}</a>
+        ${p.name?'':`<div class="field" style="margin-bottom:8px"><label>Name</label><input id="ld-name-${ph}" placeholder="Who is this?" value="${esc(tr.name||'')}"></div>`}
+        <div class="field" style="margin-bottom:8px"><label>Who's on it</label>
+          <select id="ld-owner-${ph}"><option value="">—</option>${[...new Set((workers||[]).filter(w=>workerAccess(w)!=='none'&&w.name).map(w=>w.name))].sort().map(n=>`<option${tr.owner===n?' selected':''}>${esc(n)}</option>`).join('')}</select></div>
+        <div class="field" style="margin-bottom:8px"><label>Follow up on</label><input type="date" id="ld-date-${ph}" value="${esc(tr.follow_up_on||'')}"></div>
+        <div class="field" style="margin-bottom:8px"><label>Add a note</label><textarea id="ld-note-${ph}" rows="2" placeholder="What happened / what's next"></textarea></div>
+        <button class="btn btn-sm btn-block" onclick="leadSave('${ph}')">Save</button>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          ${closed?`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','open')">↩ Reopen</button>`
+            :`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','not_interested')">Not interested</button>
+              <button class="btn btn-ghost btn-sm" title="A supplier, worker, wrong number… hide it for good" onclick="leadSetStatus('${ph}','not_a_lead')">Not a lead</button>`}
+        </div>
+      </div></div>`:''}
+  </div>`;
+}
+function leadToggle(ph){ leadsOpen.has(ph)?leadsOpen.delete(ph):leadsOpen.add(ph); drawLeads(); }
+async function leadUpsert(ph, patch){
+  const r=await sb('lead_tracking?on_conflict=phone',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify({phone:ph, ...patch, updated_at:new Date().toISOString(), updated_by:meName()})});
+  return r.ok;
+}
+async function leadSave(ph){
+  const v=id=>{ const e=document.getElementById(id+'-'+ph); return e?e.value.trim():undefined; };
+  const patch={owner:v('ld-owner')||null, follow_up_on:v('ld-date')||null};
+  const nm=v('ld-name'); if(nm!==undefined) patch.name=nm||null;
+  const note=v('ld-note');
+  if(!(await leadUpsert(ph, patch))){ toast('Could not save — run add-leads.sql in Supabase first'); return; }
+  if(note){ await sb('lead_notes',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({phone:ph, note, created_by:meName()})}); }
+  toast('✅ Saved'); await leadsLoadTracking(); drawLeads();
+}
+async function leadSetStatus(ph, status){
+  if(status==='not_a_lead' && !confirm('Hide this number from Leads for good?\n\n(A supplier, a worker, a wrong number… You can bring it back from "closed".)')) return;
+  if(!(await leadUpsert(ph,{status}))){ toast('Could not save — run add-leads.sql in Supabase first'); return; }
+  toast(status==='open'?'Reopened':status==='not_a_lead'?'Hidden — not a lead':'Marked not interested');
+  leadsOpen.delete(ph); await leadsLoadTracking(); drawLeads();
 }
 
 // Saves a CSV file (opens in Excel). The \uFEFF at the start keeps Excel from garbling
