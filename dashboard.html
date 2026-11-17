@@ -306,7 +306,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-b</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -1021,12 +1021,12 @@ function makeBarcode(text){
 //            On Hold, Boxes (and Print Labels if they're allowed to print)
 //   No access  scanner only
 // The owner password from Settings still opens everything, so nobody gets locked out.
-const ACCESS_LABEL={owner:'Owner', manager:'Manager', staff:'Staff', none:'No access (scanner only)'};
+const ACCESS_LABEL={owner:'Admin', manager:'Manager', staff:'Staff', none:'No access (scanner only)'};
 // Bump SESSION_VER to sign everyone out once (e.g. after the owner password changes)
-const SESSION_VER=2;
+const SESSION_VER=3;
 let me=null;
 try{ me=JSON.parse(sessionStorage.getItem('glint_user')||'null'); }catch(e){ me=null; }
-if(!me || me.v!==SESSION_VER){ me=null; sessionStorage.removeItem('glint_user'); sessionStorage.removeItem('glint_admin'); }
+if(!me || me.v!==SESSION_VER || me.viaPassword){ me=null; sessionStorage.removeItem('glint_user'); sessionStorage.removeItem('glint_admin'); }
 function meName(){ return (me && !me.viaPassword && me.name) || 'Office'; }
 function myLevel(){ return (me && me.level) || 'staff'; }
 function isOwner(){ return myLevel()==='owner'; }
@@ -1046,10 +1046,6 @@ function canOpen(route){
 function homeRoute(){ return canOpen('live')?'live':'orders'; }
 function workerAccess(w){ return (w && w.access) || 'staff'; }
 
-async function fetchAdminPass(){
-  // No built-in fallback: if the password can't be read, the owner sign-in simply fails
-  try{ const r=await sb('settings?key=eq.admin_password&select=value'); return (r&&r[0]&&r[0].value)||null; }catch(e){ return null; }
-}
 let _loginWorkers=[];
 async function loadLoginNames(){
   const sel=document.getElementById('login-name'); if(!sel) return;
@@ -1058,8 +1054,7 @@ async function loadLoginNames(){
     .map(w=>w.name).sort((a,b)=>a.localeCompare(b));
   let last=''; try{ last=localStorage.getItem('glint_last_login')||''; }catch(e){}
   sel.innerHTML='<option value="">— Who are you? —</option>'+
-    names.map(n=>`<option${n===last?' selected':''}>${esc(n)}</option>`).join('')+
-    '<option value="__owner__"'+(last==='__owner__'?' selected':'')+'>Owner password</option>';
+    names.map(n=>`<option${n===last?' selected':''}>${esc(n)}</option>`).join('');
   loginNameChanged();
 }
 function hasPin(w){ return !!(w && w.pin!=null && String(w.pin).trim()!==''); }
@@ -1090,13 +1085,7 @@ async function adminLogin(){
   const pass=document.getElementById('login-pass').value.trim();
   const err=document.getElementById('login-err');
   if(!who){ err.textContent='Choose your name'; return; }
-  if(!pass){ err.textContent=who==='__owner__'?'Enter the owner password':'Enter your PIN'; return; }
-  if(who==='__owner__'){
-    const real=await fetchAdminPass();
-    if(real && pass===real) startSession({name:'Owner', level:'owner', viaPassword:true});
-    else err.textContent='Incorrect password';
-    return;
-  }
+  if(!pass){ err.textContent='Enter your PIN'; return; }
   const w=_loginWorkers.find(x=>x.name===who);
   if(w && !hasPin(w)){ err.textContent='You don\'t have a PIN yet — ask the owner to set one'; return; }
   if(!w || String(w.pin||'')!==pass){ err.textContent='Wrong PIN'; return; }
@@ -1265,7 +1254,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-17-a';
+const APP_VERSION='2026-11-17-b';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -9813,7 +9802,7 @@ function renderWorkersPage(){
     </div>
     <div class="card">
       <div class="card-label">All Workers</div>
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6">Only you set or change PINs. Give each person theirs privately — it works here and on the scanner.<br><strong>Owner</strong> sees everything · <strong>Manager</strong> everything except money (KPIs, inventory, costs, prices — tick <em>Repair costs</em> to show repair prices only) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6">Only you set or change PINs. Give each person theirs privately — it works here and on the scanner.<br><strong>Admin</strong> sees everything (KPIs, money, workers, settings) · <strong>Manager</strong> everything except money (KPIs, inventory, costs, prices — tick <em>Repair costs</em> to show repair prices only) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
       <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th>Control Room</th><th style="text-align:center">Print Labels</th><th style="text-align:center" title="See repair prices on the Repairs page, without seeing KPIs or other money">Repair costs</th><th></th></tr></thead><tbody></tbody></table></div>
     </div>
   `;
@@ -9904,7 +9893,9 @@ function accessOptionsHtml(sel){
 }
 async function setWorkerAccess(id, level){
   const w=workers.find(x=>x.id===id);
-  if(w && me && !me.viaPassword && w.name===me.name && level!=='owner' && !confirm('That takes away your own owner access. Carry on?')){ renderWorkersTable(); return; }
+  if(w && workerAccess(w)==='owner' && level!=='owner' && !(workers||[]).some(x=>x.id!==id && workerAccess(x)==='owner')){
+    alert(w.name+' is the only Admin. Make someone else Admin first — otherwise nobody can see KPIs or manage workers.'); renderWorkersTable(); return; }
+  if(w && me && w.name===me.name && level!=='owner' && !confirm('That takes away your own Admin access. Carry on?')){ renderWorkersTable(); return; }
   const r=await sb('workers?id=eq.'+id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({access:level})});
   if(r.ok){ toast('✅ '+(w?w.name:'')+' → '+ACCESS_LABEL[level]); if(w) w.access=level; }
   else { toast('Could not save — run add-users.sql in Supabase first'); renderWorkersTable(); }
@@ -10210,11 +10201,8 @@ async function renderSettingsPage(){
       </div>
     </div>
     <div class="card" style="max-width:460px">
-      <div class="card-label">Change Admin Password</div>
-      <div class="field" style="margin-bottom:12px"><label>Current Password</label><input id="cur-pass" type="password"></div>
-      <div class="field" style="margin-bottom:12px"><label>New Password</label><input id="new-pass" type="password" placeholder="At least 6 characters"></div>
-      <div class="field" style="margin-bottom:16px"><label>Confirm New Password</label><input id="new-pass2" type="password"></div>
-      <button class="btn btn-gold btn-block" onclick="changeAdminPassword()">Update Password</button>
+      <div class="card-label">Sign-in</div>
+      <div style="font-size:13px;color:var(--ink2);line-height:1.55">Everyone signs in with their own name and PIN — there is no shared password. Change PINs, and who is Admin, on the <span class="clickable" onclick="navigate('#/workers')">Workers</span> page.</div>
     </div>
     <div class="card" style="max-width:460px">
       <div class="card-label">Label Size</div>
@@ -10268,16 +10256,6 @@ async function stageRemove(i){
   if(!confirm('Remove stage "'+name+'"?\n\nItems and history keep their data — this stage just disappears from the pipeline board.')) return;
   WORK_STAGES.splice(i,1);
   if(await savePipeStages()){ renderPipeStagesList(); toast('Removed "'+name+'"'); }
-}
-async function changeAdminPassword(){
-  const cur=document.getElementById('cur-pass').value, nw=document.getElementById('new-pass').value, nw2=document.getElementById('new-pass2').value;
-  const real=await fetchAdminPass();
-  if(cur!==real){ toast('Current password incorrect'); return; }
-  if(nw.length<6){ toast('New password must be at least 6 characters'); return; }
-  if(nw!==nw2){ toast('New passwords do not match'); return; }
-  const r=await sb('settings?key=eq.admin_password',{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({value:nw})});
-  if(r.ok){ toast('✅ Password updated'); document.getElementById('cur-pass').value=''; document.getElementById('new-pass').value=''; document.getElementById('new-pass2').value=''; }
-  else toast('Could not update password');
 }
 function saveLabelSize(){
   const w=parseFloat(document.getElementById('ls-width').value), hgt=parseFloat(document.getElementById('ls-height').value);
