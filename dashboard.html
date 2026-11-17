@@ -306,7 +306,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-12-a</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-a</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -510,7 +510,7 @@ const NAV_ITEMS = [
   {route:'insights', label:'Insights', icon:'◆'},
   {route:'ask', label:'Ask Glint', icon:'✨'},
   {route:'inbox', label:'Inbox', icon:'📬', badge:'inbox-badge'},
-  {route:'leads', label:'Leads', icon:'🧲'},
+  {route:'leads', label:'Leads & Calls', icon:'🧲'},
   {route:'priority', label:'What to Work On', icon:'🎯'},
   {route:'boxes', label:'Boxes', icon:'📦'},
   {route:'attention', label:'Needs Attention', icon:'⚠️'},
@@ -1022,9 +1022,11 @@ function makeBarcode(text){
 //   No access  scanner only
 // The owner password from Settings still opens everything, so nobody gets locked out.
 const ACCESS_LABEL={owner:'Owner', manager:'Manager', staff:'Staff', none:'No access (scanner only)'};
+// Bump SESSION_VER to sign everyone out once (e.g. after the owner password changes)
+const SESSION_VER=2;
 let me=null;
 try{ me=JSON.parse(sessionStorage.getItem('glint_user')||'null'); }catch(e){ me=null; }
-if(!me && sessionStorage.getItem('glint_admin')==='1') me={name:'Owner', level:'owner', viaPassword:true};
+if(!me || me.v!==SESSION_VER){ me=null; sessionStorage.removeItem('glint_user'); sessionStorage.removeItem('glint_admin'); }
 function meName(){ return (me && !me.viaPassword && me.name) || 'Office'; }
 function myLevel(){ return (me && me.level) || 'staff'; }
 function isOwner(){ return myLevel()==='owner'; }
@@ -1045,7 +1047,8 @@ function homeRoute(){ return canOpen('live')?'live':'orders'; }
 function workerAccess(w){ return (w && w.access) || 'staff'; }
 
 async function fetchAdminPass(){
-  try{ const r=await sb('settings?key=eq.admin_password&select=value'); return (r&&r[0]&&r[0].value)||'glint2026'; }catch(e){ return 'glint2026'; }
+  // No built-in fallback: if the password can't be read, the owner sign-in simply fails
+  try{ const r=await sb('settings?key=eq.admin_password&select=value'); return (r&&r[0]&&r[0].value)||null; }catch(e){ return null; }
 }
 let _loginWorkers=[];
 async function loadLoginNames(){
@@ -1071,6 +1074,7 @@ function loginNameChanged(){
   const e=document.getElementById('login-err'); if(e) e.textContent='';
 }
 function startSession(user){
+  user.v=SESSION_VER;
   me=user;
   sessionStorage.setItem('glint_user', JSON.stringify(user));
   sessionStorage.setItem('glint_admin','1');
@@ -1089,7 +1093,7 @@ async function adminLogin(){
   if(!pass){ err.textContent=who==='__owner__'?'Enter the owner password':'Enter your PIN'; return; }
   if(who==='__owner__'){
     const real=await fetchAdminPass();
-    if(pass===real) startSession({name:'Owner', level:'owner', viaPassword:true});
+    if(real && pass===real) startSession({name:'Owner', level:'owner', viaPassword:true});
     else err.textContent='Incorrect password';
     return;
   }
@@ -1242,7 +1246,7 @@ function navigate(hash){
 function currentRoute(){ return (location.hash.replace(/^#\/?/,'').split('/')[0])||'live'; }
 function currentParam(){ const p=location.hash.replace(/^#\/?/,'').split('/')[1]; return p?decodeURIComponent(p):null; }
 
-const ROUTE_LABELS={leads:'Leads',live:'Live',pipeline:'Pipeline',repairs:'Repairs',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
+const ROUTE_LABELS={leads:'Leads & Calls',live:'Live',pipeline:'Pipeline',repairs:'Repairs',kpi:'Weekly KPIs',inventory:'Inventory Costs',inbox:'Inbox',boxes:'Boxes',priority:'What to Work On',costs:'Costs',photofind:'Find by Photo',hold:'On Hold',ask:'Ask Glint',attention:'Needs Attention',timeline:'Day Timeline',production:'Production',print:'Print Labels',reports:'Reports',insights:'Insights',orders:'Orders',history:'History',workers:'Workers',labels:'Labels',settings:'Settings',item:'Item',order:'Order',worker:'Worker',stat:'Live'};
 
 function renderBreadcrumb(){
   const route=currentRoute(), param=currentParam();
@@ -1261,7 +1265,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-12-a';
+const APP_VERSION='2026-11-17-a';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -7584,10 +7588,12 @@ async function expDelete(id){
 // hand them out. Follow-up (who's on it, when, notes, not interested) is kept here.
 let leadsDays=parseInt(localStorage.getItem('glint_leads_days')||'60',10);
 let leadsFilter='open', leadsQ='', leadsOpen=new Set();
+let leadsSection=localStorage.getItem('glint_leads_section')||'leads';   // leads | customers | all
 let _leadsData=null, _leadsBusy=false, _leadsErr='';
 let leadTrack={}, leadNotes={}, leadTablesOk=null;
 const LEAD_STAGE={contacted:{label:'Called / texted', hue:'var(--blue)', icon:'📞'}, lead:{label:'Lead in RepairDesk', hue:'var(--gold)', icon:'📝'},
-  quoted:{label:'Quoted', hue:'var(--orange)', icon:'💬'}, won:{label:'Became a customer', hue:'var(--green)', icon:'✅'}};
+  quoted:{label:'Quoted', hue:'var(--orange)', icon:'💬'}, won:{label:'Became a customer', hue:'var(--green)', icon:'✅'},
+  customer:{label:'Existing customer', hue:'var(--ink2)', icon:'👤'}};
 function leadPhone(v){ const d=String(v||'').replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
 function leadFmtPhone(p){ return p&&p.length===10?'('+p.slice(0,3)+') '+p.slice(3,6)+'-'+p.slice(6):(p||''); }
 function leadDate(v){ if(v==null||v==='') return null; if(!isNaN(v)&&String(v).length>=9){ const n=+v; return new Date(n>1e12?n:n*1000); }
@@ -7696,10 +7702,11 @@ function leadsBuild(){
   return Object.values(people).map(p=>{
     p.events.sort((a,b)=>(b.at||0)-(a.at||0));
     const firstOrder=p.orders.reduce((m,o)=>(o.at&&(!m||o.at<m))?o.at:m,null);
-    if(firstOrder && firstOrder.getTime()<start) return null;           // existing customer
+    const existing=!!(firstOrder && firstOrder.getTime()<start);       // ordered before this period
     p.track=leadTrack[p.phone]||{}; p.notes=leadNotes[p.phone]||[];
     if(p.track.name && !p.name) p.name=p.track.name;
-    p.stage=firstOrder?'won':p.quotes.length?'quoted':p.rdLeads.length?'lead':'contacted';
+    p.stage=existing?'customer':firstOrder?'won':p.quotes.length?'quoted':p.rdLeads.length?'lead':'contacted';
+    if(existing){ const lo=p.orders.slice().sort((a,b)=>(b.at||0)-(a.at||0))[0]; p.lastOid=lo&&lo.oid; p.orderCount=p.orders.length; }
     p.wonOid=firstOrder?(p.orders.find(o=>o.at&&o.at.getTime()===firstOrder.getTime())||{}).oid:'';
     p.last=p.events[0]&&p.events[0].at;
     const lastOut=p.events.find(e=>e.out||e.kind==='quote');
@@ -7720,8 +7727,8 @@ function leadsBuild(){
 
 async function renderLeadsPage(){
   document.getElementById('content').innerHTML=`<div class="page-head">
-      <div><div class="page-title">Leads</div>
-        <div class="page-sub">New people who called, texted or got a quote — and haven't ordered yet. Existing customers aren't shown.</div></div>
+      <div><div class="page-title">Leads &amp; Calls</div>
+        <div class="page-sub">Everyone who called, texted or got a quote — new leads first, existing customers on their own tab.</div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <input id="leads-q" placeholder="Search name or number" value="${esc(leadsQ)}" oninput="leadsQ=this.value;drawLeads()" style="padding:7px 10px;font-size:13px;width:200px">
         <select onchange="leadsDays=+this.value;try{localStorage.setItem('glint_leads_days',this.value)}catch(e){};leadsLoad(true)" style="width:auto;padding:7px 10px;font-size:13px">
@@ -7736,7 +7743,9 @@ async function renderLeadsPage(){
 function drawLeads(){
   const el=document.getElementById('leads-body'); if(!el) return;
   if(!_leadsData){ el.innerHTML=`<div class="card"><div class="empty">${_leadsBusy?'Reading calls, texts and leads from RepairDesk…':esc(_leadsErr||'Nothing loaded')}</div></div>`; return; }
-  const all=leadsBuild();
+  const every=leadsBuild();
+  const secCount={leads:every.filter(p=>p.stage!=='customer').length, customers:every.filter(p=>p.stage==='customer').length, all:every.length};
+  const all=leadsSection==='customers'?every.filter(p=>p.stage==='customer'):leadsSection==='leads'?every.filter(p=>p.stage!=='customer'):every;
   const live=all.filter(p=>p.stage!=='won' && !['not_interested','not_a_lead'].includes(p.track.status));
   const cnt={
     open:live.length,
@@ -7757,15 +7766,16 @@ function drawLeads(){
   const tile=(k,n,label,hue)=>`<div class="stat-tile clickable" onclick="leadsFilter='${k}';drawLeads()" style="border-left:4px solid ${hue};${leadsFilter===k?'box-shadow:0 0 0 2px '+hue:''}">
     <div class="stat-num" style="color:${hue}">${n}</div><div class="stat-label">${label}</div></div>`;
   const ago=d=>d?kpiAgo(d.toISOString()):'';
-  el.innerHTML=(_leadsErr?`<div class="card" style="border-left:4px solid var(--orange);font-size:13px">⚠️ ${esc(_leadsErr)}</div>`:'')+
+  const secBtn=(k,label)=>`<button class="${leadsSection===k?'on':''}" onclick="leadsSection='${k}';try{localStorage.setItem('glint_leads_section','${k}')}catch(e){};leadsFilter='open';drawLeads()">${label} <span style="opacity:.7">${secCount[k]}</span></button>`;
+  el.innerHTML=`<div class="seg" style="margin-bottom:12px">${secBtn('leads','🧲 New leads')}${secBtn('customers','👤 Existing customers')}${secBtn('all','📞 All calls & texts')}</div>`+(_leadsErr?`<div class="card" style="border-left:4px solid var(--orange);font-size:13px">⚠️ ${esc(_leadsErr)}</div>`:'')+
     (leadTablesOk===false?`<div class="card" style="font-size:13px;border-left:4px solid var(--orange)">To keep follow-ups and notes, run <strong>add-leads.sql</strong> in Supabase once, then reload.</div>`:'')+
     (!olderTicketsLoaded&&olderTicketsLoading?`<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Still loading older orders — a few existing customers may show until it finishes.</div>`:'')+
     `<div class="stat-grid">
-      ${tile('open',cnt.open,'Open leads','var(--blue)')}
+      ${tile('open',cnt.open,leadsSection==='leads'?'Open leads':leadsSection==='customers'?'Customers in touch':'People in touch','var(--blue)')}
       ${tile('missed',cnt.missed,'Waiting on us','var(--red)')}
-      ${tile('quote',cnt.quote,'Quoted — no follow-up','var(--orange)')}
+      ${leadsSection==='customers'?'':tile('quote',cnt.quote,'Quoted — no follow-up','var(--orange)')}
       ${tile('due',cnt.due,'Follow-ups due','var(--gold)')}
-      ${tile('won',cnt.won,'Became customers','var(--green)')}
+      ${leadsSection==='customers'?'':tile('won',cnt.won,'Became customers','var(--green)')}
     </div>
     <div style="font-size:12px;color:var(--ink3);margin:-4px 0 12px">Last ${leadsDays} days · ${_leadsData.calls.length} calls, ${_leadsData.sms.length} texts, ${_leadsData.rdLeads.length} RepairDesk leads read ${kpiAgo(new Date(_leadsData.at).toISOString())}${_leadsBusy?' · <strong>refreshing…</strong>':''}
       ${cnt.closed?` · <span class="clickable" onclick="leadsFilter='closed';drawLeads()">${cnt.closed} closed</span>`:''}</div>
@@ -7807,9 +7817,10 @@ function leadCardHtml(p, ago){
       <div style="flex:1;min-width:220px">
         <div style="font-family:'Outfit',sans-serif;font-size:16.5px;font-weight:700">${esc(p.name||'Unknown caller')} <span style="font-size:13px;font-weight:500;color:var(--ink3)">${esc(leadFmtPhone(p.phone))}</span></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-          <span style="font-size:11px;font-weight:700;color:${st.hue};border:1px solid ${st.hue};border-radius:10px;padding:1px 8px">${st.label}${p.stage==='won'&&p.wonOid?' · '+esc(p.wonOid):''}</span>
+          <span style="font-size:11px;font-weight:700;color:${st.hue};border:1px solid ${st.hue};border-radius:10px;padding:1px 8px">${st.label}${p.stage==='won'&&p.wonOid?' · '+esc(p.wonOid):''}${p.stage==='customer'&&p.orderCount?' · '+p.orderCount+' order'+(p.orderCount>1?'s':''):''}</span>
+          ${p.stage==='customer'&&p.lastOid?`<span class="clickable" style="font-size:11.5px;font-weight:600" onclick="event.stopPropagation();navigate('${h('order',p.lastOid).replace(/'/g,"\\'")}')">Latest: ${esc(p.lastOid)} →</span>`:''}
           ${p.flags.map(f=>`<span style="font-size:11px;font-weight:700;color:#fff;background:${f.hue};border-radius:10px;padding:2px 8px">${esc(f.t)}</span>`).join('')}
-          ${closed?`<span style="font-size:11px;color:var(--ink3)">${tr.status==='not_a_lead'?'Not a lead':'Not interested'}</span>`:''}
+          ${closed?`<span style="font-size:11px;color:var(--ink3)">${tr.status==='not_a_lead'?'Not a lead':p.stage==='customer'?'Handled':'Not interested'}</span>`:''}
           ${tr.owner?`<span style="font-size:11px;color:var(--ink2)">👤 ${esc(tr.owner)}</span>`:''}
         </div>
         ${snippet&&!open?`<div style="font-size:12.5px;color:var(--ink2);margin-top:5px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${esc(snippet)}</div>`:''}
@@ -7830,6 +7841,7 @@ function leadCardHtml(p, ago){
         <button class="btn btn-sm btn-block" onclick="leadSave('${ph}')">Save</button>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           ${closed?`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','open')">↩ Reopen</button>`
+            :p.stage==='customer'?`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','not_interested')">✓ Handled</button>`
             :`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','not_interested')">Not interested</button>
               <button class="btn btn-ghost btn-sm" title="A supplier, worker, wrong number… hide it for good" onclick="leadSetStatus('${ph}','not_a_lead')">Not a lead</button>`}
         </div>
