@@ -306,7 +306,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-e</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-f</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -1254,7 +1254,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-17-e';
+const APP_VERSION='2026-11-17-f';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -2247,13 +2247,22 @@ function buildPipelineItems(){
 
   // RepairDesk is the authority on delivery. If a piece is marked Delivered / Picked up /
   // On way over there, reflect it here so the two systems agree without extra scanning.
+  // "Delivered" in RepairDesk is final — the piece leaves production even if some of its
+  // steps were never scanned. (On Way / Packed still wait for the work to be finished.)
   Object.entries(rdStatus||{}).forEach(([itemId,name])=>{
     const stage=rdStatusToStage(name);
     if(!stage) return;
     const it=items[itemId]; if(!it) return;
     const st0=derivePipeState([...it.events].sort((a,b)=>new Date(a.t)-new Date(b.t)));
-    if(stageIdxByName(stage)>=DELIV0 && !(st0.fin>=LASTW)){ it.rdStatus=name; return; }   // not finished yet
+    if(stage!=='Delivered' && stageIdxByName(stage)>=DELIV0 && !(st0.fin>=LASTW)){ it.rdStatus=name; return; }   // not finished yet
     externalMove(it, stage, 'RepairDesk', name);
+  });
+  // The whole ticket marked Delivered in RepairDesk → every piece on it is delivered
+  (allTickets||[]).forEach(t=>{
+    const nm=t.summary&&t.summary.status&&(t.summary.status.name||t.summary.status);
+    if(rdStatusToStage(nm)!=='Delivered') return;
+    const oid=getOrderId(t);
+    Object.values(items).forEach(it=>{ if(orderIdOf(it.id)===oid) externalMove(it, 'Delivered', 'RepairDesk', String(nm)); });
   });
 
   (stageEvents||[]).forEach(e=>{
@@ -8864,6 +8873,19 @@ async function searchRepairDeskOrders(q){
     }).join('')+
     '<div style="font-size:12px;color:var(--ink3);padding-top:10px">These were not in the loaded list, so they came straight from RepairDesk.</div></div>';
 }
+// Orders tab filters: RepairDesk status and the date the courier picked the order up
+let ordStatusFilter='all', ordPickFrom='', ordPickTo='', ordPickSort=false;
+function orderRdStatus(oid){
+  const t=(allTickets||[]).find(x=>getOrderId(x)===oid);
+  const st=t&&t.summary&&t.summary.status;
+  return st?String(st.name||st):'';
+}
+function orderPickupDate(oid){
+  const m=scanovMeta[String(oid||'')];
+  if(!m||!m.when) return null;
+  const d=new Date(String(m.when).replace(' ','T'));
+  return isNaN(d)?null:d;
+}
 function renderOrdersListPage(){
   document.getElementById('content').innerHTML=`
     <div class="page-head">
@@ -8876,7 +8898,20 @@ function renderOrdersListPage(){
         ${[['all','Any time'],['overdue','⚠️ Overdue'],['today','Today'],['week','By end of week'],['7','Next 7 days'],['month','This month'],['none','No date set']]
           .map(([k,l])=>`<button class="btn btn-sm ${dueFilter===k?'btn-gold':'btn-ghost'}" onclick="dueFilter='${k}';renderOrdersList()">${l}</button>`).join('')}
         <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink3);margin-left:auto">
-          <input type="checkbox" ${dueSort?'checked':''} onchange="dueSort=this.checked;renderOrdersList()" style="width:15px;height:15px"> sort by due date
+          <input type="checkbox" ${dueSort?'checked':''} onchange="dueSort=this.checked;if(this.checked){ordPickSort=false;}renderOrdersList()" style="width:15px;height:15px"> sort by due date
+        </label>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3)">Status</span>
+        <select id="ord-status" onchange="ordStatusFilter=this.value;renderOrdersList()" style="width:auto;padding:6px 9px;font-size:12.5px"><option value="all">All statuses</option></select>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-left:8px">Picked up</span>
+        <input type="date" id="ord-pick-from" value="${ordPickFrom}" onchange="ordPickFrom=this.value;renderOrdersList()" style="width:auto;padding:5px 8px;font-size:12.5px">
+        <span style="font-size:12px;color:var(--ink3)">to</span>
+        <input type="date" id="ord-pick-to" value="${ordPickTo}" onchange="ordPickTo=this.value;renderOrdersList()" style="width:auto;padding:5px 8px;font-size:12.5px">
+        ${['Today','This week','Last 7 days'].map(l=>`<button class="btn btn-ghost btn-sm" onclick="ordPickPreset('${l}')">${l}</button>`).join('')}
+        <button class="btn btn-ghost btn-sm" onclick="ordStatusFilter='all';ordPickFrom='';ordPickTo='';document.getElementById('ord-pick-from').value='';document.getElementById('ord-pick-to').value='';renderOrdersList()">Clear</button>
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink3);margin-left:auto">
+          <input type="checkbox" id="ord-pick-sort" ${ordPickSort?'checked':''} onchange="ordPickSort=this.checked;if(this.checked){dueSort=false;}renderOrdersList()" style="width:15px;height:15px"> sort by pickup date
         </label>
       </div>
     </div>
@@ -8928,6 +8963,15 @@ function dueBadge(oid){
   const txt=late?(Math.abs(days)+'d overdue'):(days===0?'due today':(days===1?'due tomorrow':'due in '+days+'d'));
   return `<span style="font-size:11.5px;font-weight:700;color:${col}">${d.toLocaleDateString([], {month:'short',day:'numeric'})} · ${txt}</span>`;
 }
+function ordPickPreset(which){
+  const d=new Date(), ymd=x=>x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+  let from=new Date(d);
+  if(which==='This week') from.setDate(d.getDate()-d.getDay());
+  if(which==='Last 7 days') from.setDate(d.getDate()-6);
+  ordPickFrom=ymd(from); ordPickTo=ymd(d);
+  const f=document.getElementById('ord-pick-from'), t=document.getElementById('ord-pick-to'); if(f) f.value=ordPickFrom; if(t) t.value=ordPickTo;
+  renderOrdersList();
+}
 function renderOrdersList(){
   const q=(document.getElementById('orders-search').value||'').toLowerCase().trim();
   const orders={};
@@ -8946,6 +8990,19 @@ function renderOrdersList(){
   });
   list=list.filter(([oid])=>dueMatches(oid));
   if(hoodFilter!=='all') list=list.filter(([oid])=>hoodFor(oid)===hoodFilter);
+  // Status dropdown lists the statuses these orders actually have, with counts
+  { const sel=document.getElementById('ord-status');
+    if(sel){
+      const counts={}; list.forEach(([oid])=>{ const s=orderRdStatus(oid)||'No status yet'; counts[s]=(counts[s]||0)+1; });
+      if(ordStatusFilter!=='all' && !counts[ordStatusFilter]) counts[ordStatusFilter]=0;
+      sel.innerHTML='<option value="all">All statuses ('+list.length+')</option>'+Object.keys(counts).sort().map(s=>`<option value="${esc(s)}"${ordStatusFilter===s?' selected':''}>${esc(s)} (${counts[s]})</option>`).join('');
+    } }
+  if(ordStatusFilter!=='all') list=list.filter(([oid])=>(orderRdStatus(oid)||'No status yet')===ordStatusFilter);
+  if(ordPickFrom||ordPickTo){
+    const from=ordPickFrom?new Date(ordPickFrom+'T00:00:00'):null, to=ordPickTo?new Date(ordPickTo+'T23:59:59'):null;
+    list=list.filter(([oid])=>{ const d=orderPickupDate(oid); return d && (!from||d>=from) && (!to||d<=to); });
+  }
+  if(ordPickSort) list.sort((a,b)=>{ const da=orderPickupDate(a[0]), db=orderPickupDate(b[0]); if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1; return db-da; });
   if(dueSort) list.sort((a,b)=>{
     const da=dueDateFor(a[0]), db=dueDateFor(b[0]);
     if(!da&&!db) return 0;
@@ -8978,7 +9035,9 @@ function renderOrdersList(){
           <div style="font-size:11px;font-weight:700;color:var(--gold2)">${esc(oid)}${isJunk?' · <span style="color:var(--orange)">⚠️ NOT A GLINT LABEL</span>':''}${anyWorking?' · <span style="color:var(--green)">● IN PROGRESS</span>':(pct===100?' · <span style="color:var(--ink3)">✓ COMPLETE</span>':'')}</div>
           <div style="font-family:'Outfit',sans-serif;font-size:21px;font-weight:700${hasName?'':';color:var(--ink3)'}">${hasName?esc(o.customer):'Name not recorded'}</div>
           <div style="font-size:11.5px;color:var(--ink3);margin-top:2px">${items.length} item${items.length!==1?'s':''} · ${doneCount} done${anyRunaway?' · <span style="color:var(--orange)">⚠️ includes capped time</span>':''}</div>
-          <div style="margin-top:3px">${dueBadge(oid)}</div>
+          <div style="margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">${dueBadge(oid)}
+            ${orderRdStatus(oid)?`<span style="font-size:11px;font-weight:700;border:1px solid var(--border);border-radius:10px;padding:1px 8px;color:var(--ink2)">${esc(orderRdStatus(oid))}</span>`:''}
+            ${orderPickupDate(oid)?`<span style="font-size:11.5px;color:var(--ink3)">📦 Picked up ${orderPickupDate(oid).toLocaleDateString([], {month:'short',day:'numeric'})}</span>`:''}</div>
           ${scanovStatus[oid]?`<div style="font-size:11.5px;color:var(--blue);font-weight:700;margin-top:3px">🚚 ${esc(scanovStatus[oid])}</div>`:''}
         </div>
         <div style="text-align:right">
