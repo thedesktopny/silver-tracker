@@ -306,7 +306,7 @@ tr.clickable:hover td{background:var(--surface2)}
     <div class="sidebar-nav" id="sidebar-nav"></div>
     <div class="sidebar-foot">
       <div class="clk"><span class="live-dot"></span><span id="live-clock">--:--:--</span></div>
-      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-b</div>
+      <div style="font-size:9.5px;color:var(--sidebar-text);opacity:.7;margin-top:3px">build 2026-11-17-e</div>
       <div id="me-label" style="font-size:11px;color:var(--sidebar-text);margin-top:8px;line-height:1.35"></div>
       <button class="logout-btn" onclick="doLogout()">Log Out</button>
     </div>
@@ -1254,7 +1254,7 @@ function renderBreadcrumb(){
   document.getElementById('breadcrumb').innerHTML=html;
 }
 
-const APP_VERSION='2026-11-17-b';
+const APP_VERSION='2026-11-17-e';
 // A blank page tells nobody anything. Any uncaught error now shows on screen so it
 // can be read and reported instead of silently leaving a white page.
 function showDataWarning(parts){
@@ -7577,7 +7577,17 @@ async function expDelete(id){
 // hand them out. Follow-up (who's on it, when, notes, not interested) is kept here.
 let leadsDays=parseInt(localStorage.getItem('glint_leads_days')||'60',10);
 let leadsFilter='open', leadsQ='', leadsOpen=new Set();
-let leadsSection=localStorage.getItem('glint_leads_section')||'leads';   // leads | customers | all
+// Three buckets, so the page is about leads first:
+//   leads   new people asking about work (and returning customers asking about NEW work)
+//   orders  customers calling about an order they have — status, pickup, payment
+//   other   suppliers, sales calls, wrong numbers, anything else
+// Sorted automatically from RepairDesk's call summaries and texts; anyone can be moved
+// by hand and stays where they were put.
+let leadsSection=localStorage.getItem('glint_leads_section')||'leads';   // leads | orders | other | all
+if(!['leads','orders','other','all'].includes(leadsSection)) leadsSection='leads';
+const LEAD_RE=/\b(price|prices|pricing|quote|quoted|estimate|how much|cost|polish|lacquer|restor\w*|repair|re-?plat\w*|clean\w*|silver|candelabr\w*|candlestick\w*|kiddush|becher|tray|menorah|esrog|cup|interested|appointment|bring (it|them) in|new customer)\b/i;
+const ORDER_RE=/\b(my order|the order|order status|pick ?up|picked up|ready|drop(ped)? ?off|deliver\w*|status|when will|update on|tracking|invoice|payment|paid|pay|balance|receipt|driver|scanovator|came back|was done)\b/i;
+const OTHER_RE=/\b(vendor|supplier|supply|supplies|wholesale|sales rep|marketing|seo|google|advertis\w*|insurance|wrong number|spam|robocall|survey|bank|loan|merchant|processing|hiring|job|resume|applicant|interview|warranty|extended)\b/i;
 let _leadsData=null, _leadsBusy=false, _leadsErr='';
 let leadTrack={}, leadNotes={}, leadTablesOk=null;
 const LEAD_STAGE={contacted:{label:'Called / texted', hue:'var(--blue)', icon:'📞'}, lead:{label:'Lead in RepairDesk', hue:'var(--gold)', icon:'📝'},
@@ -7695,7 +7705,27 @@ function leadsBuild(){
     p.track=leadTrack[p.phone]||{}; p.notes=leadNotes[p.phone]||[];
     if(p.track.name && !p.name) p.name=p.track.name;
     p.stage=existing?'customer':firstOrder?'won':p.quotes.length?'quoted':p.rdLeads.length?'lead':'contacted';
-    if(existing){ const lo=p.orders.slice().sort((a,b)=>(b.at||0)-(a.at||0))[0]; p.lastOid=lo&&lo.oid; p.orderCount=p.orders.length; }
+    if(existing){ const lo=p.orders.slice().sort((a,b)=>(b.at||0)-(a.at||0))[0]; p.lastOid=lo&&lo.oid; p.lastOrderAt=lo&&lo.at; p.orderCount=p.orders.length; }
+    {
+      const said=(p.calls.map(c=>c.summary).join(' ')+' '+p.sms.filter(s=>!s.out).map(s=>s.text).join(' '));
+      const isLead=LEAD_RE.test(said), isOrder=ORDER_RE.test(said), isOther=OTHER_RE.test(said);
+      const recentOrder=existing && p.lastOrderAt && (Date.now()-p.lastOrderAt)<120*86400000;
+      let cat;
+      if(p.track.category) cat=p.track.category;                              // moved by hand
+      else if(p.track.status==='not_a_lead') cat='other';
+      else if(existing) cat=(recentOrder||isOrder||p.sms.some(s=>/ticket|invoice/i.test(s.module)))?(isLead&&!isOrder&&!recentOrder?'leads':'orders'):(isLead&&!isOther?'leads':'other');
+      else if(p.stage==='won'){
+        // Got in touch before ordering = a lead that converted; only after = calling about the order
+        const fo=p.orders.reduce((m,o)=>(o.at&&(!m||o.at<m))?o.at:m,null);
+        cat=p.events.some(e=>(e.kind==='call'||e.kind==='sms'||e.kind==='lead'||e.kind==='quote') && e.at && fo && e.at<fo)?'leads':'orders';
+      }
+      else if(p.quotes.length||p.rdLeads.length) cat='leads';
+      else if(isOther) cat='other';                                          // supplier / sales / spam words win
+      else if(isOrder && !isLead) cat='orders';
+      else cat='leads';
+      p.category=cat; p.auto=!p.track.category;
+      p.returning=existing && cat==='leads';
+    }
     p.wonOid=firstOrder?(p.orders.find(o=>o.at&&o.at.getTime()===firstOrder.getTime())||{}).oid:'';
     p.last=p.events[0]&&p.events[0].at;
     const lastOut=p.events.find(e=>e.out||e.kind==='quote');
@@ -7729,13 +7759,16 @@ async function renderLeadsPage(){
   await leadsLoad(false);
   drawLeads();
 }
-function drawLeads(){
+function drawLeads(){ return withPriceMoney(_drawLeads); }
+function _drawLeads(){
   const el=document.getElementById('leads-body'); if(!el) return;
   if(!_leadsData){ el.innerHTML=`<div class="card"><div class="empty">${_leadsBusy?'Reading calls, texts and leads from RepairDesk…':esc(_leadsErr||'Nothing loaded')}</div></div>`; return; }
   const every=leadsBuild();
-  const secCount={leads:every.filter(p=>p.stage!=='customer').length, customers:every.filter(p=>p.stage==='customer').length, all:every.length};
-  const all=leadsSection==='customers'?every.filter(p=>p.stage==='customer'):leadsSection==='leads'?every.filter(p=>p.stage!=='customer'):every;
-  const live=all.filter(p=>p.stage!=='won' && !['not_interested','not_a_lead'].includes(p.track.status));
+  const open_=p=>!['not_interested','not_a_lead'].includes(p.track.status);
+  const secCount={leads:every.filter(p=>p.category==='leads'&&p.stage!=='won'&&open_(p)).length, orders:every.filter(p=>p.category==='orders'&&open_(p)).length,
+                  other:every.filter(p=>p.category==='other'&&open_(p)).length, all:every.length};
+  const all=leadsSection==='all'?every:every.filter(p=>p.category===leadsSection);
+  const live=all.filter(p=>(p.stage!=='won'||p.category!=='leads') && !['not_interested','not_a_lead'].includes(p.track.status));
   const cnt={
     open:live.length,
     missed:live.filter(p=>p.flags.some(f=>f.k==='missed'||f.k==='reply')).length,
@@ -7756,15 +7789,15 @@ function drawLeads(){
     <div class="stat-num" style="color:${hue}">${n}</div><div class="stat-label">${label}</div></div>`;
   const ago=d=>d?kpiAgo(d.toISOString()):'';
   const secBtn=(k,label)=>`<button class="${leadsSection===k?'on':''}" onclick="leadsSection='${k}';try{localStorage.setItem('glint_leads_section','${k}')}catch(e){};leadsFilter='open';drawLeads()">${label} <span style="opacity:.7">${secCount[k]}</span></button>`;
-  el.innerHTML=`<div class="seg" style="margin-bottom:12px">${secBtn('leads','🧲 New leads')}${secBtn('customers','👤 Existing customers')}${secBtn('all','📞 All calls & texts')}</div>`+(_leadsErr?`<div class="card" style="border-left:4px solid var(--orange);font-size:13px">⚠️ ${esc(_leadsErr)}</div>`:'')+
+  el.innerHTML=`<div class="seg" style="margin-bottom:12px">${secBtn('leads','🧲 Leads')}${secBtn('orders','📦 Order calls')}${secBtn('other','📁 Other')}${secBtn('all','All')}</div>`+(_leadsErr?`<div class="card" style="border-left:4px solid var(--orange);font-size:13px">⚠️ ${esc(_leadsErr)}</div>`:'')+
     (leadTablesOk===false?`<div class="card" style="font-size:13px;border-left:4px solid var(--orange)">To keep follow-ups and notes, run <strong>add-leads.sql</strong> in Supabase once, then reload.</div>`:'')+
     (!olderTicketsLoaded&&olderTicketsLoading?`<div style="font-size:12px;color:var(--ink3);margin-bottom:8px">Still loading older orders — a few existing customers may show until it finishes.</div>`:'')+
     `<div class="stat-grid">
-      ${tile('open',cnt.open,leadsSection==='leads'?'Open leads':leadsSection==='customers'?'Customers in touch':'People in touch','var(--blue)')}
+      ${tile('open',cnt.open,leadsSection==='leads'?'Open leads':leadsSection==='orders'?'Customers calling about orders':'People','var(--blue)')}
       ${tile('missed',cnt.missed,'Waiting on us','var(--red)')}
-      ${leadsSection==='customers'?'':tile('quote',cnt.quote,'Quoted — no follow-up','var(--orange)')}
+      ${leadsSection!=='leads'?'':tile('quote',cnt.quote,'Quoted — no follow-up','var(--orange)')}
       ${tile('due',cnt.due,'Follow-ups due','var(--gold)')}
-      ${leadsSection==='customers'?'':tile('won',cnt.won,'Became customers','var(--green)')}
+      ${leadsSection!=='leads'?'':tile('won',cnt.won,'Became customers','var(--green)')}
     </div>
     <div style="font-size:12px;color:var(--ink3);margin:-4px 0 12px">Last ${leadsDays} days · ${_leadsData.calls.length} calls, ${_leadsData.sms.length} texts, ${_leadsData.rdLeads.length} RepairDesk leads read ${kpiAgo(new Date(_leadsData.at).toISOString())}${_leadsBusy?' · <strong>refreshing…</strong>':''}
       ${cnt.closed?` · <span class="clickable" onclick="leadsFilter='closed';drawLeads()">${cnt.closed} closed</span>`:''}</div>
@@ -7807,6 +7840,8 @@ function leadCardHtml(p, ago){
         <div style="font-family:'Outfit',sans-serif;font-size:16.5px;font-weight:700">${esc(p.name||'Unknown caller')} <span style="font-size:13px;font-weight:500;color:var(--ink3)">${esc(leadFmtPhone(p.phone))}</span></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
           <span style="font-size:11px;font-weight:700;color:${st.hue};border:1px solid ${st.hue};border-radius:10px;padding:1px 8px">${st.label}${p.stage==='won'&&p.wonOid?' · '+esc(p.wonOid):''}${p.stage==='customer'&&p.orderCount?' · '+p.orderCount+' order'+(p.orderCount>1?'s':''):''}</span>
+          ${p.returning?`<span style="font-size:11px;font-weight:700;color:var(--green)">↺ Returning customer</span>`:''}
+          ${leadsSection==='all'?`<span style="font-size:11px;color:var(--ink3)">${{leads:'🧲 Lead',orders:'📦 Order call',other:'📁 Other'}[p.category]}</span>`:''}
           ${p.stage==='customer'&&p.lastOid?`<span class="clickable" style="font-size:11.5px;font-weight:600" onclick="event.stopPropagation();navigate('${h('order',p.lastOid).replace(/'/g,"\\'")}')">Latest: ${esc(p.lastOid)} →</span>`:''}
           ${p.flags.map(f=>`<span style="font-size:11px;font-weight:700;color:#fff;background:${f.hue};border-radius:10px;padding:2px 8px">${esc(f.t)}</span>`).join('')}
           ${closed?`<span style="font-size:11px;color:var(--ink3)">${tr.status==='not_a_lead'?'Not a lead':p.stage==='customer'?'Handled':'Not interested'}</span>`:''}
@@ -7824,18 +7859,27 @@ function leadCardHtml(p, ago){
         <a class="btn btn-gold btn-sm btn-block" href="tel:+1${esc(p.phone)}" style="margin-bottom:8px;text-align:center">📞 Call ${esc(leadFmtPhone(p.phone))}</a>
         ${p.name?'':`<div class="field" style="margin-bottom:8px"><label>Name</label><input id="ld-name-${ph}" placeholder="Who is this?" value="${esc(tr.name||'')}"></div>`}
         <div class="field" style="margin-bottom:8px"><label>Who's on it</label>
-          <select id="ld-owner-${ph}"><option value="">—</option>${[...new Set((workers||[]).filter(w=>workerAccess(w)!=='none'&&w.name).map(w=>w.name))].sort().map(n=>`<option${tr.owner===n?' selected':''}>${esc(n)}</option>`).join('')}</select></div>
+          <select id="ld-owner-${ph}"><option value="">—</option>${[...new Set((workers||[]).filter(w=>['owner','manager'].includes(workerAccess(w))&&w.name).map(w=>w.name))].sort().map(n=>`<option${tr.owner===n?' selected':''}>${esc(n)}</option>`).join('')}</select></div>
         <div class="field" style="margin-bottom:8px"><label>Follow up on</label><input type="date" id="ld-date-${ph}" value="${esc(tr.follow_up_on||'')}"></div>
         <div class="field" style="margin-bottom:8px"><label>Add a note</label><textarea id="ld-note-${ph}" rows="2" placeholder="What happened / what's next"></textarea></div>
         <button class="btn btn-sm btn-block" onclick="leadSave('${ph}')">Save</button>
+        <div style="font-size:11px;color:var(--ink3);margin:10px 0 4px">Belongs in${p.auto?' (sorted automatically)':''}:</div>
+        <div class="seg" style="display:flex">
+          ${[['leads','🧲 Leads'],['orders','📦 Orders'],['other','📁 Other']].map(([k,l])=>`<button class="${p.category===k?'on':''}" style="flex:1;font-size:11.5px" onclick="leadMove('${ph}','${k}')">${l}</button>`).join('')}
+        </div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           ${closed?`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','open')">↩ Reopen</button>`
             :p.stage==='customer'?`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','not_interested')">✓ Handled</button>`
             :`<button class="btn btn-ghost btn-sm" onclick="leadSetStatus('${ph}','not_interested')">Not interested</button>
-              <button class="btn btn-ghost btn-sm" title="A supplier, worker, wrong number… hide it for good" onclick="leadSetStatus('${ph}','not_a_lead')">Not a lead</button>`}
+              <button class="btn btn-ghost btn-sm" title="A supplier, worker, wrong number…" onclick="leadMove('${ph}','other')">Not a lead → Other</button>`}
         </div>
       </div></div>`:''}
   </div>`;
+}
+async function leadMove(ph, cat){
+  if(!(await leadUpsert(ph,{category:cat, status:'open'}))){ toast('Could not save — run add-leads.sql in Supabase (it adds the new column)'); return; }
+  toast('Moved to '+({leads:'Leads',orders:'Order calls',other:'Other'}[cat]));
+  leadsOpen.delete(ph); await leadsLoadTracking(); drawLeads();
 }
 function leadToggle(ph){ leadsOpen.has(ph)?leadsOpen.delete(ph):leadsOpen.add(ph); drawLeads(); }
 async function leadUpsert(ph, patch){
@@ -9802,7 +9846,7 @@ function renderWorkersPage(){
     </div>
     <div class="card">
       <div class="card-label">All Workers</div>
-      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6">Only you set or change PINs. Give each person theirs privately — it works here and on the scanner.<br><strong>Admin</strong> sees everything (KPIs, money, workers, settings) · <strong>Manager</strong> everything except money (KPIs, inventory, costs, prices — tick <em>Repair costs</em> to show repair prices only) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:8px;line-height:1.6">Only you set or change PINs. Give each person theirs privately — it works here and on the scanner.<br><strong>Admin</strong> sees everything (KPIs, money, workers, settings) · <strong>Manager</strong> everything except money — including Leads &amp; Calls (tick <em>Repair costs</em> to also show repair prices) · <strong>Staff</strong> orders, items, tagging and chats · <strong>No access</strong> scanner only. Everyone signs in with their name and PIN.</div>
       <div style="overflow-x:auto"><table id="workers-table"><thead><tr><th>Name</th><th>PIN</th><th>Roles</th><th>Control Room</th><th style="text-align:center">Print Labels</th><th style="text-align:center" title="See repair prices on the Repairs page, without seeing KPIs or other money">Repair costs</th><th></th></tr></thead><tbody></tbody></table></div>
     </div>
   `;
